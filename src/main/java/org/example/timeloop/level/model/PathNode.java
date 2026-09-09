@@ -7,6 +7,7 @@ import java.util.EnumSet;
  * 对应文档：普通廊道到达路口中心执行转向逻辑
  */
 public class PathNode {
+    private final String id;
     // 节点世界坐标（tileSize倍数）
     private final Vector2D worldPos;
     // 允许通行方向集合
@@ -21,12 +22,14 @@ public class PathNode {
         UP, DOWN, LEFT, RIGHT
     }
 
-    public PathNode(Vector2D worldPos, EnumSet<Dir> allowDirs) {
+    public PathNode(String id,Vector2D worldPos, EnumSet<Dir> allowDirs) {
+        this.id = id;
         this.worldPos = worldPos;
         this.allowDirs = allowDirs;
     }
 
     // ---------------- getter setter ----------------
+    public String getId() { return id; }
     public Vector2D getWorldPos() {
         return worldPos;
     }
