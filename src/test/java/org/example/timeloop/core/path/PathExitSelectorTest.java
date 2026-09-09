@@ -9,6 +9,8 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PathExitSelectorTest {
 
@@ -51,6 +53,18 @@ class PathExitSelectorTest {
         assertFalse(closedInput.usedQueuedDirection());
     }
 
+    @Test
+    void rejectsAnAmbiguousMultiSideJunctionWithoutAPassableDefaultExit() {
+        OrthogonalPathGraph graph = ambiguousJunctionGraph();
+        PathNode junction = graph.node("junction");
+
+        IllegalStateException failure = assertThrows(IllegalStateException.class, () ->
+                select(graph, junction, Direction.DOWN, null, Set.of(Direction.DOWN)));
+
+        assertTrue(failure.getMessage().contains("junction"));
+        assertTrue(failure.getMessage().contains("defaultExit"));
+    }
+
     private static PathExitDecision select(
             OrthogonalPathGraph graph,
             PathNode node,
@@ -77,6 +91,22 @@ class PathExitSelectorTest {
                                 new PathExit(Direction.DOWN, "straight"),
                                 new PathExit(Direction.LEFT, "left")),
                         Optional.of(Direction.RIGHT)),
+                node("right", 48.0, 0.0, List.of(new PathExit(Direction.LEFT, "junction"))),
+                node("straight", 0.0, 48.0, List.of(new PathExit(Direction.UP, "junction"))),
+                node("left", -48.0, 0.0, List.of(new PathExit(Direction.RIGHT, "junction")))));
+    }
+
+    private static OrthogonalPathGraph ambiguousJunctionGraph() {
+        return new OrthogonalPathGraph(List.of(
+                node("incoming", 0.0, -48.0, List.of(new PathExit(Direction.DOWN, "junction"))),
+                new PathNode(
+                        "junction",
+                        new PathPoint(0.0, 0.0),
+                        List.of(
+                                new PathExit(Direction.UP, "incoming"),
+                                new PathExit(Direction.RIGHT, "right"),
+                                new PathExit(Direction.DOWN, "straight"),
+                                new PathExit(Direction.LEFT, "left"))),
                 node("right", 48.0, 0.0, List.of(new PathExit(Direction.LEFT, "junction"))),
                 node("straight", 0.0, 48.0, List.of(new PathExit(Direction.UP, "junction"))),
                 node("left", -48.0, 0.0, List.of(new PathExit(Direction.RIGHT, "junction")))));

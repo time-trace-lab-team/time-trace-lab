@@ -61,6 +61,17 @@ public final class PathExitSelector {
             }
         }
 
+        // A reversal is reserved for a genuine dead end.  If straight ahead
+        // is unavailable but multiple side exits remain, the map must provide
+        // a passable default arrow; silently reversing here would turn a
+        // normal junction into an implicit 180-degree turn.
+        if (usableSideCount > 1) {
+            throw new IllegalStateException(
+                    "ambiguous path node '" + node.id() + "' after arriving from " + arrivalDirection
+                            + ": " + usableSideCount
+                            + " passable side exits require a passable defaultExit");
+        }
+
         Direction reverse = DirectionGeometry.opposite(arrivalDirection);
         if (isUsable(graph, node, reverse, passability)) {
             return new PathExitDecision(reverse, false);
