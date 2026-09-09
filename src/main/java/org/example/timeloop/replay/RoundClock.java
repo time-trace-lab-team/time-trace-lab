@@ -1,6 +1,7 @@
 package org.example.timeloop.replay;
 
 import org.example.timeloop.core.GamePhase;
+import org.example.timeloop.core.TickStepResult;
 
 import java.util.EnumMap;
 import java.util.EnumSet;
@@ -18,10 +19,10 @@ import java.util.Set;
  * <p>阶段约束：</p>
  * <ul>
  *   <li>{@link GamePhase#TUTORIAL} / {@link GamePhase#READY} / {@link GamePhase#PAUSED}：
- *       不推进 {@code roundTick}（{@link AdvanceResult#NO_ADVANCE}）。</li>
+ *       不推进 {@code roundTick}（{@link TickStepResult#NO_ADVANCE}）。</li>
  *   <li>{@link GamePhase#PLAYING}：{@code roundTick} 严格 {@code 0 .. durationTicks - 1}，
  *       不存在索引 {@code durationTicks} 的帧；到达 {@code D-1} 后再推进返回
- *       {@link AdvanceResult#ROUND_END}，越界一律上报而不会静默跳到下一轮。</li>
+ *       {@link TickStepResult#ROUND_END}，越界一律上报而不会静默跳到下一轮。</li>
  *   <li>{@link GamePhase#RESETTING}：冻结玩法更新。</li>
  *   <li>{@link GamePhase#RESULT}：目标达成后立即结束（未满缓冲由调用方丢弃）。</li>
  *   <li>{@link GamePhase#FAILED}：仅在第 {@code maxRounds} 轮读秒归零仍未通关时进入。</li>
@@ -124,19 +125,19 @@ public final class RoundClock {
 
     /**
      * 推进一个逻辑刻。仅在 {@link GamePhase#PLAYING} 真正推进；
-     * 冻结阶段返回 {@link AdvanceResult#NO_ADVANCE}；
-     * 到达本轮最后一帧（{@code D-1}）后再推进返回 {@link AdvanceResult#ROUND_END}，
+     * 冻结阶段返回 {@link TickStepResult#NO_ADVANCE}；
+     * 到达本轮最后一帧（{@code D-1}）后再推进返回 {@link TickStepResult#ROUND_END}，
      * 不会推进到索引 {@code D}，也不会静默跳到下一轮。
      */
-    public AdvanceResult advance() {
+    public TickStepResult advance() {
         if (!phase.advancesLogic()) {
-            return AdvanceResult.NO_ADVANCE;
+            return TickStepResult.NO_ADVANCE;
         }
         if (roundTick >= durationTicks - 1L) {
-            return AdvanceResult.ROUND_END;
+            return TickStepResult.ROUND_END;
         }
         roundTick++;
-        return AdvanceResult.ADVANCED;
+        return TickStepResult.ADVANCED;
     }
 
     public GamePhase phase() {

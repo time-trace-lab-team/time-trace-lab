@@ -1,6 +1,7 @@
 package org.example.timeloop.replay;
 
 import org.example.timeloop.core.GamePhase;
+import org.example.timeloop.core.TickStepResult;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -33,7 +34,7 @@ class RoundClockTest {
     @Test
     void readyDoesNotAdvance() {
         RoundClock c = toReady(5, 3);
-        assertEquals(AdvanceResult.NO_ADVANCE, c.advance());
+        assertEquals(TickStepResult.NO_ADVANCE, c.advance());
         assertEquals(0, c.roundTick());
     }
 
@@ -43,7 +44,7 @@ class RoundClockTest {
         c.transition(GamePhase.MENU);
         c.transition(GamePhase.LEVEL_SELECT);
         c.transition(GamePhase.TUTORIAL);
-        assertEquals(AdvanceResult.NO_ADVANCE, c.advance());
+        assertEquals(TickStepResult.NO_ADVANCE, c.advance());
         assertEquals(0, c.roundTick());
     }
 
@@ -53,7 +54,7 @@ class RoundClockTest {
         toPlaying(c);
         c.advance(); // roundTick 0 -> 1
         c.transition(GamePhase.PAUSED);
-        assertEquals(AdvanceResult.NO_ADVANCE, c.advance());
+        assertEquals(TickStepResult.NO_ADVANCE, c.advance());
         assertEquals(1, c.roundTick(), "暂停不应推进 roundTick");
     }
 
@@ -65,8 +66,8 @@ class RoundClockTest {
         long safety = 0;
         while (true) {
             ticks.add(c.roundTick());
-            AdvanceResult r = c.advance();
-            if (r == AdvanceResult.ROUND_END) {
+            TickStepResult r = c.advance();
+            if (r == TickStepResult.ROUND_END) {
                 break;
             }
             assertTrue(++safety < 100, "一轮应能按时结束");
@@ -81,7 +82,7 @@ class RoundClockTest {
         RoundClock c = toReady(1, 3);
         toPlaying(c);
         assertEquals(0, c.roundTick());
-        assertEquals(AdvanceResult.ROUND_END, c.advance(), "D=1 时 tick0 即最后一帧");
+        assertEquals(TickStepResult.ROUND_END, c.advance(), "D=1 时 tick0 即最后一帧");
         assertEquals(0, c.roundTick());
     }
 
@@ -89,7 +90,7 @@ class RoundClockTest {
     void resettingThenReadyAdvancesRoundAndResetsTick() {
         RoundClock c = toReady(5, 3);
         toPlaying(c);
-        while (c.advance() != AdvanceResult.ROUND_END) {
+        while (c.advance() != TickStepResult.ROUND_END) {
             // spin to round end
         }
         assertEquals(1, c.currentRound());
@@ -103,7 +104,7 @@ class RoundClockTest {
     void failedOnlyOnMaxRound() {
         RoundClock c = toReady(5, 1);
         toPlaying(c);
-        while (c.advance() != AdvanceResult.ROUND_END) {
+        while (c.advance() != TickStepResult.ROUND_END) {
             // spin
         }
         assertEquals(1, c.currentRound());
@@ -115,7 +116,7 @@ class RoundClockTest {
     void resettingRejectedOnMaxRound() {
         RoundClock c = toReady(5, 1);
         toPlaying(c);
-        while (c.advance() != AdvanceResult.ROUND_END) {
+        while (c.advance() != TickStepResult.ROUND_END) {
             // spin
         }
         assertThrows(IllegalStateException.class, () -> c.transition(GamePhase.RESETTING),
@@ -132,7 +133,7 @@ class RoundClockTest {
         assertEquals(2, c.roundTick());
         c.transition(GamePhase.PLAYING);
         assertEquals(2, c.roundTick(), "恢复后应保留 roundTick");
-        assertEquals(AdvanceResult.ADVANCED, c.advance());
+        assertEquals(TickStepResult.ADVANCED, c.advance());
         assertEquals(3, c.roundTick());
     }
 
@@ -175,7 +176,7 @@ class RoundClockTest {
         toPlaying(c);
         c.advance(); // ->1
         c.transition(GamePhase.RESULT);
-        assertEquals(AdvanceResult.NO_ADVANCE, c.advance());
+        assertEquals(TickStepResult.NO_ADVANCE, c.advance());
         assertEquals(1, c.roundTick());
     }
 
