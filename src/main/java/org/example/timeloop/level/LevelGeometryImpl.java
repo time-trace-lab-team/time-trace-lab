@@ -1,17 +1,9 @@
 package org.example.timeloop.level;
 
-import org.example.timeloop.level.model.LevelData;
-import org.example.timeloop.level.model.PathNode;
-import org.example.timeloop.level.model.TileType;
-import org.example.timeloop.level.model.Vector2D;
+import org.example.timeloop.level.model.*;
 
 import java.util.*;
 
-/**
- * LevelGeometry 的不可变实现。
- * 从 LevelData 构建，所有数据在构造时冻结。
- * 包含地图数据合法性验证（非法孤点、零长度边等配置错误）。
- */
 public class LevelGeometryImpl implements LevelGeometry {
 
     private final double tileSize;
@@ -29,16 +21,13 @@ public class LevelGeometryImpl implements LevelGeometry {
         this.spawnPosition = levelData.getSpawnPos();
         this.pathNodes = Collections.unmodifiableList(new ArrayList<>(levelData.getPathNodes()));
 
-        // 构建节点索引
         this.nodeMap = new HashMap<>();
         for (PathNode node : pathNodes) {
             nodeMap.put(node.getId(), node);
         }
 
-        // 验证地图数据合法性
         validateNodes();
 
-        // 构建合法出口映射
         this.validExitsMap = new HashMap<>();
         this.defaultExitMap = new HashMap<>();
         for (PathNode node : pathNodes) {
@@ -48,69 +37,55 @@ public class LevelGeometryImpl implements LevelGeometry {
             }
         }
 
-        // 构建邻接关系（根据路径节点位置判断）
         this.adjacencyMap = buildAdjacency();
-
-        // 墙体位置（从 LevelData 的 tileGrid 提取）
         this.wallPositions = extractWallPositions(levelData);
 
-        // 关闭的门（初始状态，门是否关闭需要从mechanism查询）
         this.closedDoors = new HashSet<>();
+        for (DoorInfo door : levelData.getDoors()) {
+            if (!door.isInitiallyOpen()) {
+                closedDoors.add(door.getId());
+            }
+        }
     }
 
-    /**
-     * 验证路径节点配置是否合法。
-     * 检查项：
-     * 1. 所有节点必须有 ID
-     * 2. 零长度边（两个节点位置相同）
-     * 3. 非法孤点（节点没有任何相邻节点）
-     *
-     * @throws IllegalArgumentException 如果配置不合法
-     */
     private void validateNodes() {
         if (pathNodes == null || pathNodes.isEmpty()) {
             throw new IllegalArgumentException("路径节点列表不能为空");
         }
 
-        // 1. 检查是否所有节点都有 ID
         for (PathNode node : pathNodes) {
             if (node.getId() == null || node.getId().trim().isEmpty()) {
                 throw new IllegalArgumentException("路径节点缺少 ID: " + node.getWorldPos());
             }
         }
 
-        // 2. 检查零长度边（两个节点位置相同）
         for (int i = 0; i < pathNodes.size(); i++) {
             for (int j = i + 1; j < pathNodes.size(); j++) {
-                PathNode nodeA = pathNodes.get(i);
-                PathNode nodeB = pathNodes.get(j);
-                double dx = nodeA.getWorldPos().x() - nodeB.getWorldPos().x();
-                double dy = nodeA.getWorldPos().y() - nodeB.getWorldPos().y();
+                PathNode a = pathNodes.get(i);
+                PathNode b = pathNodes.get(j);
+                double dx = a.getWorldPos().x() - b.getWorldPos().x();
+                double dy = a.getWorldPos().y() - b.getWorldPos().y();
                 if (dx * dx + dy * dy < 0.001) {
                     throw new IllegalArgumentException(
-                            "零长度边: 节点 " + nodeA.getId() + " 与 " + nodeB.getId() + " 位置相同"
+                            "零长度边: 节点 " + a.getId() + " 与 " + b.getId() + " 位置相同"
                     );
                 }
             }
         }
 
-        // 3. 检查是否存在非法孤点
-        // 先计算每个节点的邻居
-        Map<String, Set<String>> tempAdj = new HashMap<>();
-        for (PathNode node : pathNodes) {
-            Set<String> neighbors = new HashSet<>();
-            for (PathNode.Dir dir : node.getAllowDirs()) {
-                Vector2D neighborPos = getNeighborPosition(node.getWorldPos(), dir);
-                String neighborId = findNodeAt(neighborPos);
-                if (neighborId != null && !neighborId.equals(node.getId())) {
-                    neighbors.add(neighborId);
-                }
-            }
-            tempAdj.put(node.getId(), neighbors);
-        }
-
-        // 如果节点没有邻居（且不是唯一节点），判定为非法孤点
         if (pathNodes.size() > 1) {
+            Map<String, Set<String>> tempAdj = new HashMap<>();
+            for (PathNode node : pathNodes) {
+                Set<String> neighbors = new HashSet<>();
+                for (PathNode.Dir dir : node.getAllowDirs()) {
+                    Vector2D neighborPos = getNeighborPosition(node.getWorldPos(), dir);
+                    String neighborId = findNodeAt(neighborPos);
+                    if (neighborId != null && !neighborId.equals(node.getId())) {
+                        neighbors.add(neighborId);
+                    }
+                }
+                tempAdj.put(node.getId(), neighbors);
+            }
             for (Map.Entry<String, Set<String>> entry : tempAdj.entrySet()) {
                 if (entry.getValue().isEmpty()) {
                     throw new IllegalArgumentException(
@@ -120,7 +95,6 @@ public class LevelGeometryImpl implements LevelGeometry {
             }
         }
 
-        // 4. 额外检查：合法出口方向是否都有对应的邻居节点
         for (PathNode node : pathNodes) {
             for (PathNode.Dir dir : node.getAllowDirs()) {
                 Vector2D neighborPos = getNeighborPosition(node.getWorldPos(), dir);
@@ -134,7 +108,6 @@ public class LevelGeometryImpl implements LevelGeometry {
             }
         }
 
-        // 5. 检查 defaultExit 是否在合法出口中
         for (PathNode node : pathNodes) {
             if (node.getDefaultExit() != null && !node.getAllowDirs().contains(node.getDefaultExit())) {
                 throw new IllegalArgumentException(

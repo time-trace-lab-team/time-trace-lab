@@ -2,16 +2,13 @@ package org.example.timeloop.level.model;
 
 import java.util.List;
 
-/**
- * 完整关卡数据（不可变）。
- * 所有字段在构造时设置，运行时不可修改。
- */
 public final class LevelData {
 
     private final double tileSize;
     private final TileType[][] tileGrid;
     private final List<PathNode> pathNodes;
     private final List<EntitySpawnInfo> entitySpawnList;
+    private final List<DoorInfo> doors;
     private final Vector2D spawnPos;
     private final long durationTicks;
     private final int maxRounds;
@@ -21,6 +18,7 @@ public final class LevelData {
                      TileType[][] tileGrid,
                      List<PathNode> pathNodes,
                      List<EntitySpawnInfo> entitySpawnList,
+                     List<DoorInfo> doors,
                      Vector2D spawnPos,
                      long durationTicks,
                      int maxRounds,
@@ -29,6 +27,7 @@ public final class LevelData {
         this.tileGrid = copyGrid(tileGrid);
         this.pathNodes = List.copyOf(pathNodes);
         this.entitySpawnList = List.copyOf(entitySpawnList);
+        this.doors = List.copyOf(doors);
         this.spawnPos = spawnPos;
         this.durationTicks = durationTicks;
         this.maxRounds = maxRounds;
@@ -45,32 +44,12 @@ public final class LevelData {
     }
 
     public double getTileSize() { return tileSize; }
-
-    public TileType[][] getTileGrid() {
-        return copyGrid(tileGrid);
-    }
-
-    public List<PathNode> getPathNodes() {
-        return pathNodes;
-    }
-
-    public List<EntitySpawnInfo> getEntitySpawnList() {
-        return entitySpawnList;
-    }
-
-    public Vector2D getSpawnPos() {
-        return spawnPos;
-    }
-
-    public long getDurationTicks() {
-        return durationTicks;
-    }
-
-    public int getMaxRounds() {
-        return maxRounds;
-    }
-
-    public int getEchoLifeL() {
-        return echoLifeL;
-    }
+    public TileType[][] getTileGrid() { return copyGrid(tileGrid); }
+    public List<PathNode> getPathNodes() { return pathNodes; }
+    public List<EntitySpawnInfo> getEntitySpawnList() { return entitySpawnList; }
+    public List<DoorInfo> getDoors() { return doors; }
+    public Vector2D getSpawnPos() { return spawnPos; }
+    public long getDurationTicks() { return durationTicks; }
+    public int getMaxRounds() { return maxRounds; }
+    public int getEchoLifeL() { return echoLifeL; }
 }

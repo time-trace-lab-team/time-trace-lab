@@ -1,6 +1,7 @@
 package org.example.timeloop.level;
 
 import org.example.timeloop.level.model.*;
+
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -13,14 +14,15 @@ public final class Level03Footsteps {
         long durationTicks = 1080;
         int maxRounds = 4;
         int echoLifeL = 2;
-        double tileSize = 48.0;  // 改为 48.0
+        double tileSize = 48.0;
 
         Vector2D spawn = new Vector2D(3.5 * tileSize, 13.5 * tileSize);
         List<PathNode> pathNodes = buildPathNodes(tileSize);
         List<EntitySpawnInfo> entities = buildEntities(tileSize);
+        List<DoorInfo> doors = buildDoors(tileSize);
         TileType[][] grid = buildGrid();
 
-        return new LevelData(tileSize, grid, pathNodes, entities, spawn,
+        return new LevelData(tileSize, grid, pathNodes, entities, doors, spawn,
                 durationTicks, maxRounds, echoLifeL);
     }
 
@@ -33,7 +35,6 @@ public final class Level03Footsteps {
         EnumSet<PathNode.Dir> upDownLeft = EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT);
         EnumSet<PathNode.Dir> upDownRight = EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.RIGHT);
 
-        // 所有 PathNode 添加 id
         PathNode start = new PathNode("start", new Vector2D(3.5 * tileSize, 13.5 * tileSize), allDirs);
         start.setDefaultExit(PathNode.Dir.UP);
         nodes.add(start);
@@ -67,9 +68,14 @@ public final class Level03Footsteps {
                 .putProp("autoDock", true));
         entities.add(new EntitySpawnInfo("DockingPlate", new Vector2D(12.5 * tileSize, 8.5 * tileSize))
                 .putProp("autoDock", true));
-        entities.add(new EntitySpawnInfo("Door", new Vector2D(5.5 * tileSize, 5.5 * tileSize)));
         entities.add(new EntitySpawnInfo("ExitTerminal", new Vector2D(5.5 * tileSize, 1.5 * tileSize)));
         return entities;
+    }
+
+    private static List<DoorInfo> buildDoors(double tileSize) {
+        List<DoorInfo> doors = new ArrayList<>();
+        doors.add(new DoorInfo("door_1", new Vector2D(5.5 * tileSize, 5.5 * tileSize), false));
+        return doors;
     }
 
     private static TileType[][] buildGrid() {
