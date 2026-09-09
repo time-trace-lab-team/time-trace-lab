@@ -6,7 +6,7 @@ import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
-import org.example.timeloop.core.FixedStepClock;
+import org.example.timeloop.core.FixedStepLoop;
 import org.example.timeloop.core.GamePhase;
 import org.example.timeloop.render.CanvasAdapter;
 
@@ -24,7 +24,12 @@ public final class TimeTraceLabApplication extends Application {
     private static final double WORLD_WIDTH = WORLD_COLUMNS * TILE_SIZE;
     private static final double WORLD_HEIGHT = WORLD_ROWS * TILE_SIZE;
 
-    private final FixedStepClock fixedStepClock = new FixedStepClock();
+    /**
+     * C1 先接入固定步长循环；开发 2 提供权威 tick 更新实现后，只替换此端口装配。
+     */
+    private final FixedStepLoop loop = new FixedStepLoop(() -> {
+        // 当前启动壳不拥有玩法逻辑。
+    });
     private GamePhase gamePhase = GamePhase.BOOT;
     private AnimationTimer animationTimer;
 
@@ -41,11 +46,11 @@ public final class TimeTraceLabApplication extends Application {
         animationTimer = new AnimationTimer() {
             @Override
             public void handle(long nanoTime) {
-                fixedStepClock.advance(nanoTime, gamePhase);
+                loop.onAnimationFrame(nanoTime, gamePhase);
                 canvasAdapter.renderFrame(
                         WORLD_WIDTH,
                         WORLD_HEIGHT,
-                        fixedStepClock.getInterpolationAlpha());
+                        loop.interpolationAlpha());
             }
         };
 
