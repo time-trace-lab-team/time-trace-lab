@@ -1,5 +1,7 @@
 package org.example.timeloop.replay;
 
+import org.example.timeloop.core.GamePhase;
+
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Map;
@@ -15,14 +17,14 @@ import java.util.Set;
  *
  * <p>阶段约束：</p>
  * <ul>
- *   <li>{@link RoundPhase#TUTORIAL} / {@link RoundPhase#READY} / {@link RoundPhase#PAUSED}：
+ *   <li>{@link GamePhase#TUTORIAL} / {@link GamePhase#READY} / {@link GamePhase#PAUSED}：
  *       不推进 {@code roundTick}（{@link AdvanceResult#NO_ADVANCE}）。</li>
- *   <li>{@link RoundPhase#PLAYING}：{@code roundTick} 严格 {@code 0 .. durationTicks - 1}，
+ *   <li>{@link GamePhase#PLAYING}：{@code roundTick} 严格 {@code 0 .. durationTicks - 1}，
  *       不存在索引 {@code durationTicks} 的帧；到达 {@code D-1} 后再推进返回
  *       {@link AdvanceResult#ROUND_END}，越界一律上报而不会静默跳到下一轮。</li>
- *   <li>{@link RoundPhase#RESETTING}：冻结玩法更新。</li>
- *   <li>{@link RoundPhase#RESULT}：目标达成后立即结束（未满缓冲由调用方丢弃）。</li>
- *   <li>{@link RoundPhase#FAILED}：仅在第 {@code maxRounds} 轮读秒归零仍未通关时进入。</li>
+ *   <li>{@link GamePhase#RESETTING}：冻结玩法更新。</li>
+ *   <li>{@link GamePhase#RESULT}：目标达成后立即结束（未满缓冲由调用方丢弃）。</li>
+ *   <li>{@link GamePhase#FAILED}：仅在第 {@code maxRounds} 轮读秒归零仍未通关时进入。</li>
  * </ul>
  *
  * <p>非法阶段转移会抛出 {@link IllegalStateException}。轮次切换事务中的
@@ -31,14 +33,14 @@ import java.util.Set;
  */
 public final class RoundClock {
 
-    private static final Map<RoundPhase, Set<RoundPhase>> LEGAL = buildLegal();
+    private static final Map<GamePhase, Set<GamePhase>> LEGAL = buildLegal();
 
     /** 每轮固定时长（tick），进入关卡时冻结，本局不可改。 */
     private final int durationTicks;
     /** 本关最大轮数，进入关卡时冻结，本局不可改。 */
     private final int maxRounds;
 
-    private RoundPhase phase;
+    private GamePhase phase;
     private long roundTick;
     private int currentRound;
 
@@ -56,7 +58,7 @@ public final class RoundClock {
         this.durationTicks = durationTicks;
         this.maxRounds = maxRounds;
         // 初始阶段：README 状态机自 BOOT 起；开发 2 时钟以 READY 作为回合初值。
-        this.phase = RoundPhase.BOOT;
+        this.phase = GamePhase.BOOT;
         this.roundTick = 0;
         this.currentRound = 1;
     }
@@ -66,7 +68,7 @@ public final class RoundClock {
      *
      * @param to 目标阶段
      */
-    public void transition(RoundPhase to) {
+    public void transition(GamePhase to) {
         Objects.requireNonNull(to, "to");
         if (!LEGAL.getOrDefault(phase, Set.of()).contains(to)) {
             throw new IllegalStateException("非法阶段转移: " + phase + " -> " + to);
@@ -75,10 +77,10 @@ public final class RoundClock {
         phase = to;
     }
 
-    private void apply(RoundPhase to) {
+    private void apply(GamePhase to) {
         switch (to) {
             case READY -> {
-                if (phase == RoundPhase.RESETTING) {
+                if (phase == GamePhase.RESETTING) {
                     // RESETTING 只用于非最终轮，续轮并推进 currentRound。
                     if (currentRound >= maxRounds) {
                         throw new IllegalStateException("最后一轮读秒归零应进入 FAILED，而非 READY 续轮");
@@ -91,7 +93,7 @@ public final class RoundClock {
                 roundTick = 0;
             }
             case PLAYING -> {
-                if (phase == RoundPhase.READY) {
+                if (phase == GamePhase.READY) {
                     // 新一轮开始：roundTick 从 0 起。
                     roundTick = 0;
                 }
@@ -121,13 +123,13 @@ public final class RoundClock {
     }
 
     /**
-     * 推进一个逻辑刻。仅在 {@link RoundPhase#PLAYING} 真正推进；
+     * 推进一个逻辑刻。仅在 {@link GamePhase#PLAYING} 真正推进；
      * 冻结阶段返回 {@link AdvanceResult#NO_ADVANCE}；
      * 到达本轮最后一帧（{@code D-1}）后再推进返回 {@link AdvanceResult#ROUND_END}，
      * 不会推进到索引 {@code D}，也不会静默跳到下一轮。
      */
     public AdvanceResult advance() {
-        if (!phase.advances()) {
+        if (!phase.advancesLogic()) {
             return AdvanceResult.NO_ADVANCE;
         }
         if (roundTick >= durationTicks - 1L) {
@@ -137,7 +139,7 @@ public final class RoundClock {
         return AdvanceResult.ADVANCED;
     }
 
-    public RoundPhase phase() {
+    public GamePhase phase() {
         return phase;
     }
 
@@ -158,7 +160,7 @@ public final class RoundClock {
     }
 
     public boolean isPlaying() {
-        return phase == RoundPhase.PLAYING;
+        return phase == GamePhase.PLAYING;
     }
 
     /**
@@ -168,20 +170,20 @@ public final class RoundClock {
         return new TickContext(roundTick, durationTicks, currentRound, maxRounds);
     }
 
-    private static Map<RoundPhase, Set<RoundPhase>> buildLegal() {
-        Map<RoundPhase, Set<RoundPhase>> m = new EnumMap<>(RoundPhase.class);
-        m.put(RoundPhase.BOOT, EnumSet.of(RoundPhase.MENU));
-        m.put(RoundPhase.MENU, EnumSet.of(RoundPhase.LEVEL_SELECT));
-        m.put(RoundPhase.LEVEL_SELECT, EnumSet.of(RoundPhase.TUTORIAL, RoundPhase.READY));
-        m.put(RoundPhase.TUTORIAL, EnumSet.of(RoundPhase.READY));
-        m.put(RoundPhase.READY,
-                EnumSet.of(RoundPhase.PLAYING, RoundPhase.PAUSED, RoundPhase.TUTORIAL, RoundPhase.LEVEL_SELECT));
-        m.put(RoundPhase.PLAYING,
-                EnumSet.of(RoundPhase.PAUSED, RoundPhase.RESULT, RoundPhase.RESETTING, RoundPhase.FAILED));
-        m.put(RoundPhase.PAUSED, EnumSet.of(RoundPhase.PLAYING, RoundPhase.READY, RoundPhase.LEVEL_SELECT));
-        m.put(RoundPhase.RESETTING, EnumSet.of(RoundPhase.READY));
-        m.put(RoundPhase.RESULT, EnumSet.of(RoundPhase.MENU, RoundPhase.LEVEL_SELECT));
-        m.put(RoundPhase.FAILED, EnumSet.of(RoundPhase.READY, RoundPhase.LEVEL_SELECT));
+    private static Map<GamePhase, Set<GamePhase>> buildLegal() {
+        Map<GamePhase, Set<GamePhase>> m = new EnumMap<>(GamePhase.class);
+        m.put(GamePhase.BOOT, EnumSet.of(GamePhase.MENU));
+        m.put(GamePhase.MENU, EnumSet.of(GamePhase.LEVEL_SELECT));
+        m.put(GamePhase.LEVEL_SELECT, EnumSet.of(GamePhase.TUTORIAL, GamePhase.READY));
+        m.put(GamePhase.TUTORIAL, EnumSet.of(GamePhase.READY));
+        m.put(GamePhase.READY,
+                EnumSet.of(GamePhase.PLAYING, GamePhase.PAUSED, GamePhase.TUTORIAL, GamePhase.LEVEL_SELECT));
+        m.put(GamePhase.PLAYING,
+                EnumSet.of(GamePhase.PAUSED, GamePhase.RESULT, GamePhase.RESETTING, GamePhase.FAILED));
+        m.put(GamePhase.PAUSED, EnumSet.of(GamePhase.PLAYING, GamePhase.READY, GamePhase.LEVEL_SELECT));
+        m.put(GamePhase.RESETTING, EnumSet.of(GamePhase.READY));
+        m.put(GamePhase.RESULT, EnumSet.of(GamePhase.MENU, GamePhase.LEVEL_SELECT));
+        m.put(GamePhase.FAILED, EnumSet.of(GamePhase.READY, GamePhase.LEVEL_SELECT));
         return m;
     }
 }

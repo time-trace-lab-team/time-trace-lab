@@ -1,5 +1,6 @@
 package org.example.timeloop.replay;
 
+import org.example.timeloop.core.GamePhase;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
@@ -18,15 +19,15 @@ class RoundClockTest {
     /** 走到 READY（BOOT -> MENU -> LEVEL_SELECT -> TUTORIAL -> READY）。 */
     private static RoundClock toReady(int durationTicks, int maxRounds) {
         RoundClock c = new RoundClock(durationTicks, maxRounds);
-        c.transition(RoundPhase.MENU);
-        c.transition(RoundPhase.LEVEL_SELECT);
-        c.transition(RoundPhase.TUTORIAL);
-        c.transition(RoundPhase.READY);
+        c.transition(GamePhase.MENU);
+        c.transition(GamePhase.LEVEL_SELECT);
+        c.transition(GamePhase.TUTORIAL);
+        c.transition(GamePhase.READY);
         return c;
     }
 
     private static void toPlaying(RoundClock c) {
-        c.transition(RoundPhase.PLAYING);
+        c.transition(GamePhase.PLAYING);
     }
 
     @Test
@@ -39,9 +40,9 @@ class RoundClockTest {
     @Test
     void tutorialDoesNotAdvance() {
         RoundClock c = new RoundClock(5, 3);
-        c.transition(RoundPhase.MENU);
-        c.transition(RoundPhase.LEVEL_SELECT);
-        c.transition(RoundPhase.TUTORIAL);
+        c.transition(GamePhase.MENU);
+        c.transition(GamePhase.LEVEL_SELECT);
+        c.transition(GamePhase.TUTORIAL);
         assertEquals(AdvanceResult.NO_ADVANCE, c.advance());
         assertEquals(0, c.roundTick());
     }
@@ -51,7 +52,7 @@ class RoundClockTest {
         RoundClock c = toReady(5, 3);
         toPlaying(c);
         c.advance(); // roundTick 0 -> 1
-        c.transition(RoundPhase.PAUSED);
+        c.transition(GamePhase.PAUSED);
         assertEquals(AdvanceResult.NO_ADVANCE, c.advance());
         assertEquals(1, c.roundTick(), "暂停不应推进 roundTick");
     }
@@ -92,8 +93,8 @@ class RoundClockTest {
             // spin to round end
         }
         assertEquals(1, c.currentRound());
-        c.transition(RoundPhase.RESETTING);
-        c.transition(RoundPhase.READY);
+        c.transition(GamePhase.RESETTING);
+        c.transition(GamePhase.READY);
         assertEquals(2, c.currentRound());
         assertEquals(0, c.roundTick());
     }
@@ -106,8 +107,8 @@ class RoundClockTest {
             // spin
         }
         assertEquals(1, c.currentRound());
-        c.transition(RoundPhase.FAILED);
-        assertEquals(RoundPhase.FAILED, c.phase());
+        c.transition(GamePhase.FAILED);
+        assertEquals(GamePhase.FAILED, c.phase());
     }
 
     @Test
@@ -117,7 +118,7 @@ class RoundClockTest {
         while (c.advance() != AdvanceResult.ROUND_END) {
             // spin
         }
-        assertThrows(IllegalStateException.class, () -> c.transition(RoundPhase.RESETTING),
+        assertThrows(IllegalStateException.class, () -> c.transition(GamePhase.RESETTING),
                 "最后一轮读秒归零应进入 FAILED，而非 RESETTING");
     }
 
@@ -127,9 +128,9 @@ class RoundClockTest {
         toPlaying(c);
         c.advance(); // ->1
         c.advance(); // ->2
-        c.transition(RoundPhase.PAUSED);
+        c.transition(GamePhase.PAUSED);
         assertEquals(2, c.roundTick());
-        c.transition(RoundPhase.PLAYING);
+        c.transition(GamePhase.PLAYING);
         assertEquals(2, c.roundTick(), "恢复后应保留 roundTick");
         assertEquals(AdvanceResult.ADVANCED, c.advance());
         assertEquals(3, c.roundTick());
@@ -159,12 +160,12 @@ class RoundClockTest {
     @Test
     void illegalTransitionFails() {
         RoundClock c = toReady(5, 3);
-        assertThrows(IllegalStateException.class, () -> c.transition(RoundPhase.RESULT),
+        assertThrows(IllegalStateException.class, () -> c.transition(GamePhase.RESULT),
                 "READY -> RESULT 非法");
-        assertThrows(IllegalStateException.class, () -> c.transition(RoundPhase.RESETTING),
+        assertThrows(IllegalStateException.class, () -> c.transition(GamePhase.RESETTING),
                 "READY -> RESETTING 非法");
         toPlaying(c);
-        assertThrows(IllegalStateException.class, () -> c.transition(RoundPhase.READY),
+        assertThrows(IllegalStateException.class, () -> c.transition(GamePhase.READY),
                 "PLAYING -> READY 非法（应经 PAUSED/RESULT/RESETTING/FAILED）");
     }
 
@@ -173,8 +174,18 @@ class RoundClockTest {
         RoundClock c = toReady(5, 3);
         toPlaying(c);
         c.advance(); // ->1
-        c.transition(RoundPhase.RESULT);
+        c.transition(GamePhase.RESULT);
         assertEquals(AdvanceResult.NO_ADVANCE, c.advance());
         assertEquals(1, c.roundTick());
+    }
+
+    @Test
+    void onlyPlayingPhase_advancesLogic() {
+        // 遍历而非硬编码：项目经理以后往 GamePhase 里新增阶段时会被自动检查，
+        // 强制其显式决定是否推进逻辑刻（对齐开发 1 的 D-03 做法）。
+        for (GamePhase phase : GamePhase.values()) {
+            assertEquals(phase == GamePhase.PLAYING, phase.advancesLogic(),
+                    phase + " 的 advancesLogic() 取值不符合 C1 §1：仅 PLAYING 推进逻辑刻");
+        }
     }
 }
