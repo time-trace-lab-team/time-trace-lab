@@ -69,4 +69,20 @@ public class Door implements GameObserver {
     public String toString() {
         return String.format("Door{id='%s', state=%s, required=%s}", id, state, requiredPlateIds);
     }
+
+    // ========== Snapshot 接口 ==========
+
+    public interface Snapshot {
+        Door.State getState();
+    }
+
+    public Snapshot createSnapshot() {
+        return () -> state;
+    }
+
+    public void restore(Snapshot snapshot) {
+        this.state = snapshot.getState();
+    }
+
+
 }
