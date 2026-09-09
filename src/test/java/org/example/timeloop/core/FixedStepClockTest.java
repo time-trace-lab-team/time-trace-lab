@@ -150,6 +150,25 @@ class FixedStepClockTest {
     }
 
     @Test
+    void onlyPlayingPhase_advancesLogicTicks() {
+        // 遍历而非硬编码：项目经理将来往 GamePhase 里加 TUTORIAL / RESETTING /
+        // RESULT / FAILED 时，本用例会自动覆盖新值，强制其显式决定是否推进。
+        for (GamePhase phase : GamePhase.values()) {
+            FixedStepClock clock = new FixedStepClock();
+            clock.advance(0, phase);
+
+            int steps = clock.advance(NS_PER_60FPS * 10, phase);
+
+            if (phase == GamePhase.PLAYING) {
+                assertTrue(steps > 0, "PLAYING 必须推进逻辑刻");
+            } else {
+                assertEquals(0, steps,
+                        phase + " 阶段不得推进逻辑刻（开发 2 指南 3.1）");
+            }
+        }
+    }
+
+    @Test
     void reset_clearsAllState() {
         FixedStepClock clock = new FixedStepClock();
         clock.advance(0, GamePhase.BOOT);

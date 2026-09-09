@@ -18,12 +18,14 @@ public final class FixedStepClock {
     private long totalTicks = 0;
 
     public int advance(long nanoTime, GamePhase phase) {
-        if (phase == GamePhase.BOOT) {
-            lastNanoTime = nanoTime;
-            return 0;
-        }
-
-        if (phase == GamePhase.READY || phase == GamePhase.PAUSED) {
+        // D-03：只有 PLAYING 推进逻辑刻，其余阶段一律冻结。
+        // 这里刻意不逐个列举阶段名：一旦用白名单写死 BOOT/READY/PAUSED，
+        // 项目经理后续扩展 GamePhase（TUTORIAL / RESETTING / RESULT / FAILED）
+        // 时，新阶段会静默落入「推进」分支，违反开发 2 指南 3.1
+        // 「TUTORIAL、READY、PAUSED 不推进 roundTick、不写帧」的约束，
+        // 且不会有任何编译或测试错误提示。改为黑名单后，未来新增阶段
+        // 默认冻结，属于安全默认。
+        if (phase != GamePhase.PLAYING) {
             lastNanoTime = nanoTime;
             return 0;
         }
