@@ -42,7 +42,8 @@ public final class C3DockController {
     /** E 交互缓冲长度（README §三 要求 6–10 tick）。 */
     public static final int INTERACT_BUFFER_TICKS = 8;
 
-    public static final String REASON_NEW_DIRECTION = "NEW_DIRECTION";
+    /** DOCK_LEFT 的唯一正常原因（= {@link DockEventReason#NEW_DIRECTION}）。 */
+    public static final String REASON_NEW_DIRECTION = DockEventReason.NEW_DIRECTION.name();
 
     private final AutoDockReadPort readPort;
     private final AutoDockOccupancyPort occupancyPort;
@@ -159,13 +160,13 @@ public final class C3DockController {
      * 释放本 actor 在所有 dock 上的占用（残影淘汰 / 整局重开 / 退出关卡）。
      * 仅对确实被本 actor 占用的 dock 产生 {@code OCCUPANCY_RELEASED}。
      */
-    public List<TimelineEvent> releaseOccupancy(String reason, long tick) {
+    public List<TimelineEvent> releaseOccupancy(DockEventReason reason, long tick) {
         Objects.requireNonNull(reason, "reason");
         List<TimelineEvent> events = new ArrayList<>();
         for (AutoDockView view : readPort.snapshot()) {
             if (isOwnedByThisActor(view)) {
                 events.add(new TimelineEvent(tick, actorId, sourceRound, view.mechanismId(),
-                        TimelineEvent.EventType.OCCUPANCY_RELEASED, null, reason));
+                        TimelineEvent.EventType.OCCUPANCY_RELEASED, null, reason.name()));
             }
         }
         occupancyPort.releaseActor(actorId, sourceRound, tick);
@@ -180,7 +181,7 @@ public final class C3DockController {
         for (AutoDockView view : readPort.snapshot()) {
             if (isOwnedByThisActor(view)) {
                 events.add(new TimelineEvent(tick, actorId, sourceRound, view.mechanismId(),
-                        TimelineEvent.EventType.OCCUPANCY_RELEASED, null, reason.name()));
+                        TimelineEvent.EventType.OCCUPANCY_RELEASED, null, toEventReason(reason).name()));
             }
         }
         occupancyPort.reset(reason, tick);
@@ -226,5 +227,14 @@ public final class C3DockController {
     /** {@code core.Direction} 与 {@code level.model.PathNode.Dir} 同名集合，按名称映射。 */
     private static PathNode.Dir toDir(Direction direction) {
         return PathNode.Dir.valueOf(direction.name());
+    }
+
+    /** 开发三清理原因 → 冻结事件原因（同名映射）。 */
+    private static DockEventReason toEventReason(AutoDockResetReason reason) {
+        return switch (reason) {
+            case ROUND_END -> DockEventReason.ROUND_END;
+            case FULL_RESTART -> DockEventReason.FULL_RESTART;
+            case SCENE_EXIT -> DockEventReason.SCENE_EXIT;
+        };
     }
 }
