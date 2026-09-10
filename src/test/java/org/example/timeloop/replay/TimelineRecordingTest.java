@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * R2 自动测试：定长录制缓冲的索引、满长、封装与丢弃边界。
+ * R2.6 新增：离散事件收集、稳定排序与封装时排序。
  */
 class TimelineRecordingTest {
 
@@ -27,6 +28,13 @@ class TimelineRecordingTest {
         }
         return r;
     }
+
+    private static TimelineEvent event(long tick, String actor, String mechanism,
+                                       TimelineEvent.EventType type) {
+        return new TimelineEvent(tick, actor, 1, mechanism, type, null, null);
+    }
+
+    // ========== R2 帧收集测试 ==========
 
     @Test
     void emptyBuffer_isIncompleteAndUnsealed() {
@@ -108,7 +116,6 @@ class TimelineRecordingTest {
     @Test
     void dockedSegment_stillWritesFramePerTick() {
         TimelineRecording r = new TimelineRecording(4, 1);
-        // 驻留期间位置不变，但仍必须逐刻写帧，残影才能按记录复现停驻长度。
         for (int i = 0; i < 4; i++) {
             r.record(new PlayerFrame(i, 100.0, 200.0, Direction.UP, false,
                     MovementState.DOCKED, ActorPhase.AVAILABLE, 0, AnimationState.DOCKED));
@@ -148,5 +155,112 @@ class TimelineRecordingTest {
         TimelineRecording r = filled(3);
         assertThrows(IndexOutOfBoundsException.class, () -> r.frameAt(3));
         assertThrows(IndexOutOfBoundsException.class, () -> r.frameAt(-1));
+    }
+
+    // ========== R2.6 事件收集测试 ==========
+
+    @Test
+    void recordEvent_singleEvent_collected() {
+        TimelineRecording r = new TimelineRecording(3, 1);
+        TimelineEvent e = event(0, "player", "plate_left",
+                TimelineEvent.EventType.DOCK_ENTERED);
+        r.recordEvent(e);
+        assertEquals(1, r.events().size());
+        assertEquals(e, r.events().get(0));
+    }
+
+    @Test
+    void recordEvent_nullEvent_throws() {
+        TimelineRecording r = new TimelineRecording(1, 1);
+        assertThrows(NullPointerException.class, () -> r.recordEvent(null));
+    }
+
+    @Test
+    void recordEvent_afterSeal_rejected() {
+        TimelineRecording r = filled(1);
+        r.seal();
+        TimelineEvent e = event(0, "player", "m1", TimelineEvent.EventType.DOCK_ENTERED);
+        assertThrows(IllegalStateException.class, () -> r.recordEvent(e),
+                "封装后必须拒绝后续事件");
+    }
+
+    @Test
+    void seal_sortsEventsByStableOrder() {
+        TimelineRecording r = new TimelineRecording(3, 1);
+        // 乱序收集：tick 2 的 DOCK_LEFT、tick 1 的 DOCK_ENTERED、tick 2 的 DOCK_ENTERED
+        r.recordEvent(event(2, "a", "m1", TimelineEvent.EventType.DOCK_LEFT));
+        r.recordEvent(event(1, "a", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(2, "a", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        // 写满帧后封装
+        r.record(frame(0));
+        r.record(frame(1));
+        r.record(frame(2));
+        r.seal();
+
+        List<TimelineEvent> sorted = r.events();
+        assertEquals(3, sorted.size());
+        // 期望顺序：tick 1 DOCK_ENTERED → tick 2 DOCK_ENTERED → tick 2 DOCK_LEFT
+        assertEquals(1L, sorted.get(0).tick());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, sorted.get(0).eventType());
+
+        assertEquals(2L, sorted.get(1).tick());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, sorted.get(1).eventType());
+
+        assertEquals(2L, sorted.get(2).tick());
+        assertEquals(TimelineEvent.EventType.DOCK_LEFT, sorted.get(2).eventType());
+    }
+
+    @Test
+    void events_returnsUnmodifiableList() {
+        TimelineRecording r = new TimelineRecording(1, 1);
+        r.recordEvent(event(0, "a", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        assertThrows(UnsupportedOperationException.class, () ->
+                r.events().add(event(0, "b", "m2", TimelineEvent.EventType.DOCK_ENTERED)));
+    }
+
+    @Test
+    void eventsAt_returnsOnlyMatchingTick_inStableOrder() {
+        TimelineRecording r = new TimelineRecording(3, 1);
+        r.recordEvent(event(0, "a", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(1, "a", "m1", TimelineEvent.EventType.DOCK_LEFT));
+        r.recordEvent(event(0, "b", "m2", TimelineEvent.EventType.DOCK_ENTERED));
+
+        List<TimelineEvent> at0 = r.eventsAt(0L);
+        assertEquals(2, at0.size());
+        assertEquals("m1", at0.get(0).mechanismId());
+        assertEquals("m2", at0.get(1).mechanismId());
+
+        List<TimelineEvent> at1 = r.eventsAt(1L);
+        assertEquals(1, at1.size());
+        assertEquals(TimelineEvent.EventType.DOCK_LEFT, at1.get(0).eventType());
+    }
+
+    @Test
+    void eventsAt_emptyWhenNoMatch() {
+        TimelineRecording r = new TimelineRecording(3, 1);
+        r.recordEvent(event(0, "a", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        assertTrue(r.eventsAt(99L).isEmpty());
+    }
+
+    @Test
+    void eventsAt_returnsUnmodifiableList() {
+        TimelineRecording r = new TimelineRecording(3, 1);
+        r.recordEvent(event(0, "a", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        assertThrows(UnsupportedOperationException.class, () ->
+                r.eventsAt(0L).add(event(0, "b", "m2", TimelineEvent.EventType.DOCK_ENTERED)));
+    }
+
+    @Test
+    void eventsAt_beforeSeal_returnsSortedResult() {
+        TimelineRecording r = new TimelineRecording(3, 1);
+        // 未封装前，收集顺序乱序
+        r.recordEvent(event(1, "b", "m2", TimelineEvent.EventType.DOCK_LEFT));
+        r.recordEvent(event(1, "a", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+
+        // eventsAt 在未封装时也应返回稳定顺序
+        List<TimelineEvent> at1 = r.eventsAt(1L);
+        assertEquals(2, at1.size());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, at1.get(0).eventType());
+        assertEquals(TimelineEvent.EventType.DOCK_LEFT, at1.get(1).eventType());
     }
 }

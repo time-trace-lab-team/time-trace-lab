@@ -13,18 +13,20 @@ import java.util.Objects;
  * 先完整处理并记录 tick {@code 0}，处理并记录完 {@code D-1} 后由上层发起轮次事务，
  * 因此不存在 tick {@code D}（C1 决策记录 §3）。</p>
  *
- * <p>生命周期为单向：{@code record} 逐刻写入 → 满 {@code D} 帧后 {@link #seal()}
- * 一次封装 → 之后拒绝任何写入。封装前不允许读取为"有效记录"，
+ * <p>生命周期为单向：{@code record}/{@code recordEvent} 逐刻收集 → 满 {@code D} 帧后
+ * {@link #seal()} 一次封装（同时按 {@link TimelineEvent#STABLE_ORDER} 排序事件）→
+ * 之后拒绝任何写入。封装前不允许读取为"有效记录"，
  * 通关、退出、重开产生的<b>未满缓冲必须由调用方直接丢弃</b>，不得封装。</p>
  *
- * <p>本类只负责帧的定长收集与封装，不实现离散事件排序（需先冻结事件类型）、
- * 残影回放（R3）、寿命（R4）或快照（R5）。</p>
+ * <p>本类只负责帧的定长收集、事件收集与封装，不实现残影回放（R3）、
+ * 寿命（R4）或快照（R5）。</p>
  */
 public final class TimelineRecording {
 
     private final int durationTicks;
     private final int sourceRound;
     private final PlayerFrame[] frames;
+    private final List<TimelineEvent> events;
 
     private int written;
     private boolean sealed;
@@ -45,6 +47,7 @@ public final class TimelineRecording {
         this.durationTicks = durationTicks;
         this.sourceRound = sourceRound;
         this.frames = new PlayerFrame[durationTicks];
+        this.events = new ArrayList<>();
         this.written = 0;
         this.sealed = false;
     }
@@ -103,7 +106,25 @@ public final class TimelineRecording {
     }
 
     /**
+     * 收集一条离散事件。
+     * 事件可以在同刻的帧写入之前、之后、或任意时刻收集；
+     * 不在收集时排序，只在 {@link #seal()} 时统一按稳定顺序排序一次。
+     *
+     * @param event 待收集的事件
+     * @throws IllegalStateException 已封装后继续收集
+     */
+    public void recordEvent(TimelineEvent event) {
+        Objects.requireNonNull(event, "event");
+        if (sealed) {
+            throw new IllegalStateException(
+                    "记录已封装，拒绝后续事件：sourceRound=" + sourceRound);
+        }
+        events.add(event);
+    }
+
+    /**
      * 封装本条记录。仅当恰好写满 {@code durationTicks} 帧时允许，且只能成功一次。
+     * 封装时按 {@link TimelineEvent#STABLE_ORDER} 排序事件列表。
      *
      * @throws IllegalStateException 未写满，或已经封装过
      */
@@ -117,6 +138,7 @@ public final class TimelineRecording {
                     "只有满长记录才能封装，当前 " + written + "/" + durationTicks
                             + " 帧（sourceRound=" + sourceRound + "）；未满缓冲应直接丢弃");
         }
+        events.sort(TimelineEvent.STABLE_ORDER);
         sealed = true;
     }
 
@@ -143,5 +165,34 @@ public final class TimelineRecording {
         List<PlayerFrame> snapshot = new ArrayList<>(written);
         Collections.addAll(snapshot, java.util.Arrays.copyOf(frames, written));
         return Collections.unmodifiableList(snapshot);
+    }
+
+    /**
+     * 已收集的事件（封装后按 {@link TimelineEvent#STABLE_ORDER} 排序）。
+     * 未封装前返回当前已收集但未排序的事件视图；封装后返回排序后的事件。
+     * 返回的列表不可修改。
+     *
+     * @return 不可修改的事件列表
+     */
+    public List<TimelineEvent> events() {
+        return Collections.unmodifiableList(events);
+    }
+
+    /**
+     * 返回指定 tick 的所有事件（按稳定顺序）。
+     * 未封装前扫描未排序的事件列表，结果仍按稳定顺序返回，避免调用方看到不稳定顺序。
+     *
+     * @param tick 逻辑刻
+     * @return 不可修改的事件列表（该 tick 的所有事件）
+     */
+    public List<TimelineEvent> eventsAt(long tick) {
+        List<TimelineEvent> result = new ArrayList<>();
+        for (TimelineEvent e : events) {
+            if (e.tick() == tick) {
+                result.add(e);
+            }
+        }
+        result.sort(TimelineEvent.STABLE_ORDER);
+        return Collections.unmodifiableList(result);
     }
 }
