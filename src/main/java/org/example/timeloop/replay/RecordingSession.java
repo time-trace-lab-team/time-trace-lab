@@ -147,4 +147,27 @@ public final class RecordingSession {
         clock.transition(GamePhase.READY);
         beginRound();
     }
+
+    /**
+     * PLAYING 中每发生一次状态边沿，记录一条离散事件。
+     *
+     * <p>事件只在边沿写入：进入 autoDock、离开 autoDock、机关状态变化等。
+     * 持续 DOCKED 不重复发进入事件。事件按 {@link TimelineEvent#STABLE_ORDER}
+     * 在封装时排序（{@link TimelineRecording#seal()}）。</p>
+     *
+     * @param event 本刻发生的离散事件
+     * @throws IllegalStateException 非 PLAYING 阶段或无当前缓冲
+     */
+    public void recordEvent(TimelineEvent event) {
+        Objects.requireNonNull(event, "event");
+        if (!clock.isPlaying()) {
+            throw new IllegalStateException(
+                    "只有 PLAYING 阶段才录制事件：当前阶段 " + clock.phase()
+                            + "（TUTORIAL/READY/PAUSED 等不写事件）");
+        }
+        if (currentBuffer == null) {
+            throw new IllegalStateException("尚未 beginRound()，无当前缓冲");
+        }
+        currentBuffer.recordEvent(event);
+    }
 }

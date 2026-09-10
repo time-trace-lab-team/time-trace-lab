@@ -185,4 +185,70 @@ class RecordingSessionTest {
         assertEquals(2, active.get(0).sourceRound(), "第 4 轮为 E2+E3");
         assertEquals(3, active.get(1).sourceRound());
     }
+    // ========== R3 新增：recordEvent 转发 =========
+
+    @Test
+    void recordEvent_beforePlaying_rejected() {
+        // 未进入 PLAYING 的时钟：READY 阶段
+        RoundClock clock = new RoundClock(D, 3);
+        RecordingSession s = new RecordingSession(clock, new EchoQueue(2));
+        clock.transition(GamePhase.MENU);
+        clock.transition(GamePhase.LEVEL_SELECT);
+        clock.transition(GamePhase.READY);
+        s.beginRound();
+        TimelineEvent e = event(0, "player", "L01_plate_left",
+                TimelineEvent.EventType.DOCK_ENTERED);
+        assertThrows(IllegalStateException.class, () -> s.recordEvent(e),
+                "READY 阶段不写事件");
+    }
+
+    @Test
+    void recordEvent_afterPlaying_recordsToBuffer() {
+        RoundClock clock = playingClock(D, 3);
+        RecordingSession s = new RecordingSession(clock, new EchoQueue(2));
+        s.beginRound();
+        TimelineEvent e = event(0, "player", "L01_plate_left",
+                TimelineEvent.EventType.DOCK_ENTERED);
+        s.recordEvent(e);
+        assertTrue(s.currentBuffer().isPresent());
+        assertEquals(1, s.currentBuffer().get().events().size());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED,
+                s.currentBuffer().get().events().get(0).eventType());
+    }
+
+    @Test
+    void recordEvent_nullEvent_throws() {
+        RoundClock clock = playingClock(D, 3);
+        RecordingSession s = new RecordingSession(clock, new EchoQueue(2));
+        s.beginRound();
+        assertThrows(NullPointerException.class, () -> s.recordEvent(null));
+    }
+
+    @Test
+    void recordEvent_fullRound_eventsSealedAndSorted() {
+        RoundClock clock = playingClock(D, 3);
+        RecordingSession s = new RecordingSession(clock, new EchoQueue(2));
+        s.beginRound();
+        // 乱序收集两条同 tick 事件
+        s.recordEvent(event(0, "player", "L01_plate_right",
+                TimelineEvent.EventType.DOCK_ENTERED));
+        s.recordEvent(event(0, "player", "L01_plate_left",
+                TimelineEvent.EventType.DOCK_ENTERED));
+        recordFullRound(s);
+        s.completeNormalRound(() -> {});
+
+        // 封装后事件按 STABLE_ORDER 排序：plate_left 在 plate_right 前
+        var active = s.echoQueue().activeEchoes(2);
+        assertEquals(1, active.size());
+        var events = active.get(0).allEvents();
+        assertEquals(2, events.size());
+        assertEquals("L01_plate_left", events.get(0).mechanismId());
+        assertEquals("L01_plate_right", events.get(1).mechanismId());
+    }
+
+    private static TimelineEvent event(long tick, String actor, String mechanism,
+                                       TimelineEvent.EventType type) {
+        return new TimelineEvent(tick, actor, 1, mechanism, type, null, null);
+    }
 }
+
