@@ -2,6 +2,9 @@ package org.example.timeloop.core;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -87,15 +90,87 @@ class FixedStepLoopTest {
 
     @Test
     void nullUpdatePortIsRejected() {
-        assertThrows(NullPointerException.class, () -> new FixedStepLoop(null));
+        assertThrows(NullPointerException.class,
+                () -> new FixedStepLoop((TickUpdatePort) null));
+    }
+
+    @Test
+    void nullStepResultIsRejected() {
+        TickUpdatePort port = () -> null;
+        FixedStepLoop loop = new FixedStepLoop(port);
+
+        loop.onAnimationFrame(0L, GamePhase.BOOT);
+
+        assertThrows(NullPointerException.class,
+                () -> loop.onAnimationFrame(NS_PER_60FPS, GamePhase.PLAYING));
+    }
+
+    @Test
+    void roundEndStopsCatchUpAndDropsRemainingBudget() {
+        SequencedUpdatePort port = new SequencedUpdatePort(
+                TickStepResult.ADVANCED,
+                TickStepResult.ROUND_END,
+                TickStepResult.ADVANCED);
+        FixedStepLoop loop = new FixedStepLoop(port);
+
+        loop.onAnimationFrame(0L, GamePhase.BOOT);
+        loop.onAnimationFrame(50_000_000L, GamePhase.PLAYING);
+        loop.onAnimationFrame(50_000_000L + NS_PER_60FPS, GamePhase.PLAYING);
+
+        assertEquals(List.of(
+                TickStepResult.ADVANCED,
+                TickStepResult.ROUND_END,
+                TickStepResult.ADVANCED), port.results);
+    }
+
+    @Test
+    void noAdvanceAlsoStopsCatchUpWithoutConsumingNextFrameBudget() {
+        SequencedUpdatePort port = new SequencedUpdatePort(
+                TickStepResult.NO_ADVANCE,
+                TickStepResult.ADVANCED);
+        FixedStepLoop loop = new FixedStepLoop(port);
+
+        loop.onAnimationFrame(0L, GamePhase.BOOT);
+        loop.onAnimationFrame(50_000_000L, GamePhase.PLAYING);
+        loop.onAnimationFrame(50_000_000L + NS_PER_60FPS, GamePhase.PLAYING);
+
+        assertEquals(List.of(TickStepResult.NO_ADVANCE, TickStepResult.ADVANCED), port.results);
+    }
+
+    @Test
+    void unboundedFactoryKeepsBootstrapPortSimple() {
+        int[] calls = {0};
+        FixedStepLoop loop = FixedStepLoop.forUnboundedUpdates(() -> calls[0]++);
+
+        loop.onAnimationFrame(0L, GamePhase.BOOT);
+        loop.onAnimationFrame(50_000_000L, GamePhase.PLAYING);
+
+        assertEquals(3, calls[0]);
     }
 
     private static final class CountingUpdatePort implements TickUpdatePort {
         private int calls;
 
         @Override
-        public void stepOnce() {
+        public TickStepResult stepOnce() {
             calls++;
+            return TickStepResult.ADVANCED;
+        }
+    }
+
+    private static final class SequencedUpdatePort implements TickUpdatePort {
+        private final List<TickStepResult> outcomes;
+        private final List<TickStepResult> results = new ArrayList<>();
+
+        private SequencedUpdatePort(TickStepResult... outcomes) {
+            this.outcomes = List.of(outcomes);
+        }
+
+        @Override
+        public TickStepResult stepOnce() {
+            TickStepResult outcome = outcomes.get(results.size());
+            results.add(outcome);
+            return outcome;
         }
     }
 }

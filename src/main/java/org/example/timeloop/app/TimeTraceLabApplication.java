@@ -8,6 +8,7 @@ import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 import org.example.timeloop.core.FixedStepLoop;
 import org.example.timeloop.core.GamePhase;
+import org.example.timeloop.core.TickStepResult;
 import org.example.timeloop.level.Level03Footsteps;
 import org.example.timeloop.level.model.LevelData;
 import org.example.timeloop.mechanism.event.EventDispatcher;
@@ -24,14 +25,13 @@ public final class TimeTraceLabApplication extends Application {
     private static final double WORLD_WIDTH = WORLD_COLUMNS * TILE_SIZE;
     private static final double WORLD_HEIGHT = WORLD_ROWS * TILE_SIZE;
 
-    private final FixedStepLoop loop = new FixedStepLoop(() -> {});
+    private final FixedStepLoop loop = new FixedStepLoop(this::runSimulationStep);
     private GamePhase gamePhase = GamePhase.BOOT;
     private AnimationTimer animationTimer;
 
     private EchoLifetimeManager lifetimeManager;
     private LevelData levelData;
     private long roundTick = 0;
-    private int currentRound = 0;
     private int maxRounds = 4;
     private long durationTicks = 1080;
     private boolean simulationComplete = false;
@@ -65,11 +65,6 @@ public final class TimeTraceLabApplication extends Application {
             @Override
             public void handle(long nanoTime) {
                 loop.onAnimationFrame(nanoTime, gamePhase);
-
-                if (!simulationComplete) {
-                    runSimulationStep();
-                }
-
                 canvasAdapter.renderFrame(WORLD_WIDTH, WORLD_HEIGHT, loop.interpolationAlpha());
             }
         };
@@ -82,38 +77,38 @@ public final class TimeTraceLabApplication extends Application {
         animationTimer.start();
     }
 
-    private void runSimulationStep() {
-        if (isFirstFrame) {
-            currentRound = 1;
-            lifetimeManager.startRound();
-            isFirstFrame = false;
-            return;
+    private TickStepResult runSimulationStep() {
+        if (simulationComplete) {
+            return TickStepResult.NO_ADVANCE;
         }
 
-        roundTick++;
-        lifetimeManager.updateRoundTick(roundTick);
+        if (isFirstFrame) {
+            lifetimeManager.startRound();
+            isFirstFrame = false;
+        } else {
+            roundTick++;
+            lifetimeManager.updateRoundTick(roundTick);
+        }
 
-        if (roundTick >= durationTicks) {
-            lifetimeManager.endRound(roundTick);
-
-            if (currentRound < maxRounds) {
-                currentRound++;
+        if (roundTick == durationTicks - 1) {
+            if (lifetimeManager.getCurrentRound() < maxRounds) {
+                lifetimeManager.endRound(roundTick);
                 lifetimeManager.startRound();
+                roundTick = 0;
             } else {
                 System.out.println("\n=== 所有轮次结束 ===");
                 simulationComplete = true;
                 printFinalState();
                 gamePhase = GamePhase.PAUSED;
                 animationTimer.stop();
-                return;
             }
-
-            roundTick = 0;
+            return TickStepResult.ROUND_END;
         }
 
         if (roundTick % 60 == 0 && roundTick > 0) {
             printCurrentState();
         }
+        return TickStepResult.ADVANCED;
     }
 
     private void printCurrentState() {
@@ -122,7 +117,8 @@ public final class TimeTraceLabApplication extends Application {
             return;
         }
 
-        System.out.println("\n--- 当前状态 (轮 " + currentRound + ", tick " + roundTick + ") ---");
+        System.out.println("\n--- 当前状态 (轮 " + lifetimeManager.getCurrentRound()
+                + ", tick " + roundTick + ") ---");
         for (EchoLifetime echo : activeEchoes) {
             String status = LifetimeUI.getEchoStatusText(echo);
             String pathType = LifetimeUI.shouldUseDashedPath(echo) ? "虚线" : "实线";
@@ -133,7 +129,7 @@ public final class TimeTraceLabApplication extends Application {
 
     private void printFinalState() {
         System.out.println("\n=== 最终状态 ===");
-        for (int i = 1; i <= maxRounds; i++) {
+        for (int i = 1; i < maxRounds; i++) {
             EchoLifetime echo = lifetimeManager.getEcho(i);
             if (echo == null) {
                 System.out.println("E" + i + " 从未生成");

@@ -87,4 +87,36 @@ class EchoLifetimeManagerTest {
         assertEquals(0.25, e1.getLifeProgress(), 0.01);
         assertEquals(0.74, e1.getBodyAlpha(), 0.01);
     }
+
+    @Test
+    void endRoundRetiresAnExpiredEchoBeforeTheNextRound() {
+        manager.advanceRound(0);
+        manager.endRound(59); // 生成 E1
+        manager.advanceRound(0);
+        manager.endRound(59); // 生成 E2
+        manager.advanceRound(0); // 第 3 轮：E1 最后有效轮
+
+        manager.endRound(59); // E1 消散，生成 E3
+
+        assertNull(manager.getEcho(1));
+        assertNotNull(manager.getEcho(2));
+        assertNotNull(manager.getEcho(3));
+    }
+
+    @Test
+    void rejectsTheNonexistentDurationTick() {
+        manager.advanceRound(0);
+        manager.addEcho(1);
+
+        assertThrows(IllegalArgumentException.class, () -> manager.updateRoundTick(60));
+    }
+
+    @Test
+    void finalRoundCannotCreateAnUnusableEcho() {
+        EchoLifetimeManager finalRoundManager = new EchoLifetimeManager();
+        finalRoundManager.initialize(60, 1, 1);
+        finalRoundManager.startRound();
+
+        assertThrows(IllegalStateException.class, () -> finalRoundManager.endRound(59));
+    }
 }

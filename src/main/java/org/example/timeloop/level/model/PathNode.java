@@ -2,31 +2,32 @@ package org.example.timeloop.level.model;
 
 import java.util.EnumSet;
 
-/**
- * 路径路口节点：恒速巡行系统使用，存储路口位置、允许通行方向、defaultExit默认出口
- * 对应文档：普通廊道到达路口中心执行转向逻辑
- */
 public class PathNode {
-    // 节点世界坐标（tileSize倍数）
-    private final Vector2D worldPos;
-    // 允许通行方向集合
-    private final EnumSet<Dir> allowDirs;
-    // 本路口默认出口方向 defaultExit，多条侧路时自动走该方向
-    private Dir defaultExit;
 
-    /**
-     * 方向枚举，对应W/A/S/D
-     */
     public enum Dir {
         UP, DOWN, LEFT, RIGHT
     }
 
-    public PathNode(Vector2D worldPos, EnumSet<Dir> allowDirs) {
+    private final String id;
+    private final Vector2D worldPos;
+    private final EnumSet<Dir> allowDirs;
+    private Dir defaultExit;
+
+    public PathNode(String id, Vector2D worldPos, EnumSet<Dir> allowDirs) {
+        this.id = id;
         this.worldPos = worldPos;
         this.allowDirs = allowDirs;
     }
 
-    // ---------------- getter setter ----------------
+    // 兼容旧构造器（不推荐使用，建议使用带 id 的版本）
+    public PathNode(Vector2D worldPos, EnumSet<Dir> allowDirs) {
+        this(null, worldPos, allowDirs);
+    }
+
+    public String getId() {
+        return id;
+    }
+
     public Vector2D getWorldPos() {
         return worldPos;
     }
