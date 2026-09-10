@@ -5,6 +5,7 @@ import org.example.timeloop.level.model.*;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
 
 public class Level01Footsteps {
 
@@ -20,7 +21,7 @@ public class Level01Footsteps {
         List<EntitySpawnInfo> entityList = buildEntities();
         List<DoorInfo> doors = buildDoors();
 
-        return new LevelData(
+        LevelData levelData = new LevelData(
                 TILE_SIZE,
                 grid,
                 nodeList,
@@ -31,6 +32,8 @@ public class Level01Footsteps {
                 MAX_ROUNDS,
                 ECHO_LIFE_L
         );
+        LevelDataValidator.validateFirstLevel(levelData);
+        return levelData;
     }
 
     private static TileType[][] createTileGrid() {
@@ -57,25 +60,32 @@ public class Level01Footsteps {
         List<PathNode> nodes = new ArrayList<>();
 
         PathNode forkNode = new PathNode(
-                "fork",
+                "L01_node_fork",
                 new Vector2D(5 * TILE_SIZE, 3 * TILE_SIZE),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT)
         );
         nodes.add(forkNode);
 
         PathNode leftNode = new PathNode(
-                "left_end",
+                "L01_node_left_end",
                 new Vector2D(2 * TILE_SIZE, 5 * TILE_SIZE),
                 EnumSet.of(PathNode.Dir.UP)
         );
         nodes.add(leftNode);
 
         PathNode rightNode = new PathNode(
-                "right_end",
+                "L01_node_right_end",
                 new Vector2D(8 * TILE_SIZE, 5 * TILE_SIZE),
                 EnumSet.of(PathNode.Dir.UP)
         );
         nodes.add(rightNode);
+
+        PathNode exitNode = new PathNode(
+                "L01_node_exit_terminal",
+                new Vector2D(9 * TILE_SIZE, 5 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.UP)
+        );
+        nodes.add(exitNode);
 
         return nodes;
     }
@@ -83,20 +93,36 @@ public class Level01Footsteps {
     private static List<EntitySpawnInfo> buildEntities() {
         List<EntitySpawnInfo> list = new ArrayList<>();
 
-        list.add(new EntitySpawnInfo("dock_plate", new Vector2D(2 * TILE_SIZE, 5 * TILE_SIZE))
+        list.add(new EntitySpawnInfo(
+                        "L01_plate_left",
+                        "dock_plate",
+                        new Vector2D(2 * TILE_SIZE, 5 * TILE_SIZE),
+                        "L01_node_left_end")
                 .putProp("autoDock", true));
 
-        list.add(new EntitySpawnInfo("dock_plate", new Vector2D(8 * TILE_SIZE, 5 * TILE_SIZE))
+        list.add(new EntitySpawnInfo(
+                        "L01_plate_right",
+                        "dock_plate",
+                        new Vector2D(8 * TILE_SIZE, 5 * TILE_SIZE),
+                        "L01_node_right_end")
                 .putProp("autoDock", true));
 
-        list.add(new EntitySpawnInfo("exit_terminal", new Vector2D(9 * TILE_SIZE, 5 * TILE_SIZE)));
+        list.add(new EntitySpawnInfo(
+                "L01_exit_00",
+                "exit_terminal",
+                new Vector2D(9 * TILE_SIZE, 5 * TILE_SIZE),
+                "L01_node_exit_terminal"));
 
         return list;
     }
 
     private static List<DoorInfo> buildDoors() {
         List<DoorInfo> doors = new ArrayList<>();
-        doors.add(new DoorInfo("door_1", new Vector2D(5 * TILE_SIZE, 5 * TILE_SIZE), false));
+        doors.add(new DoorInfo(
+                "L01_door_01",
+                new Vector2D(5 * TILE_SIZE, 5 * TILE_SIZE),
+                false,
+                Set.of("L01_plate_left", "L01_plate_right")));
         return doors;
     }
 }

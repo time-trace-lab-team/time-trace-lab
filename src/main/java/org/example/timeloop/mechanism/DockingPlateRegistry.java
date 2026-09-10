@@ -15,7 +15,10 @@ public final class DockingPlateRegistry {
     }
 
     public void register(DockingPlate plate) {
-        plates.put(plate.getId(), plate);
+        DockingPlate existing = plates.putIfAbsent(plate.getId(), plate);
+        if (existing != null) {
+            throw new IllegalArgumentException("重复的驻留板 ID: " + plate.getId());
+        }
     }
 
     public void unregister(String id) {
