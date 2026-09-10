@@ -1,13 +1,15 @@
 package org.example.timeloop.mechanism;
 
+import org.example.timeloop.level.StableIdValidator;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
 import org.example.timeloop.mechanism.event.GameObserver;
 
-import java.util.HashSet;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
 
 public class Door implements GameObserver {
 
@@ -19,9 +21,17 @@ public class Door implements GameObserver {
     private State state = State.LOCKED;
 
     public Door(String id, Vector2D position, Set<String> requiredPlateIds) {
-        this.id = Objects.requireNonNull(id);
+        this.id = StableIdValidator.requireMechanismId(id, "door", "door.id");
         this.position = Objects.requireNonNull(position);
-        this.requiredPlateIds = new HashSet<>(requiredPlateIds);
+        if (requiredPlateIds == null) {
+            throw new IllegalArgumentException("door.requiredPlateIds 不能为 null");
+        }
+        TreeSet<String> sortedPlateIds = new TreeSet<>();
+        for (String plateId : requiredPlateIds) {
+            sortedPlateIds.add(StableIdValidator.requireMechanismId(
+                    plateId, "plate", "door.requiredPlateIds"));
+        }
+        this.requiredPlateIds = Collections.unmodifiableSet(sortedPlateIds);
         EventDispatcher.getInstance().register(GameEvent.PLATE_ENTERED, this);
         EventDispatcher.getInstance().register(GameEvent.PLATE_EXITED, this);
     }

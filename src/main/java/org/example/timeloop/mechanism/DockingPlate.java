@@ -1,5 +1,6 @@
 package org.example.timeloop.mechanism;
 
+import org.example.timeloop.level.StableIdValidator;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
@@ -20,12 +21,12 @@ public class DockingPlate implements GameObserver {
     private int occupantSourceRound = 0;
 
     public DockingPlate(String id, Vector2D position) {
-        this.id = Objects.requireNonNull(id);
+        this.id = StableIdValidator.requireMechanismId(id, "plate", "dockingPlate.id");
         this.position = Objects.requireNonNull(position);
+        DockingPlateRegistry.getInstance().register(this);
         EventDispatcher.getInstance().register(GameEvent.PLATE_ENTERED, this);
         EventDispatcher.getInstance().register(GameEvent.PLATE_EXITED, this);
         EventDispatcher.getInstance().register(GameEvent.ECHO_DISAPPEARED, this);
-        DockingPlateRegistry.getInstance().register(this);
     }
 
     public String getId() {

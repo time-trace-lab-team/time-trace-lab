@@ -1,5 +1,6 @@
 package org.example.timeloop.mechanism;
 
+import org.example.timeloop.level.StableIdValidator;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
@@ -16,9 +17,10 @@ public class ExitTerminal implements GameObserver {
     private boolean triggered = false;
 
     public ExitTerminal(String id, Vector2D position, String associatedDoorId) {
-        this.id = Objects.requireNonNull(id);
+        this.id = StableIdValidator.requireMechanismId(id, "exit", "exitTerminal.id");
         this.position = Objects.requireNonNull(position);
-        this.associatedDoorId = Objects.requireNonNull(associatedDoorId);
+        this.associatedDoorId = StableIdValidator.requireMechanismId(
+                associatedDoorId, "door", "exitTerminal.associatedDoorId");
         EventDispatcher.getInstance().register(GameEvent.DOOR_UNLOCKED, this);
     }
 
