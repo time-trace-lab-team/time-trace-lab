@@ -102,4 +102,43 @@ public class DockingPlate implements GameObserver {
         return String.format("DockingPlate{id='%s', state=%s, occupant=%s}",
                 id, state, occupantId);
     }
+
+    // ========== Snapshot 接口 ==========
+
+    public interface Snapshot {
+        DockingPlate.State getState();
+        String getOccupantId();
+        int getOccupantSourceRound();
+    }
+
+    public Snapshot createSnapshot() {
+        return new Snapshot() {
+            @Override
+            public State getState() { return state; }
+
+            @Override
+            public String getOccupantId() { return occupantId; }
+
+            @Override
+            public int getOccupantSourceRound() { return occupantSourceRound; }
+        };
+    }
+
+    public void restore(Snapshot snapshot) {
+        this.state = snapshot.getState();
+        this.occupantId = snapshot.getOccupantId();
+        this.occupantSourceRound = snapshot.getOccupantSourceRound();
+    }
+
+
+
+
+
+
+
+
+
+
+
+
 }

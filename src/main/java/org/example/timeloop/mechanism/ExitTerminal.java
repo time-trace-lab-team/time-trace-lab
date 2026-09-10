@@ -54,4 +54,29 @@ public class ExitTerminal implements GameObserver {
     public String toString() {
         return String.format("ExitTerminal{id='%s', doorUnlocked=%s, triggered=%s}", id, doorUnlocked, triggered);
     }
+
+    // ========== Snapshot 接口 ==========
+
+    public interface Snapshot {
+        boolean isDoorUnlocked();
+        boolean isTriggered();
+    }
+
+    public Snapshot createSnapshot() {
+        return new Snapshot() {
+            @Override
+            public boolean isDoorUnlocked() { return doorUnlocked; }
+
+            @Override
+            public boolean isTriggered() { return triggered; }
+        };
+    }
+
+    public void restore(Snapshot snapshot) {
+        this.doorUnlocked = snapshot.isDoorUnlocked();
+        this.triggered = snapshot.isTriggered();
+    }
+
+
+
 }
