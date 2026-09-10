@@ -35,13 +35,10 @@ public final class Level03Footsteps {
         EnumSet<PathNode.Dir> upDownLeft = EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT);
         EnumSet<PathNode.Dir> upDownRight = EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.RIGHT);
 
-        PathNode start = new PathNode("start", new Vector2D(3.5 * tileSize, 13.5 * tileSize), allDirs);
-        start.setDefaultExit(PathNode.Dir.UP);
-        nodes.add(start);
-
-        PathNode fork = new PathNode("fork", new Vector2D(8.5 * tileSize, 13.5 * tileSize), allDirs);
-        fork.setDefaultExit(PathNode.Dir.UP);
-        nodes.add(fork);
+        nodes.add(new PathNode(
+                "start", new Vector2D(3.5 * tileSize, 13.5 * tileSize), allDirs, PathNode.Dir.UP));
+        nodes.add(new PathNode(
+                "fork", new Vector2D(8.5 * tileSize, 13.5 * tileSize), allDirs, PathNode.Dir.UP));
 
         nodes.add(new PathNode("left_path_1", new Vector2D(8.5 * tileSize, 10.5 * tileSize), upDown));
         nodes.add(new PathNode("left_path_2", new Vector2D(8.5 * tileSize, 8.5 * tileSize), upDownLeft));

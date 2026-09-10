@@ -83,15 +83,40 @@ public class Door implements GameObserver {
     // ========== Snapshot 接口 ==========
 
     public interface Snapshot {
+        /** 快照所属的稳定机制 ID。 */
+        default String getMechanismId() { return null; }
+
         Door.State getState();
     }
 
+    /** 不可变的门状态快照。 */
+    public record StateSnapshot(String mechanismId, State state) implements Snapshot {
+
+        public StateSnapshot {
+            mechanismId = StableIdValidator.requireMechanismId(
+                    mechanismId, "door", "door.snapshot.mechanismId");
+            state = Objects.requireNonNull(state, "door.snapshot.state");
+        }
+
+        @Override
+        public String getMechanismId() { return mechanismId; }
+
+        @Override
+        public State getState() { return state; }
+    }
+
     public Snapshot createSnapshot() {
-        return () -> state;
+        return new StateSnapshot(id, state);
     }
 
     public void restore(Snapshot snapshot) {
-        this.state = snapshot.getState();
+        Objects.requireNonNull(snapshot, "door.snapshot");
+        String snapshotId = snapshot.getMechanismId();
+        if (!id.equals(snapshotId)) {
+            throw new IllegalArgumentException(
+                    "门快照 ID 不匹配: expected=" + id + ", actual=" + snapshotId);
+        }
+        this.state = Objects.requireNonNull(snapshot.getState(), "door.snapshot.state");
     }
 
 

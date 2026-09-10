@@ -45,13 +45,15 @@ public class Level01Footsteps {
                 grid[y][x] = TileType.WALL;
             }
         }
-        for (int x = 4; x <= 6; x++) grid[1][x] = TileType.FLOOR;
-        for (int x = 4; x <= 6; x++) grid[2][x] = TileType.FLOOR;
-        for (int x = 4; x <= 6; x++) grid[3][x] = TileType.FLOOR;
-        for (int y = 3; y <= 5; y++) grid[y][2] = TileType.FLOOR;
-        grid[5][2] = TileType.FLOOR;
-        for (int y = 3; y <= 5; y++) grid[y][8] = TileType.FLOOR;
-        grid[5][8] = TileType.FLOOR;
+
+        int[][] floorCells = {
+                {5, 1}, {5, 2}, {5, 3}, {5, 4}, {5, 5},
+                {4, 3}, {3, 3}, {2, 3}, {2, 4}, {2, 5},
+                {6, 3}, {7, 3}, {8, 3}, {8, 4}, {8, 5}, {9, 4}, {9, 5}
+        };
+        for (int[] cell : floorCells) {
+            grid[cell[1]][cell[0]] = TileType.FLOOR;
+        }
         grid[1][5] = TileType.SPAWN_POINT;
         return grid;
     }
@@ -59,33 +61,79 @@ public class Level01Footsteps {
     private static List<PathNode> buildPathNodes() {
         List<PathNode> nodes = new ArrayList<>();
 
-        PathNode forkNode = new PathNode(
+        nodes.add(new PathNode(
+                "L01_node_spawn",
+                new Vector2D(5 * TILE_SIZE, 1 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.DOWN)));
+        nodes.add(new PathNode(
+                "L01_node_corridor_01",
+                new Vector2D(5 * TILE_SIZE, 2 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
+
+        nodes.add(new PathNode(
                 "L01_node_fork",
                 new Vector2D(5 * TILE_SIZE, 3 * TILE_SIZE),
-                EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT)
-        );
-        nodes.add(forkNode);
+                EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT),
+                PathNode.Dir.UP));
 
-        PathNode leftNode = new PathNode(
+        nodes.add(new PathNode(
+                "L01_node_center_01",
+                new Vector2D(5 * TILE_SIZE, 4 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
+        nodes.add(new PathNode(
+                "L01_node_door",
+                new Vector2D(5 * TILE_SIZE, 5 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.UP)));
+
+        nodes.add(new PathNode(
+                "L01_node_left_01",
+                new Vector2D(4 * TILE_SIZE, 3 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
+        nodes.add(new PathNode(
+                "L01_node_left_02",
+                new Vector2D(3 * TILE_SIZE, 3 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
+        nodes.add(new PathNode(
+                "L01_node_left_turn",
+                new Vector2D(2 * TILE_SIZE, 3 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.RIGHT, PathNode.Dir.DOWN)));
+        nodes.add(new PathNode(
+                "L01_node_left_approach",
+                new Vector2D(2 * TILE_SIZE, 4 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
+        nodes.add(new PathNode(
                 "L01_node_left_end",
                 new Vector2D(2 * TILE_SIZE, 5 * TILE_SIZE),
-                EnumSet.of(PathNode.Dir.UP)
-        );
-        nodes.add(leftNode);
+                EnumSet.of(PathNode.Dir.UP)));
 
-        PathNode rightNode = new PathNode(
+        nodes.add(new PathNode(
+                "L01_node_right_01",
+                new Vector2D(6 * TILE_SIZE, 3 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
+        nodes.add(new PathNode(
+                "L01_node_right_02",
+                new Vector2D(7 * TILE_SIZE, 3 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
+        nodes.add(new PathNode(
+                "L01_node_right_turn",
+                new Vector2D(8 * TILE_SIZE, 3 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.DOWN)));
+        nodes.add(new PathNode(
+                "L01_node_right_approach",
+                new Vector2D(8 * TILE_SIZE, 4 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.RIGHT)));
+        nodes.add(new PathNode(
                 "L01_node_right_end",
                 new Vector2D(8 * TILE_SIZE, 5 * TILE_SIZE),
-                EnumSet.of(PathNode.Dir.UP)
-        );
-        nodes.add(rightNode);
-
-        PathNode exitNode = new PathNode(
+                EnumSet.of(PathNode.Dir.UP)));
+        nodes.add(new PathNode(
+                "L01_node_exit_approach",
+                new Vector2D(9 * TILE_SIZE, 4 * TILE_SIZE),
+                EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.DOWN)));
+        nodes.add(new PathNode(
                 "L01_node_exit_terminal",
                 new Vector2D(9 * TILE_SIZE, 5 * TILE_SIZE),
-                EnumSet.of(PathNode.Dir.UP)
-        );
-        nodes.add(exitNode);
+                EnumSet.of(PathNode.Dir.UP)));
 
         return nodes;
     }

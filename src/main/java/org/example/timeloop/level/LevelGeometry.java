@@ -12,6 +12,7 @@ public interface LevelGeometry {
 
     Vector2D getSpawnPosition();
 
+    /** Immutable path-node values; callers cannot mutate the geometry through this view. */
     List<PathNode> getPathNodes();
 
     Set<PathNode.Dir> getValidExits(String nodeId);

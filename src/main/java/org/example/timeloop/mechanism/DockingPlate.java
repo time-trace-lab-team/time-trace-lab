@@ -45,6 +45,10 @@ public class DockingPlate implements GameObserver {
         return occupantId;
     }
 
+    public int getOccupantSourceRound() {
+        return occupantSourceRound;
+    }
+
     public boolean isOccupied() {
         return state == State.OCCUPIED;
     }
@@ -107,28 +111,79 @@ public class DockingPlate implements GameObserver {
     // ========== Snapshot 接口 ==========
 
     public interface Snapshot {
+        /**
+         * 快照所属的稳定机制 ID。旧的自定义快照实现若未提供该字段，恢复时会被拒绝。
+         */
+        default String getMechanismId() { return null; }
+
         DockingPlate.State getState();
         String getOccupantId();
         int getOccupantSourceRound();
     }
 
+    /** 不可变的驻留板状态快照。 */
+    public record StateSnapshot(String mechanismId,
+                                State state,
+                                String occupantId,
+                                int occupantSourceRound) implements Snapshot {
+
+        public StateSnapshot {
+            mechanismId = StableIdValidator.requireMechanismId(
+                    mechanismId, "plate", "dockingPlate.snapshot.mechanismId");
+            state = Objects.requireNonNull(state, "dockingPlate.snapshot.state");
+            validateState(state, occupantId, occupantSourceRound);
+        }
+
+        @Override
+        public String getMechanismId() { return mechanismId; }
+
+        @Override
+        public State getState() { return state; }
+
+        @Override
+        public String getOccupantId() { return occupantId; }
+
+        @Override
+        public int getOccupantSourceRound() { return occupantSourceRound; }
+    }
+
     public Snapshot createSnapshot() {
-        return new Snapshot() {
-            @Override
-            public State getState() { return state; }
-
-            @Override
-            public String getOccupantId() { return occupantId; }
-
-            @Override
-            public int getOccupantSourceRound() { return occupantSourceRound; }
-        };
+        return new StateSnapshot(id, state, occupantId, occupantSourceRound);
     }
 
     public void restore(Snapshot snapshot) {
-        this.state = snapshot.getState();
-        this.occupantId = snapshot.getOccupantId();
-        this.occupantSourceRound = snapshot.getOccupantSourceRound();
+        Objects.requireNonNull(snapshot, "dockingPlate.snapshot");
+        String snapshotId = snapshot.getMechanismId();
+        if (!id.equals(snapshotId)) {
+            throw new IllegalArgumentException(
+                    "驻留板快照 ID 不匹配: expected=" + id + ", actual=" + snapshotId);
+        }
+
+        State restoredState = Objects.requireNonNull(
+                snapshot.getState(), "dockingPlate.snapshot.state");
+        String restoredOccupantId = snapshot.getOccupantId();
+        int restoredSourceRound = snapshot.getOccupantSourceRound();
+        validateState(restoredState, restoredOccupantId, restoredSourceRound);
+
+        // 直接恢复纯状态，不调用 tryEnter/tryExit，因而不会产生重复 gameplay 事件。
+        this.state = restoredState;
+        this.occupantId = restoredOccupantId;
+        this.occupantSourceRound = restoredSourceRound;
+    }
+
+    private static void validateState(State state, String occupantId, int sourceRound) {
+        if (state == State.UNOCCUPIED) {
+            if (occupantId != null || sourceRound != 0) {
+                throw new IllegalArgumentException("未占用驻留板快照不能带有占用者数据");
+            }
+            return;
+        }
+        if (occupantId == null || occupantId.isBlank()) {
+            throw new IllegalArgumentException("已占用驻留板快照缺少 occupantId");
+        }
+        if (sourceRound < 0) {
+            throw new IllegalArgumentException("驻留板快照的 sourceRound 不能为负数");
+        }
     }
 
 
