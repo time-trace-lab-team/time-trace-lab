@@ -6,10 +6,12 @@ import org.example.timeloop.core.Direction;
 import org.example.timeloop.core.MovementState;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * R3 自动测试（第一步）：单残影按共享 roundTick 确定性播放。
+ * R3 自动测试：单残影按共享 roundTick 确定性播放，以及残影允许事件的读取。
  */
 class EchoStateTest {
 
@@ -22,13 +24,19 @@ class EchoStateTest {
     private static TimelineRecording sealedRecording(int durationTicks) {
         TimelineRecording r = new TimelineRecording(durationTicks, 1);
         for (int i = 0; i < durationTicks; i++) {
-            // 模拟"巡行 → 驻留 → 再巡行"：中段写入 DOCKED 静止帧
             MovementState state = (i >= 2 && i <= 3) ? MovementState.DOCKED : MovementState.CRUISING;
             r.record(frame(i, state));
         }
         r.seal();
         return r;
     }
+
+    private static TimelineEvent event(long tick, String actor, String mechanism,
+                                       TimelineEvent.EventType type) {
+        return new TimelineEvent(tick, actor, 1, mechanism, type, null, null);
+    }
+
+    // ========== 原有测试：确定性播放 ==========
 
     @Test
     void of_rejectsUnsealedRecording() {
@@ -88,5 +96,94 @@ class EchoStateTest {
         EchoState echo = EchoState.of(sealedRecording(6));
         assertEquals(1, echo.sourceRound());
         assertEquals(6, echo.durationTicks());
+    }
+
+    // ========== R3 新增：事件访问 ==========
+
+    @Test
+    void eventsAt_emptyWhenNoEventsCollected() {
+        EchoState echo = EchoState.of(sealedRecording(6));
+        assertTrue(echo.eventsAt(0L).isEmpty());
+        assertTrue(echo.eventsAt(3L).isEmpty());
+    }
+
+    @Test
+    void eventsAt_returnsOnlyMatchingTick() {
+        TimelineRecording r = new TimelineRecording(6, 1);
+        for (int i = 0; i < 6; i++) {
+            r.record(frame(i, MovementState.CRUISING));
+        }
+        r.recordEvent(event(2, "player", "plate_left", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(4, "player", "plate_left", TimelineEvent.EventType.DOCK_LEFT));
+        r.seal();
+
+        EchoState echo = EchoState.of(r);
+        List<TimelineEvent> at2 = echo.eventsAt(2L);
+        assertEquals(1, at2.size());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, at2.get(0).eventType());
+
+        List<TimelineEvent> at4 = echo.eventsAt(4L);
+        assertEquals(1, at4.size());
+        assertEquals(TimelineEvent.EventType.DOCK_LEFT, at4.get(0).eventType());
+
+        assertTrue(echo.eventsAt(0L).isEmpty());
+    }
+
+    @Test
+    void eventsAt_returnsStableOrder() {
+        TimelineRecording r = new TimelineRecording(6, 1);
+        for (int i = 0; i < 6; i++) {
+            r.record(frame(i, MovementState.CRUISING));
+        }
+        // 同 tick 乱序收集
+        r.recordEvent(event(2, "b", "plate_right", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(2, "a", "plate_left", TimelineEvent.EventType.DOCK_ENTERED));
+        r.seal();
+
+        EchoState echo = EchoState.of(r);
+        List<TimelineEvent> at2 = echo.eventsAt(2L);
+        assertEquals(2, at2.size());
+        assertEquals("plate_left", at2.get(0).mechanismId());
+        assertEquals("plate_right", at2.get(1).mechanismId());
+    }
+
+    @Test
+    void allEvents_returnsAllCollected() {
+        TimelineRecording r = new TimelineRecording(6, 1);
+        for (int i = 0; i < 6; i++) {
+            r.record(frame(i, MovementState.CRUISING));
+        }
+        r.recordEvent(event(1, "player", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(3, "player", "m1", TimelineEvent.EventType.DOCK_LEFT));
+        r.recordEvent(event(5, "player", "m1", TimelineEvent.EventType.OCCUPANCY_RELEASED));
+        r.seal();
+
+        EchoState echo = EchoState.of(r);
+        List<TimelineEvent> all = echo.allEvents();
+        assertEquals(3, all.size());
+        assertEquals(1L, all.get(0).tick());
+        assertEquals(3L, all.get(1).tick());
+        assertEquals(5L, all.get(2).tick());
+    }
+
+    @Test
+    void eventsAt_unmodifiable() {
+        TimelineRecording r = new TimelineRecording(6, 1);
+        for (int i = 0; i < 6; i++) {
+            r.record(frame(i, MovementState.CRUISING));
+        }
+        r.recordEvent(event(2, "player", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        r.seal();
+
+        EchoState echo = EchoState.of(r);
+        assertThrows(UnsupportedOperationException.class, () ->
+                echo.eventsAt(2L).add(event(2, "x", "m2", TimelineEvent.EventType.DOCK_ENTERED)));
+    }
+
+    @Test
+    void allEvents_unmodifiable() {
+        EchoState echo = EchoState.of(sealedRecording(6));
+        assertThrows(UnsupportedOperationException.class, () ->
+                echo.allEvents().add(event(0, "x", "m2", TimelineEvent.EventType.DOCK_ENTERED)));
     }
 }
