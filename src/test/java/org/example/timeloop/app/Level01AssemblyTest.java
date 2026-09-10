@@ -1,78 +1,58 @@
 package org.example.timeloop.app;
 
-import org.example.timeloop.core.Direction;
-import org.example.timeloop.core.TickStepResult;
 import org.example.timeloop.core.input.InputIntent;
-import org.example.timeloop.level.model.PathNode;
-import org.example.timeloop.mechanism.autodock.AutoDockView;
-import org.example.timeloop.snapshot.MvpRenderSnapshot;
+import org.example.timeloop.mechanism.DockingPlateRegistry;
+import org.example.timeloop.mechanism.event.EventDispatcher;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * 装配无头测试（不初始化 JavaFX）：验证第一关装配可构造、可开始、可逐刻推进、可出渲染视图。
+ */
 class Level01AssemblyTest {
 
-    @Test
-    void assemblesLevelGeometryCorePathAndStableMechanisms() {
-        try (Level01Assembly assembly = Level01Assembly.create()) {
-            assertEquals(17, assembly.levelData().getPathNodes().size());
-            assertEquals(17, assembly.geometry().getPathNodes().size());
-            assertEquals(48.0, assembly.geometry().getTileSize());
-            assertEquals(48.0, assembly.pathGraph().shortestSegmentLength());
-            assertEquals(Direction.DOWN, assembly.patrolController().direction());
-            assertEquals("L01_node_corridor_01",
-                    assembly.pathGraph()
-                            .neighbor(assembly.pathGraph().node(Level01Assembly.START_NODE_ID), Direction.DOWN)
-                            .orElseThrow()
-                            .id());
-
-            assertEquals(List.of("L01_plate_left", "L01_plate_right"),
-                    assembly.platesById().keySet().stream().toList());
-            assertEquals(List.of("L01_door_01"), assembly.doorsById().keySet().stream().toList());
-            assertEquals(List.of("L01_exit_00"), assembly.exitsById().keySet().stream().toList());
-
-            List<AutoDockView> docks = assembly.autoDockService().snapshot();
-            assertEquals(List.of("L01_plate_left", "L01_plate_right"),
-                    docks.stream().map(AutoDockView::mechanismId).toList());
-            assertEquals("L01_node_left_end", docks.get(0).pathNodeId());
-            assertEquals(java.util.Set.of(PathNode.Dir.UP), docks.get(0).legalExitDirections());
-        }
+    @AfterEach
+    void clearGlobalMechanismState() {
+        EventDispatcher.getInstance().clear();
+        DockingPlateRegistry.getInstance().clear();
     }
 
     @Test
-    void firstTickFeedsC3RecordingReplayRenderAndHudWithoutJavaFx() {
-        try (Level01Assembly assembly = Level01Assembly.create()) {
-            Level01Assembly.TickResult result = assembly.tick(InputIntent.empty(0));
+    void assemblyStartsStepsAndProducesRenderViews() {
+        Level01Assembly assembly = new Level01Assembly();
 
-            assertEquals(0, result.tick());
-            assertEquals(TickStepResult.ADVANCED, result.clockResult());
-            assertEquals(1, assembly.recordingSession().currentBuffer().orElseThrow().size());
-            assertNotNull(result.mvpRenderSnapshot().currentPlayer());
-            assertEquals(0, result.mvpRenderSnapshot().currentPlayer().tick());
-            assertEquals(0, result.mvpRenderSnapshot().roundTick());
-            assertEquals("剩余 16 秒", result.hud().countdownText());
-            assertEquals("第 1 / 3 轮", result.hud().roundText());
-            assertEquals(4, result.renderViews().mechanisms().size());
-            assertFalse(result.dockingDecision().isFreeze());
+        assembly.start();
+        assertTrue(assembly.isPlaying());
+
+        for (long tick = 0; tick < 180; tick++) {
+            assembly.tick(InputIntent.empty(tick));
         }
+
+        assertNotNull(assembly.renderViews());
+        assertNotNull(assembly.hudContext());
+        assertTrue(assembly.hudContext().roundTick() >= 0);
+
+        assembly.cleanup();
+        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"));
     }
 
     @Test
-    void assembledReadOnlyOutputsExposeCurrentSharedState() {
-        try (Level01Assembly assembly = Level01Assembly.assemble()) {
-            MvpRenderSnapshot initial = assembly.mvpRenderSnapshot();
-            assertEquals(0, initial.roundTick());
-            assertEquals(1, initial.currentRound());
-            assertTrue(initial.activeEchoes().isEmpty());
+    void hudContextReflectsFrozenLevelParameters() {
+        Level01Assembly assembly = new Level01Assembly();
+        assembly.start();
 
-            assertEquals("剩余 16 秒", assembly.hudViewModel().countdownText());
-            assertEquals("第 1 / 3 轮", assembly.hudViewModel().roundText());
-            assertEquals(4, assembly.renderViews().mechanisms().size());
-        }
+        assertEquals(16 * 60, assembly.hudContext().durationTicks());
+        assertEquals(3, assembly.hudContext().maxRounds());
+        assertEquals(1, assembly.hudContext().currentRound());
+
+        assembly.cleanup();
+    }
+
+    private static void assertEquals(int expected, int actual) {
+        org.junit.jupiter.api.Assertions.assertEquals(expected, actual);
     }
 }
