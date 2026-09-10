@@ -199,15 +199,16 @@ class TimelineRecordingTest {
 
         List<TimelineEvent> sorted = r.events();
         assertEquals(3, sorted.size());
-        // 期望顺序：tick 1 DOCK_ENTERED → tick 2 DOCK_ENTERED → tick 2 DOCK_LEFT
+        // priority: DOCK_LEFT=10 < OCCUPANCY_RELEASED=20 < DOCK_ENTERED=30
+        // 期望顺序：tick 1 DOCK_ENTERED → tick 2 DOCK_LEFT → tick 2 DOCK_ENTERED
         assertEquals(1L, sorted.get(0).tick());
         assertEquals(TimelineEvent.EventType.DOCK_ENTERED, sorted.get(0).eventType());
 
         assertEquals(2L, sorted.get(1).tick());
-        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, sorted.get(1).eventType());
+        assertEquals(TimelineEvent.EventType.DOCK_LEFT, sorted.get(1).eventType());
 
         assertEquals(2L, sorted.get(2).tick());
-        assertEquals(TimelineEvent.EventType.DOCK_LEFT, sorted.get(2).eventType());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, sorted.get(2).eventType());
     }
 
     @Test
@@ -253,14 +254,14 @@ class TimelineRecordingTest {
     @Test
     void eventsAt_beforeSeal_returnsSortedResult() {
         TimelineRecording r = new TimelineRecording(3, 1);
-        // 未封装前，收集顺序乱序
+        // 未封装前，收集顺序乱序；同 tick 1 下 LEFT 的 priority 低于 ENTERED
         r.recordEvent(event(1, "b", "m2", TimelineEvent.EventType.DOCK_LEFT));
         r.recordEvent(event(1, "a", "m1", TimelineEvent.EventType.DOCK_ENTERED));
 
         // eventsAt 在未封装时也应返回稳定顺序
         List<TimelineEvent> at1 = r.eventsAt(1L);
         assertEquals(2, at1.size());
-        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, at1.get(0).eventType());
-        assertEquals(TimelineEvent.EventType.DOCK_LEFT, at1.get(1).eventType());
+        assertEquals(TimelineEvent.EventType.DOCK_LEFT, at1.get(0).eventType());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, at1.get(1).eventType());
     }
 }
