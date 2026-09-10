@@ -22,56 +22,43 @@ public final class EchoLifetimeManager {
         this.lifetimeRounds = lifetimeRounds;
         this.currentRound = 0;
         this.echoes.clear();
-        EventDispatcher.getInstance().clear();
     }
 
     public void startRound() {
         currentRound++;
-        System.out.println("=== 第 " + currentRound + " 轮开始 ===");
+        updateAllEchoes(0);
+    }
 
-        for (Map.Entry<Integer, EchoLifetime> entry : echoes.entrySet()) {
-            int sourceRound = entry.getKey();
-            EchoLifetime updated = new EchoLifetime(
-                    sourceRound, lifetimeRounds, durationTicks, currentRound, 0
-            );
-            entry.setValue(updated);
-        }
-
-        echoes.entrySet().removeIf(entry -> !entry.getValue().isActive());
+    public void advanceRound(long roundTick) {
+        currentRound++;
+        updateAllEchoes(roundTick);
     }
 
     public void endRound(long roundTick) {
-        System.out.println("第 " + currentRound + " 轮结束");
-
-        // 发布消散事件
         List<Integer> toDisappear = getEchoesToDisappear();
         for (int sourceRound : toDisappear) {
             GameEvent event = GameEvent.echoDisappeared(
-                    "echo_" + sourceRound,
-                    roundTick,
-                    sourceRound
-            );
+                    "echo_" + sourceRound, roundTick, sourceRound);
             EventDispatcher.getInstance().dispatch(event);
-            System.out.println("发布消散事件: E" + sourceRound);
         }
-
         addEcho(currentRound);
     }
 
     public void addEcho(int sourceRound) {
         EchoLifetime lifetime = new EchoLifetime(
-                sourceRound, lifetimeRounds, durationTicks, currentRound, 0
-        );
+                sourceRound, lifetimeRounds, durationTicks, currentRound, 0);
         echoes.put(sourceRound, lifetime);
-        System.out.println("生成 E" + sourceRound);
     }
 
     public void updateRoundTick(long roundTick) {
+        updateAllEchoes(roundTick);
+    }
+
+    private void updateAllEchoes(long roundTick) {
         for (Map.Entry<Integer, EchoLifetime> entry : echoes.entrySet()) {
             int sourceRound = entry.getKey();
             EchoLifetime updated = new EchoLifetime(
-                    sourceRound, lifetimeRounds, durationTicks, currentRound, roundTick
-            );
+                    sourceRound, lifetimeRounds, durationTicks, currentRound, roundTick);
             entry.setValue(updated);
         }
     }
@@ -100,13 +87,8 @@ public final class EchoLifetimeManager {
         return toDisappear;
     }
 
-    public int getCurrentRound() {
-        return currentRound;
-    }
-
-    public int getMaxRounds() {
-        return maxRounds;
-    }
+    public int getCurrentRound() { return currentRound; }
+    public int getMaxRounds() { return maxRounds; }
 
     public void reset() {
         echoes.clear();
