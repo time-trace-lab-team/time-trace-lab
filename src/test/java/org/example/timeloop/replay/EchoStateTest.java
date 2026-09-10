@@ -11,7 +11,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * R3 自动测试：单残影按共享 roundTick 确定性播放，以及残影允许事件的读取。
+ * R3 自动测试：单残影按共享 roundTick 确定性播放，残影允许事件的读取与过滤。
  */
 class EchoStateTest {
 
@@ -36,7 +36,7 @@ class EchoStateTest {
         return new TimelineEvent(tick, actor, 1, mechanism, type, null, null);
     }
 
-    // ========== 原有测试：确定性播放 ==========
+    // ========== 确定性播放 ==========
 
     @Test
     void of_rejectsUnsealedRecording() {
@@ -98,7 +98,7 @@ class EchoStateTest {
         assertEquals(6, echo.durationTicks());
     }
 
-    // ========== R3 新增：事件访问 ==========
+    // ========== 事件访问 ==========
 
     @Test
     void eventsAt_emptyWhenNoEventsCollected() {
@@ -113,8 +113,8 @@ class EchoStateTest {
         for (int i = 0; i < 6; i++) {
             r.record(frame(i, MovementState.CRUISING));
         }
-        r.recordEvent(event(2, "player", "plate_left", TimelineEvent.EventType.DOCK_ENTERED));
-        r.recordEvent(event(4, "player", "plate_left", TimelineEvent.EventType.DOCK_LEFT));
+        r.recordEvent(event(2, "player", "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(4, "player", "L01_plate_left", TimelineEvent.EventType.DOCK_LEFT));
         r.seal();
 
         EchoState echo = EchoState.of(r);
@@ -135,16 +135,15 @@ class EchoStateTest {
         for (int i = 0; i < 6; i++) {
             r.record(frame(i, MovementState.CRUISING));
         }
-        // 同 tick 乱序收集
-        r.recordEvent(event(2, "b", "plate_right", TimelineEvent.EventType.DOCK_ENTERED));
-        r.recordEvent(event(2, "a", "plate_left", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(2, "b", "L01_plate_right", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(2, "a", "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED));
         r.seal();
 
         EchoState echo = EchoState.of(r);
         List<TimelineEvent> at2 = echo.eventsAt(2L);
         assertEquals(2, at2.size());
-        assertEquals("plate_left", at2.get(0).mechanismId());
-        assertEquals("plate_right", at2.get(1).mechanismId());
+        assertEquals("L01_plate_left", at2.get(0).mechanismId());
+        assertEquals("L01_plate_right", at2.get(1).mechanismId());
     }
 
     @Test
@@ -153,9 +152,9 @@ class EchoStateTest {
         for (int i = 0; i < 6; i++) {
             r.record(frame(i, MovementState.CRUISING));
         }
-        r.recordEvent(event(1, "player", "m1", TimelineEvent.EventType.DOCK_ENTERED));
-        r.recordEvent(event(3, "player", "m1", TimelineEvent.EventType.DOCK_LEFT));
-        r.recordEvent(event(5, "player", "m1", TimelineEvent.EventType.OCCUPANCY_RELEASED));
+        r.recordEvent(event(1, "player", "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(3, "player", "L01_plate_left", TimelineEvent.EventType.DOCK_LEFT));
+        r.recordEvent(event(5, "player", "L01_plate_left", TimelineEvent.EventType.OCCUPANCY_RELEASED));
         r.seal();
 
         EchoState echo = EchoState.of(r);
@@ -172,18 +171,71 @@ class EchoStateTest {
         for (int i = 0; i < 6; i++) {
             r.record(frame(i, MovementState.CRUISING));
         }
-        r.recordEvent(event(2, "player", "m1", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(2, "player", "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED));
         r.seal();
 
         EchoState echo = EchoState.of(r);
         assertThrows(UnsupportedOperationException.class, () ->
-                echo.eventsAt(2L).add(event(2, "x", "m2", TimelineEvent.EventType.DOCK_ENTERED)));
+                echo.eventsAt(2L).add(event(2, "x", "L01_door_01", TimelineEvent.EventType.DOCK_ENTERED)));
     }
 
     @Test
     void allEvents_unmodifiable() {
         EchoState echo = EchoState.of(sealedRecording(6));
         assertThrows(UnsupportedOperationException.class, () ->
-                echo.allEvents().add(event(0, "x", "m2", TimelineEvent.EventType.DOCK_ENTERED)));
+                echo.allEvents().add(event(0, "x", "L01_door_01", TimelineEvent.EventType.DOCK_ENTERED)));
+    }
+
+    // ========== R3 新增：EXIT_REQUESTED 是玩家专属，残影不能触发 ==========
+
+    @Test
+    void eventsAt_filtersExitRequested() {
+        TimelineRecording r = new TimelineRecording(6, 1);
+        for (int i = 0; i < 6; i++) {
+            r.record(frame(i, MovementState.CRUISING));
+        }
+        // 同 tick 2：残影允许的 DOCK_ENTERED + 玩家专属的 EXIT_REQUESTED
+        r.recordEvent(event(2, "player", "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(2, "player", "L01_exit_00", TimelineEvent.EventType.EXIT_REQUESTED));
+        r.seal();
+
+        EchoState echo = EchoState.of(r);
+        List<TimelineEvent> at2 = echo.eventsAt(2L);
+        assertEquals(1, at2.size(), "EXIT_REQUESTED 必须被残影过滤掉");
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, at2.get(0).eventType());
+    }
+
+    @Test
+    void allEvents_filtersExitRequested() {
+        TimelineRecording r = new TimelineRecording(6, 1);
+        for (int i = 0; i < 6; i++) {
+            r.record(frame(i, MovementState.CRUISING));
+        }
+        r.recordEvent(event(1, "player", "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED));
+        r.recordEvent(event(2, "player", "L01_exit_00", TimelineEvent.EventType.EXIT_REQUESTED));
+        r.recordEvent(event(3, "player", "L01_plate_left", TimelineEvent.EventType.DOCK_LEFT));
+        r.seal();
+
+        EchoState echo = EchoState.of(r);
+        List<TimelineEvent> all = echo.allEvents();
+        assertEquals(2, all.size(), "EXIT_REQUESTED 必须被残影过滤掉");
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, all.get(0).eventType());
+        assertEquals(TimelineEvent.EventType.DOCK_LEFT, all.get(1).eventType());
+    }
+
+    @Test
+    void eventsAt_keepsMechanismStateChanged() {
+        TimelineRecording r = new TimelineRecording(6, 1);
+        for (int i = 0; i < 6; i++) {
+            r.record(frame(i, MovementState.CRUISING));
+        }
+        r.recordEvent(event(2, "player", "L01_door_01",
+                TimelineEvent.EventType.MECHANISM_STATE_CHANGED));
+        r.seal();
+
+        EchoState echo = EchoState.of(r);
+        List<TimelineEvent> at2 = echo.eventsAt(2L);
+        assertEquals(1, at2.size(), "MECHANISM_STATE_CHANGED 是残影允许事件");
+        assertEquals(TimelineEvent.EventType.MECHANISM_STATE_CHANGED, at2.get(0).eventType());
     }
 }

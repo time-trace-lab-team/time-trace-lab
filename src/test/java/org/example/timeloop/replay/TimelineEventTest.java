@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * R2.5 测试：TimelineEvent 构造校验与稳定排序键。
+ * R3 扩展：5 类事件类型的显式 priority。
  */
 class TimelineEventTest {
 
@@ -18,12 +19,12 @@ class TimelineEventTest {
 
     @Test
     void constructor_validArgs_succeeds() {
-        TimelineEvent e = new TimelineEvent(10L, "player", 0, "plate_left",
+        TimelineEvent e = new TimelineEvent(10L, "player", 0, "L01_plate_left",
                 TimelineEvent.EventType.DOCK_ENTERED, Direction.UP, "enter");
         assertEquals(10L, e.tick());
         assertEquals("player", e.actorId());
         assertEquals(0, e.sourceRound());
-        assertEquals("plate_left", e.mechanismId());
+        assertEquals("L01_plate_left", e.mechanismId());
         assertEquals(TimelineEvent.EventType.DOCK_ENTERED, e.eventType());
         assertEquals(Direction.UP, e.leaveDirection());
         assertEquals("enter", e.reason());
@@ -71,13 +72,28 @@ class TimelineEventTest {
                 new TimelineEvent(0L, "a", 0, "", TimelineEvent.EventType.DOCK_ENTERED, null, null));
     }
 
-    // ========== priority 显式声明 ==========
+    // ========== 5 类事件类型的显式 priority（开发三规格 §3.2） ==========
 
     @Test
     void eventTypePriority_isExplicitNotOrdinal() {
         assertEquals(10, TimelineEvent.EventType.DOCK_LEFT.priority());
         assertEquals(20, TimelineEvent.EventType.OCCUPANCY_RELEASED.priority());
         assertEquals(30, TimelineEvent.EventType.DOCK_ENTERED.priority());
+        assertEquals(40, TimelineEvent.EventType.MECHANISM_STATE_CHANGED.priority());
+        assertEquals(50, TimelineEvent.EventType.EXIT_REQUESTED.priority());
+    }
+
+    @Test
+    void eventTypePriority_strictlyIncreasing() {
+        assertEquals(10, TimelineEvent.EventType.DOCK_LEFT.priority());
+        assertTrue(TimelineEvent.EventType.DOCK_LEFT.priority()
+                < TimelineEvent.EventType.OCCUPANCY_RELEASED.priority());
+        assertTrue(TimelineEvent.EventType.OCCUPANCY_RELEASED.priority()
+                < TimelineEvent.EventType.DOCK_ENTERED.priority());
+        assertTrue(TimelineEvent.EventType.DOCK_ENTERED.priority()
+                < TimelineEvent.EventType.MECHANISM_STATE_CHANGED.priority());
+        assertTrue(TimelineEvent.EventType.MECHANISM_STATE_CHANGED.priority()
+                < TimelineEvent.EventType.EXIT_REQUESTED.priority());
     }
 
     // ========== 排序行为 ==========
@@ -103,28 +119,45 @@ class TimelineEventTest {
         List<TimelineEvent> list = new ArrayList<>(List.of(entered, released, left));
         list.sort(TimelineEvent.STABLE_ORDER);
 
-        // priority: DOCK_LEFT=10 < OCCUPANCY_RELEASED=20 < DOCK_ENTERED=30
         assertEquals(TimelineEvent.EventType.DOCK_LEFT, list.get(0).eventType());
         assertEquals(TimelineEvent.EventType.OCCUPANCY_RELEASED, list.get(1).eventType());
         assertEquals(TimelineEvent.EventType.DOCK_ENTERED, list.get(2).eventType());
     }
 
     @Test
+    void stableOrder_sameTick_fiveTypesInPriorityOrder() {
+        TimelineEvent exit = ev(5, "player", 0, "m1", TimelineEvent.EventType.EXIT_REQUESTED);
+        TimelineEvent stateChanged = ev(5, "a", 0, "m1", TimelineEvent.EventType.MECHANISM_STATE_CHANGED);
+        TimelineEvent entered = ev(5, "a", 0, "m1", TimelineEvent.EventType.DOCK_ENTERED);
+        TimelineEvent released = ev(5, "a", 0, "m1", TimelineEvent.EventType.OCCUPANCY_RELEASED);
+        TimelineEvent left = ev(5, "a", 0, "m1", TimelineEvent.EventType.DOCK_LEFT);
+
+        List<TimelineEvent> list = new ArrayList<>(List.of(exit, stateChanged, entered, released, left));
+        list.sort(TimelineEvent.STABLE_ORDER);
+
+        assertEquals(TimelineEvent.EventType.DOCK_LEFT, list.get(0).eventType());
+        assertEquals(TimelineEvent.EventType.OCCUPANCY_RELEASED, list.get(1).eventType());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, list.get(2).eventType());
+        assertEquals(TimelineEvent.EventType.MECHANISM_STATE_CHANGED, list.get(3).eventType());
+        assertEquals(TimelineEvent.EventType.EXIT_REQUESTED, list.get(4).eventType());
+    }
+
+    @Test
     void stableOrder_sameTickSameType_sortsByMechanismId() {
-        TimelineEvent m2 = ev(5, "a", 0, "plate_right", TimelineEvent.EventType.DOCK_ENTERED);
-        TimelineEvent m1 = ev(5, "a", 0, "plate_left", TimelineEvent.EventType.DOCK_ENTERED);
+        TimelineEvent m2 = ev(5, "a", 0, "L01_plate_right", TimelineEvent.EventType.DOCK_ENTERED);
+        TimelineEvent m1 = ev(5, "a", 0, "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED);
 
         List<TimelineEvent> list = new ArrayList<>(List.of(m2, m1));
         list.sort(TimelineEvent.STABLE_ORDER);
 
-        assertEquals("plate_left", list.get(0).mechanismId());
-        assertEquals("plate_right", list.get(1).mechanismId());
+        assertEquals("L01_plate_left", list.get(0).mechanismId());
+        assertEquals("L01_plate_right", list.get(1).mechanismId());
     }
 
     @Test
     void stableOrder_sameTickSameTypeSameMechanism_sortsByActorId() {
-        TimelineEvent b = ev(5, "b", 0, "plate_left", TimelineEvent.EventType.DOCK_ENTERED);
-        TimelineEvent a = ev(5, "a", 0, "plate_left", TimelineEvent.EventType.DOCK_ENTERED);
+        TimelineEvent b = ev(5, "b", 0, "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED);
+        TimelineEvent a = ev(5, "a", 0, "L01_plate_left", TimelineEvent.EventType.DOCK_ENTERED);
 
         List<TimelineEvent> list = new ArrayList<>(List.of(b, a));
         list.sort(TimelineEvent.STABLE_ORDER);

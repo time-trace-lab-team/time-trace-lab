@@ -9,7 +9,7 @@ import java.util.Objects;
  * 时间线上的离散事件（不可变）。
  * 由开发二定义，开发一/三产生。
  *
- * <p>事件只在状态边沿写入：进入 autoDock、离开 autoDock、占用释放。
+ * <p>事件只在状态边沿写入：进入 autoDock、离开 autoDock、占用释放、机关状态变化、玩家出口请求。
  * 持续 DOCKED 不重复发进入事件，但静止位置仍由 PlayerFrame 逐 tick 记录。</p>
  *
  * <p>同 tick 多事件先批量收集，再按 STABLE_ORDER 排序，保证确定性。
@@ -28,16 +28,24 @@ public record TimelineEvent(
     /**
      * 事件类型。
      *
-     * <p>priority 显式声明同 tick 内的事件处理顺序：
-     * 先释放（LEFT=10），再占用清理（RELEASED=20），最后进入（ENTERED=30）。
-     * 这样同 tick 内"离开 A 板 + 进入 B 板"会先处理离开，避免 actor 占用冲突。</p>
+     * <p>priority 显式声明同 tick 内的事件处理顺序，与开发三规格文档 §3.2 的类别表一致：</p>
+     * <ul>
+     *   <li>DOCK_LEFT(10)：actor 合法离开某 dock 的边沿事实</li>
+     *   <li>OCCUPANCY_RELEASED(20)：该 dock 完成占用释放</li>
+     *   <li>DOCK_ENTERED(30)：actor 从区域外进入某 dock</li>
+     *   <li>MECHANISM_STATE_CHANGED(40)：由占用变化派生的机关状态变化</li>
+     *   <li>EXIT_REQUESTED(50)：当前玩家在满足权限后发起出口请求（玩家专属，残影不能触发）</li>
+     * </ul>
      *
-     * <p>不使用 {@code ordinal()}：枚举声明顺序变化会导致排序静默改变，这是隐式陷阱。</p>
+     * <p>不使用 {@code ordinal()}：枚举声明顺序变化会导致排序静默改变，这是隐式陷阱。
+     * 未列入的类别不得自行插入排序；需要扩展时必须先更新开发三规格契约。</p>
      */
     public enum EventType {
         DOCK_LEFT(10),
         OCCUPANCY_RELEASED(20),
-        DOCK_ENTERED(30);
+        DOCK_ENTERED(30),
+        MECHANISM_STATE_CHANGED(40),
+        EXIT_REQUESTED(50);
 
         private final int priority;
 
@@ -52,8 +60,7 @@ public record TimelineEvent(
 
     /**
      * 稳定排序键。
-     * 先按 tick 升序，再按事件类别优先级（LEFT=10 < RELEASED=20 < ENTERED=30），
-     * 再按 mechanismId、actorId、sourceRound 字典序。
+     * 先按 tick 升序，再按事件类别优先级，再按 mechanismId、actorId、sourceRound 字典序。
      * 不依赖集合迭代顺序，也不依赖枚举声明顺序，保证同输入同输出。
      */
     public static final Comparator<TimelineEvent> STABLE_ORDER =
