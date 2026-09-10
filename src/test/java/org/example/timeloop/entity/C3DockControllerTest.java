@@ -160,7 +160,7 @@ class C3DockControllerTest {
         C3DockController controller = controller(port);
         controller.step(0, InputIntent.empty(0), CENTER);
 
-        List<TimelineEvent> events = controller.releaseOccupancy("ECHO_EXPIRED", 5);
+        List<TimelineEvent> events = controller.releaseOccupancy(DockEventReason.ECHO_EXPIRED, 5);
 
         assertEquals(1, events.size());
         assertEquals(TimelineEvent.EventType.OCCUPANCY_RELEASED, events.get(0).eventType());
@@ -169,7 +169,7 @@ class C3DockControllerTest {
         assertFalse(port.view().occupancy().occupied());
 
         // 再次释放不产生事件（幂等）
-        assertTrue(controller.releaseOccupancy("ECHO_EXPIRED", 6).isEmpty());
+        assertTrue(controller.releaseOccupancy(DockEventReason.ECHO_EXPIRED, 6).isEmpty());
     }
 
     @Test
