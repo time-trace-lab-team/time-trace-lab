@@ -1,5 +1,7 @@
 package org.example.timeloop.replay;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 
@@ -18,9 +20,8 @@ import java.util.Objects;
  * </ul>
  *
  * <p>离散事件：残影可以触发 README 允许的机关（驻留板/门/中继/共振），
- * 但不能操作只允许当前玩家使用的核心/出口。当前 {@link TimelineEvent.EventType}
- * 只有 {@code DOCK_ENTERED}/{@code DOCK_LEFT}/{@code OCCUPANCY_RELEASED}，
- * 全部是残影允许的类型；若未来加入玩家专属事件类型，{@link #filterEchoAllowed} 会拒绝。</p>
+ * 但不能操作只允许当前玩家使用的核心/出口。{@link TimelineEvent.EventType#EXIT_REQUESTED}
+ * 是玩家专属事件，会被 {@link #filterEchoAllowed} 排除。</p>
  */
 public final class EchoState {
 
@@ -99,12 +100,22 @@ public final class EchoState {
 
     /**
      * 过滤掉残影不允许触发的事件类型。
-     * 当前所有 {@link TimelineEvent.EventType} 都是残影允许的，所以返回原列表；
-     * 未来若加入玩家专属事件（如核心终端交互、出口结算），在此处排除。
+     *
+     * <p>残影允许：{@link TimelineEvent.EventType#DOCK_LEFT}、
+     * {@link TimelineEvent.EventType#OCCUPANCY_RELEASED}、
+     * {@link TimelineEvent.EventType#DOCK_ENTERED}、
+     * {@link TimelineEvent.EventType#MECHANISM_STATE_CHANGED}。</p>
+     *
+     * <p>残影禁止：{@link TimelineEvent.EventType#EXIT_REQUESTED}
+     * —— 出口请求是当前玩家专属，残影不能操作核心或出口完成结算（README「时间残影」）。</p>
      */
     private static List<TimelineEvent> filterEchoAllowed(List<TimelineEvent> events) {
-        // 当前 EventType 只有 DOCK_ENTERED/DOCK_LEFT/OCCUPANCY_RELEASED，全部残影允许。
-        // 未来加入 EXIT_TRIGGERED 等玩家专属事件时，用 events.stream().filter(...) 排除。
-        return events;
+        List<TimelineEvent> allowed = new ArrayList<>(events.size());
+        for (TimelineEvent e : events) {
+            if (e.eventType() != TimelineEvent.EventType.EXIT_REQUESTED) {
+                allowed.add(e);
+            }
+        }
+        return Collections.unmodifiableList(allowed);
     }
 }
