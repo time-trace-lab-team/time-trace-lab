@@ -60,23 +60,56 @@ public class ExitTerminal implements GameObserver {
     // ========== Snapshot 接口 ==========
 
     public interface Snapshot {
+        /** 快照所属的稳定机制 ID。 */
+        default String getMechanismId() { return null; }
+
         boolean isDoorUnlocked();
         boolean isTriggered();
     }
 
-    public Snapshot createSnapshot() {
-        return new Snapshot() {
-            @Override
-            public boolean isDoorUnlocked() { return doorUnlocked; }
+    /** 不可变的出口终端状态快照。 */
+    public record StateSnapshot(String mechanismId,
+                                boolean doorUnlocked,
+                                boolean triggered) implements Snapshot {
 
-            @Override
-            public boolean isTriggered() { return triggered; }
-        };
+        public StateSnapshot {
+            mechanismId = StableIdValidator.requireMechanismId(
+                    mechanismId, "exit", "exitTerminal.snapshot.mechanismId");
+            validateState(doorUnlocked, triggered);
+        }
+
+        @Override
+        public String getMechanismId() { return mechanismId; }
+
+        @Override
+        public boolean isDoorUnlocked() { return doorUnlocked; }
+
+        @Override
+        public boolean isTriggered() { return triggered; }
+    }
+
+    public Snapshot createSnapshot() {
+        return new StateSnapshot(id, doorUnlocked, triggered);
     }
 
     public void restore(Snapshot snapshot) {
-        this.doorUnlocked = snapshot.isDoorUnlocked();
-        this.triggered = snapshot.isTriggered();
+        Objects.requireNonNull(snapshot, "exitTerminal.snapshot");
+        String snapshotId = snapshot.getMechanismId();
+        if (!id.equals(snapshotId)) {
+            throw new IllegalArgumentException(
+                    "出口终端快照 ID 不匹配: expected=" + id + ", actual=" + snapshotId);
+        }
+        boolean restoredDoorUnlocked = snapshot.isDoorUnlocked();
+        boolean restoredTriggered = snapshot.isTriggered();
+        validateState(restoredDoorUnlocked, restoredTriggered);
+        this.doorUnlocked = restoredDoorUnlocked;
+        this.triggered = restoredTriggered;
+    }
+
+    private static void validateState(boolean doorUnlocked, boolean triggered) {
+        if (triggered && !doorUnlocked) {
+            throw new IllegalArgumentException("已触发出口终端的门必须已解锁");
+        }
     }
 
 

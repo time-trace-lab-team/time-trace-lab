@@ -22,7 +22,8 @@ import java.util.TreeMap;
  *
  * <p>移动系统只提交 tick 末位置和离开方向；本类不推进玩家、不处理输入，也不写入 replay。</p>
  */
-public final class AutoDockService implements AutoDockReadPort, AutoDockOccupancyPort {
+public final class AutoDockService implements AutoDockReadPort,
+        AutoDockOccupancyPort, AutoDockSnapshotPort {
 
     private final NavigableMap<String, DockState> docksById;
 
@@ -68,6 +69,57 @@ public final class AutoDockService implements AutoDockReadPort, AutoDockOccupanc
             views.add(viewOf(state));
         }
         return Collections.unmodifiableList(views);
+    }
+
+    @Override
+    public synchronized AutoDockStateSnapshot createSnapshot() {
+        List<AutoDockStateSnapshot.DockSnapshot> snapshots = new ArrayList<>(docksById.size());
+        for (DockState state : docksById.values()) {
+            snapshots.add(new AutoDockStateSnapshot.DockSnapshot(
+                    state.definition.mechanismId(),
+                    occupancyOf(state),
+                    state.reentryBlockedAtTick));
+        }
+        return new AutoDockStateSnapshot(snapshots);
+    }
+
+    @Override
+    public synchronized void restore(AutoDockStateSnapshot snapshot) {
+        Objects.requireNonNull(snapshot, "autoDock.snapshot");
+
+        Map<String, AutoDockStateSnapshot.DockSnapshot> snapshotsById = new HashMap<>();
+        Set<String> snapshotIds = new java.util.HashSet<>();
+        for (AutoDockStateSnapshot.DockSnapshot dockSnapshot : snapshot.docks()) {
+            String mechanismId = dockSnapshot.mechanismId();
+            if (!snapshotIds.add(mechanismId)) {
+                throw new IllegalArgumentException(
+                        "autoDock 快照包含重复机制 ID: " + mechanismId);
+            }
+            if (!docksById.containsKey(mechanismId)) {
+                throw new IllegalArgumentException(
+                        "autoDock 快照包含未知机制 ID: " + mechanismId);
+            }
+            snapshotsById.put(mechanismId, dockSnapshot);
+            validateOccupancySnapshot(dockSnapshot.occupancy());
+        }
+        if (!snapshotIds.equals(docksById.keySet())) {
+            throw new IllegalArgumentException("autoDock 快照与当前关卡机制集合不匹配");
+        }
+
+        // 所有 ID、占用者和 tick 先完成校验，再修改任何内部状态，避免半恢复。
+        for (DockState state : docksById.values()) {
+            AutoDockStateSnapshot.DockSnapshot dockSnapshot =
+                    snapshotsById.get(state.definition.mechanismId());
+            DockOccupancyView occupancy = dockSnapshot.occupancy();
+            if (occupancy.occupied()) {
+                state.occupantId = occupancy.occupantId();
+                state.occupantSourceRound = occupancy.occupantSourceRound();
+                state.occupiedAtTick = occupancy.occupiedAtTick();
+            } else {
+                clearOccupancy(state);
+            }
+            state.reentryBlockedAtTick = dockSnapshot.reentryBlockedAtTick();
+        }
     }
 
     @Override
@@ -243,13 +295,7 @@ public final class AutoDockService implements AutoDockReadPort, AutoDockOccupanc
     }
 
     private static AutoDockView viewOf(DockState state) {
-        DockOccupancyView occupancy = state.occupantId == null
-                ? DockOccupancyView.empty()
-                : new DockOccupancyView(
-                true,
-                state.occupantId,
-                state.occupantSourceRound,
-                state.occupiedAtTick);
+        DockOccupancyView occupancy = occupancyOf(state);
         return new AutoDockView(
                 state.definition.mechanismId(),
                 state.definition.pathNodeId(),
@@ -258,6 +304,23 @@ public final class AutoDockService implements AutoDockReadPort, AutoDockOccupanc
                 state.definition.legalExitDirections(),
                 occupancy,
                 state.reentryBlockedAtTick);
+    }
+
+    private static DockOccupancyView occupancyOf(DockState state) {
+        return state.occupantId == null
+                ? DockOccupancyView.empty()
+                : new DockOccupancyView(
+                true,
+                state.occupantId,
+                state.occupantSourceRound,
+                state.occupiedAtTick);
+    }
+
+    private static void validateOccupancySnapshot(DockOccupancyView occupancy) {
+        Objects.requireNonNull(occupancy, "autoDock.snapshot.occupancy");
+        if (occupancy.occupied()) {
+            requireActor(occupancy.occupantId(), occupancy.occupantSourceRound());
+        }
     }
 
     private static boolean isOwner(DockState state, String actorId, int sourceRound) {
