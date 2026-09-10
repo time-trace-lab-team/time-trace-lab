@@ -8,15 +8,14 @@ import javafx.scene.layout.Pane;
 import javafx.stage.Stage;
 import org.example.timeloop.core.FixedStepLoop;
 import org.example.timeloop.core.GamePhase;
-import org.example.timeloop.core.TickStepResult;
-import org.example.timeloop.level.Level03Footsteps;
-import org.example.timeloop.level.model.LevelData;
-import org.example.timeloop.mechanism.event.EventDispatcher;
-import org.example.timeloop.replay.EchoLifetime;
-import org.example.timeloop.replay.EchoLifetimeManager;
 import org.example.timeloop.render.CanvasAdapter;
-import org.example.timeloop.ui.LifetimeUI;
 
+/**
+ * C1 使用的最小 JavaFX 启动壳。
+ *
+ * <p>这里只负责 Stage、Scene、Canvas 和 AnimationTimer 的装配，不包含菜单、
+ * 页面切换、关卡选择或具体游戏逻辑。</p>
+ */
 public final class TimeTraceLabApplication extends Application {
 
     private static final double TILE_SIZE = 48.0;
@@ -25,34 +24,17 @@ public final class TimeTraceLabApplication extends Application {
     private static final double WORLD_WIDTH = WORLD_COLUMNS * TILE_SIZE;
     private static final double WORLD_HEIGHT = WORLD_ROWS * TILE_SIZE;
 
-    private final FixedStepLoop loop = new FixedStepLoop(this::runSimulationStep);
+    /**
+     * C1 先接入固定步长循环；开发 2 提供权威 tick 更新实现后，只替换此端口装配。
+     */
+    private final FixedStepLoop loop = new FixedStepLoop(() -> {
+        // 当前启动壳不拥有玩法逻辑。
+    });
     private GamePhase gamePhase = GamePhase.BOOT;
     private AnimationTimer animationTimer;
 
-    private EchoLifetimeManager lifetimeManager;
-    private LevelData levelData;
-    private long roundTick = 0;
-    private int maxRounds = 4;
-    private long durationTicks = 1080;
-    private boolean simulationComplete = false;
-    private boolean isFirstFrame = true;
-
     @Override
     public void start(Stage stage) {
-        EventDispatcher.getInstance().clear();
-
-        levelData = Level03Footsteps.create();
-        durationTicks = levelData.getDurationTicks();
-        maxRounds = levelData.getMaxRounds();
-
-        System.out.println("=== 第3关加载完成 ===");
-        System.out.println("轮长: " + durationTicks + " tick");
-        System.out.println("最大轮数: " + maxRounds);
-        System.out.println("残影寿命 L: " + levelData.getEchoLifeL());
-
-        lifetimeManager = new EchoLifetimeManager();
-        lifetimeManager.initialize(durationTicks, maxRounds, levelData.getEchoLifeL());
-
         Canvas canvas = new Canvas(WORLD_WIDTH, WORLD_HEIGHT);
         Pane root = new Pane(canvas);
         canvas.widthProperty().bind(root.widthProperty());
@@ -65,80 +47,20 @@ public final class TimeTraceLabApplication extends Application {
             @Override
             public void handle(long nanoTime) {
                 loop.onAnimationFrame(nanoTime, gamePhase);
-                canvasAdapter.renderFrame(WORLD_WIDTH, WORLD_HEIGHT, loop.interpolationAlpha());
+                canvasAdapter.renderFrame(
+                        WORLD_WIDTH,
+                        WORLD_HEIGHT,
+                        loop.interpolationAlpha());
             }
         };
 
-        stage.setTitle("时痕实验室：昨日的我 - 第3关 寿命教学");
+        stage.setTitle("时痕实验室：昨日的我");
         stage.setScene(scene);
         stage.show();
 
+        // 当前空壳没有菜单/READY 交互，直接进入 C1 灰盒运行阶段。
         gamePhase = GamePhase.PLAYING;
         animationTimer.start();
-    }
-
-    private TickStepResult runSimulationStep() {
-        if (simulationComplete) {
-            return TickStepResult.NO_ADVANCE;
-        }
-
-        if (isFirstFrame) {
-            lifetimeManager.startRound();
-            isFirstFrame = false;
-        } else {
-            roundTick++;
-            lifetimeManager.updateRoundTick(roundTick);
-        }
-
-        if (roundTick == durationTicks - 1) {
-            if (lifetimeManager.getCurrentRound() < maxRounds) {
-                lifetimeManager.endRound(roundTick);
-                lifetimeManager.startRound();
-                roundTick = 0;
-            } else {
-                System.out.println("\n=== 所有轮次结束 ===");
-                simulationComplete = true;
-                printFinalState();
-                gamePhase = GamePhase.PAUSED;
-                animationTimer.stop();
-            }
-            return TickStepResult.ROUND_END;
-        }
-
-        if (roundTick % 60 == 0 && roundTick > 0) {
-            printCurrentState();
-        }
-        return TickStepResult.ADVANCED;
-    }
-
-    private void printCurrentState() {
-        var activeEchoes = lifetimeManager.getAllActiveEchoes();
-        if (activeEchoes.isEmpty()) {
-            return;
-        }
-
-        System.out.println("\n--- 当前状态 (轮 " + lifetimeManager.getCurrentRound()
-                + ", tick " + roundTick + ") ---");
-        for (EchoLifetime echo : activeEchoes) {
-            String status = LifetimeUI.getEchoStatusText(echo);
-            String pathType = LifetimeUI.shouldUseDashedPath(echo) ? "虚线" : "实线";
-            String outerRing = LifetimeUI.shouldShowOuterRing(echo) ? "外环" : "无外环";
-            System.out.printf("  %s | 路径: %s | 标记: %s%n", status, pathType, outerRing);
-        }
-    }
-
-    private void printFinalState() {
-        System.out.println("\n=== 最终状态 ===");
-        for (int i = 1; i < maxRounds; i++) {
-            EchoLifetime echo = lifetimeManager.getEcho(i);
-            if (echo == null) {
-                System.out.println("E" + i + " 从未生成");
-            } else if (echo.isActive()) {
-                System.out.println("E" + i + " 仍活跃，剩余 " + echo.getRemainingRounds() + " 轮");
-            } else {
-                System.out.println("E" + i + " 已消散");
-            }
-        }
     }
 
     @Override
