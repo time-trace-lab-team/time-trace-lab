@@ -1,5 +1,6 @@
 package org.example.timeloop.replay;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -16,8 +17,10 @@ import java.util.Objects;
  *       时间线长度不合法时明确失败，绝不用最后一帧补齐。</li>
  * </ul>
  *
- * <p>离散事件（残影触发机关）与整轮寿命（age / remainingRounds）分别依赖
- * 开发 3 的事件类型冻结与 R4，本类暂不包含。</p>
+ * <p>离散事件：残影可以触发 README 允许的机关（驻留板/门/中继/共振），
+ * 但不能操作只允许当前玩家使用的核心/出口。当前 {@link TimelineEvent.EventType}
+ * 只有 {@code DOCK_ENTERED}/{@code DOCK_LEFT}/{@code OCCUPANCY_RELEASED}，
+ * 全部是残影允许的类型；若未来加入玩家专属事件类型，{@link #filterEchoAllowed} 会拒绝。</p>
  */
 public final class EchoState {
 
@@ -69,5 +72,39 @@ public final class EchoState {
                             + "（sourceRound=" + recording.sourceRound() + "）");
         }
         return recording.frameAt((int) roundTick);
+    }
+
+    /**
+     * 本刻残影触发的事件（已过滤到只允许残影触发的类型）。
+     * 顺序由 {@link TimelineEvent#STABLE_ORDER} 保证稳定。
+     *
+     * @param roundTick 共享逻辑刻
+     * @return 不可修改的事件列表（该 tick 的残影允许事件）
+     */
+    public List<TimelineEvent> eventsAt(long roundTick) {
+        List<TimelineEvent> raw = recording.eventsAt(roundTick);
+        return filterEchoAllowed(raw);
+    }
+
+    /**
+     * 整条时间线上残影触发的事件（已过滤）。
+     * 顺序由 {@link TimelineEvent#STABLE_ORDER} 保证稳定。
+     *
+     * @return 不可修改的事件列表
+     */
+    public List<TimelineEvent> allEvents() {
+        List<TimelineEvent> raw = recording.events();
+        return filterEchoAllowed(raw);
+    }
+
+    /**
+     * 过滤掉残影不允许触发的事件类型。
+     * 当前所有 {@link TimelineEvent.EventType} 都是残影允许的，所以返回原列表；
+     * 未来若加入玩家专属事件（如核心终端交互、出口结算），在此处排除。
+     */
+    private static List<TimelineEvent> filterEchoAllowed(List<TimelineEvent> events) {
+        // 当前 EventType 只有 DOCK_ENTERED/DOCK_LEFT/OCCUPANCY_RELEASED，全部残影允许。
+        // 未来加入 EXIT_TRIGGERED 等玩家专属事件时，用 events.stream().filter(...) 排除。
+        return events;
     }
 }
