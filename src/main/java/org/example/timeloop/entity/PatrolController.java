@@ -38,6 +38,7 @@ public final class PatrolController {
 
     private final OrthogonalPathGraph graph;
     private final PatrolConfig config;
+    private final SpeedModifierPort speedModifier;
 
     private String segmentStartNodeId;
     private String segmentEndNodeId;
@@ -49,8 +50,18 @@ public final class PatrolController {
             String startNodeId,
             Direction initialDirection,
             PatrolConfig config) {
+        this(graph, startNodeId, initialDirection, config, SpeedModifierPort.normalSpeed());
+    }
+
+    public PatrolController(
+            OrthogonalPathGraph graph,
+            String startNodeId,
+            Direction initialDirection,
+            PatrolConfig config,
+            SpeedModifierPort speedModifier) {
         this.graph = Objects.requireNonNull(graph, "graph");
         this.config = Objects.requireNonNull(config, "config");
+        this.speedModifier = Objects.requireNonNull(speedModifier, "speedModifier");
         Objects.requireNonNull(initialDirection, "initialDirection");
 
         PathNode start = graph.node(startNodeId);
@@ -96,7 +107,8 @@ public final class PatrolController {
             return idleFrame(tick);
         }
 
-        double budget = config.baseSpeed();
+        double multiplier = speedMultiplier();
+        double budget = config.baseSpeed() * multiplier;
         Optional<Direction> pendingEdge = newestEdge;
 
         while (budget > 0) {
@@ -123,14 +135,14 @@ public final class PatrolController {
             double dist = distanceToDestination(destination);
             if (dist > budget) {
                 position = DirectionGeometry.move(position, direction, budget);
-                return cruisingFrame(tick);
+                return movingFrame(tick, multiplier);
             } else {
                 position = destination.center();
                 budget -= dist;
                 pendingEdge = Optional.empty();
             }
         }
-        return cruisingFrame(tick);
+        return movingFrame(tick, multiplier);
     }
     /** 返回当前吸附位置（始终在路径中心线上）。 */
     public PathPoint position() {
@@ -198,9 +210,19 @@ public final class PatrolController {
                 MovementState.IDLE, ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
     }
 
-    private PlayerKinematics cruisingFrame(long tick) {
+    private PlayerKinematics movingFrame(long tick, double multiplier) {
         return new PlayerKinematics(tick, position.x(), position.y(), direction,
-                MovementState.CRUISING, ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
+                multiplier < 1.0 ? MovementState.SLOWED : MovementState.CRUISING,
+                ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
+    }
+
+    private double speedMultiplier() {
+        double multiplier = speedModifier.speedMultiplier();
+        if (!Double.isFinite(multiplier) || multiplier < 0.0) {
+            throw new IllegalStateException(
+                    "speed multiplier must be finite and >= 0, actual " + multiplier);
+        }
+        return multiplier;
     }
 
     private PathNode centerNodeIfAtCenter() {
