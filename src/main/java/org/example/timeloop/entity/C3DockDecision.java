@@ -26,7 +26,7 @@ public record C3DockDecision(
 ) {
 
     public enum Status {
-        /** 驻留/离开中且尚未出界：调用方不得推进运动。 */
+        /** 驻留或离开请求被拒绝：调用方不得推进运动。 */
         FREEZE,
         /** 正常巡行或离开移动：调用方推进运动。 */
         CRUISE

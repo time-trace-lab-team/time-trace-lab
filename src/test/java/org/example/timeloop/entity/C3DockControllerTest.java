@@ -101,7 +101,7 @@ class C3DockControllerTest {
     }
 
     @Test
-    void legalLeaveEdgeStartsDepartureAndKeepsOccupancyUntilOutside() {
+    void legalLeaveEdgeReleasesOccupancyInTheSameTick() {
         FakeDockPort port = new FakeDockPort();
         C3DockController controller = controller(port);
         controller.step(0, InputIntent.empty(0), CENTER);
@@ -110,33 +110,71 @@ class C3DockControllerTest {
                 withDirectionEdge(1, Direction.UP, LogicalKey.DIR_UP), CENTER);
         assertEquals(C3DockDecision.Status.CRUISE, departure.status());
         assertEquals(Direction.UP, departure.departureDirection().orElseThrow());
-        assertTrue(controller.isDocked(), "仍在区域内，占用未释放");
-
-        // 仍在区域内：不释放、不发 DOCK_LEFT
-        C3DockDecision stillInside = controller.step(2, InputIntent.empty(2), new Vector2D(0.0, 1.0));
-        assertEquals(C3DockDecision.Status.CRUISE, stillInside.status());
-        assertEquals(Direction.UP, stillInside.departureDirection().orElseThrow());
-        assertTrue(stillInside.events().isEmpty());
-        assertTrue(controller.isDocked());
+        assertFalse(controller.isDocked());
+        assertFalse(port.view().occupancy().occupied());
     }
 
     @Test
-    void exitingRegionReleasesAndEmitsDockLeftWithDirectionAndReason() {
+    void dockLeftBelongsToTheLegalExitEdgeTick() {
         FakeDockPort port = new FakeDockPort();
         C3DockController controller = controller(port);
         controller.step(0, InputIntent.empty(0), CENTER);
-        controller.step(1, withDirectionEdge(1, Direction.UP, LogicalKey.DIR_UP), CENTER);
 
-        C3DockDecision decision = controller.step(2, InputIntent.empty(2), OUTSIDE);
+        C3DockDecision decision = controller.step(1, withDirectionEdge(1, Direction.UP, LogicalKey.DIR_UP), CENTER);
 
         assertEquals(C3DockDecision.Status.CRUISE, decision.status());
         assertEquals(1, decision.events().size());
         TimelineEvent event = decision.events().get(0);
         assertEquals(TimelineEvent.EventType.DOCK_LEFT, event.eventType());
-        assertEquals(2L, event.tick());
+        assertEquals(1L, event.tick());
         assertEquals(Direction.UP, event.leaveDirection());
         assertEquals(C3DockController.REASON_NEW_DIRECTION, event.reason());
         assertFalse(controller.isDocked());
+    }
+
+    @Test
+    void remainingInsideAfterLeavingDoesNotProduceSecondDockEntered() {
+        FakeDockPort port = new FakeDockPort();
+        C3DockController controller = controller(port);
+        controller.step(0, InputIntent.empty(0), CENTER);
+        controller.step(1, withDirectionEdge(1, Direction.UP, LogicalKey.DIR_UP), CENTER);
+
+        C3DockDecision stillInside = controller.step(2,
+                new InputIntent(2, Set.of(), Set.of(), Set.of(LogicalKey.DIR_UP), List.of()), CENTER);
+
+        assertEquals(C3DockDecision.Status.CRUISE, stillInside.status());
+        assertTrue(stillInside.events().isEmpty());
+        assertFalse(port.view().occupancy().occupied());
+    }
+
+    @Test
+    void leavingThenReleasingTheKeyInsideRegionDoesNotReenter() {
+        FakeDockPort port = new FakeDockPort();
+        C3DockController controller = controller(port);
+        controller.step(0, InputIntent.empty(0), CENTER);
+        controller.step(1, withDirectionEdge(1, Direction.UP, LogicalKey.DIR_UP), CENTER);
+
+        C3DockDecision released = controller.step(2, InputIntent.empty(2), CENTER);
+
+        assertTrue(released.events().isEmpty());
+        assertFalse(controller.isDocked());
+        assertFalse(port.view().occupancy().occupied());
+    }
+
+    @Test
+    void leavingThenCrossingOutsideAndEnteringAgainProducesNewEdge() {
+        FakeDockPort port = new FakeDockPort();
+        C3DockController controller = controller(port);
+        controller.step(0, InputIntent.empty(0), CENTER);
+        controller.step(1, withDirectionEdge(1, Direction.UP, LogicalKey.DIR_UP), CENTER);
+        controller.step(2, InputIntent.empty(2), OUTSIDE);
+
+        C3DockDecision reentered = controller.step(3, InputIntent.empty(3), CENTER);
+
+        assertEquals(C3DockDecision.Status.FREEZE, reentered.status());
+        assertEquals(1, reentered.events().size());
+        assertEquals(TimelineEvent.EventType.DOCK_ENTERED, reentered.events().get(0).eventType());
+        assertTrue(port.view().occupancy().occupied());
     }
 
     @Test
@@ -247,9 +285,6 @@ class C3DockControllerTest {
             }
             if (exitDirection == null || !exits.contains(exitDirection)) {
                 return new AutoDockResult(AutoDockResult.Status.INVALID_EXIT_DIRECTION, tick, view());
-            }
-            if (region.contains(worldPosition)) {
-                return new AutoDockResult(AutoDockResult.Status.NOT_OUTSIDE_REGION, tick, view());
             }
             occupantId = null;
             occupantRound = 0;
