@@ -191,7 +191,7 @@ compare(a, b):
 ### 5.2 进入、离开和 tick 归属
 
 - 位置转换以固定 tick 的采样结果为准。前一有效位置在外、tick `t` 的有效位置在内，进入事件归属于 tick `t`。
-- 前一有效位置在内、tick `t` 的有效位置在外，并且离开方向属于合法出口时，`DOCK_LEFT` 和释放都归属于 tick `t`；同一 tick 内先产生离开事实，再产生释放事实。
+- 占用者在 tick `t` 按下**合法出口方向**即产生 `DOCK_LEFT` 并**在同一逻辑刻释放占用**（`LEFT`），**不要求位置已出区域**；同一 tick 内先产生离开事实，再产生释放事实。位置不再参与释放判定（X-MOVE-COLLAPSE-01-DEV3 L-1，PM 2026-09-10 批准；依据 README §三 与 `R5-开工前裁决.md` 裁决 4）。
 - 非法方向离开不释放占用，返回 `INVALID_EXIT_DIRECTION`；不能通过瞬移到区域外绕过出口规则。
 - 同一 dock 在 tick `t` 发生合法离开后，设置 `reentryBlockedAtTick=t`。该 dock 在同一个 tick 再次进入一律返回 `SAME_TICK_REENTRY_BLOCKED`，即使排序上释放事件已经先发生。
 - 同 tick 离开 dock A、进入 dock B 只有在调用方提供了真实的合法移动结果时才允许；不能通过 autoDock 查询制造跨区域瞬移。对同一 dock 的离开/再进入禁止规则始终有效。
@@ -267,5 +267,6 @@ AutoDockOccupancyPort
 - [x] 普通轮末、残影淘汰、整局重开和场景退出的清理时机已明确；
 - [x] 只读返回字段和最小接口方向已经确认并落地；
 - [x] 本步骤不实施代码，不修改禁止路径。
+- [x] **（2026-09-10 追加，X-MOVE-COLLAPSE-01-DEV3 L-1 / `ENT-2a`）** 同刻释放：合法出口按下即 `LEFT` 并清占用，不要求位置出界；`NOT_OUTSIDE_REGION` 保留枚举但标 `@Deprecated`，不再由 `tryLeave` 产生。经 PM 批准，与开发一 `ENT-2b` **成对合并**（集成分支 `codex/ent2-paired`），不单独进入 `develop`。
 
 W1/W4 已在 `mechanism/**`、`level/**` 及开发三测试范围内按本规格落地；下一步 W2 负责修复第一关路径图并完成 `LevelGeometryImpl` 构造验收。
