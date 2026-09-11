@@ -116,8 +116,8 @@ class PatrolControllerDeadEndTest {
     @Test
     @Timeout(value = 1, unit = TimeUnit.SECONDS)
     void straightThroughNode_continuesMoving() {
-        // start(0,0) --DOWN--> mid(0,5) --DOWN--> end(0,10)
-        PatrolController c = new PatrolController(corridorGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+        // start(0,0) --DOWN--> mid(0,10) --DOWN--> end(0,20)
+        PatrolController c = new PatrolController(straightGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
         PlayerKinematics last = null;
         for (long t = 0; t < 10; t++) {
             last = tick(c, t, Direction.DOWN);

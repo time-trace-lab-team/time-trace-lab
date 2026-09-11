@@ -63,6 +63,16 @@ public final class PatrolController {
         this.position = start.center();
     }
 
+    /**
+     * 推进一帧。
+     *
+     * @param tick            当前刻号（≥0）
+     * @param heldDirections  本刻末仍按住的方向集合（可为空）
+     * @param newestEdge      本刻最后新按下的方向（无则 {@link Optional#empty()}）；
+     *                        仅在到达节点中心时用于提交转向，段中间忽略
+     * @param passability     出口通行性判定
+     * @return 本刻的玩家运动学快照
+     */
     public PlayerKinematics advance(
             long tick,
             Set<Direction> heldDirections,
@@ -122,15 +132,17 @@ public final class PatrolController {
         }
         return cruisingFrame(tick);
     }
-
+    /** 返回当前吸附位置（始终在路径中心线上）。 */
     public PathPoint position() {
         return position;
     }
 
+    /** 返回当前朝向。 */
     public Direction direction() {
         return direction;
     }
 
+    /** 返回本控制器使用的配置。 */
     public PatrolConfig config() {
         return config;
     }
