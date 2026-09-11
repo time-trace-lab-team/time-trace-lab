@@ -1,5 +1,8 @@
 package org.example.timeloop.level;
 
+import org.example.timeloop.level.model.DoorInfo;
+import org.example.timeloop.level.model.EntitySpawnInfo;
+import org.example.timeloop.level.model.LevelData;
 import org.example.timeloop.level.model.PathNode;
 import org.example.timeloop.level.model.Vector2D;
 import org.junit.jupiter.api.Test;
@@ -16,7 +19,7 @@ class LevelGeometryImplTest {
         LevelGeometry geometry = new LevelGeometryImpl(Level01Footsteps.build());
 
         assertEquals(48.0, geometry.getTileSize());
-        assertEquals(new Vector2D(240.0, 48.0), geometry.getSpawnPosition());
+        assertEquals(new Vector2D(264.0, 72.0), geometry.getSpawnPosition());
         assertTrue(geometry.hasNode("L01_node_fork"));
         assertTrue(geometry.isConnected("L01_node_fork", "L01_node_left_01"));
         assertTrue(geometry.isConnected("L01_node_fork", "L01_node_right_01"));
@@ -25,6 +28,22 @@ class LevelGeometryImplTest {
         assertEquals(PathNode.Dir.UP, geometry.getDefaultExit("L01_node_fork"));
         assertEquals(java.util.Set.of(PathNode.Dir.UP),
                 geometry.getValidExits("L01_node_left_end"));
+    }
+
+    @Test
+    void level01PlacesWorldObjectsAtGridCellCenters() {
+        LevelData level = Level01Footsteps.build();
+
+        assertCellCenter(level.getSpawnPos(), level.getTileSize(), "spawn");
+        for (PathNode node : level.getPathNodes()) {
+            assertCellCenter(node.getWorldPos(), level.getTileSize(), node.getId());
+        }
+        for (EntitySpawnInfo entity : level.getEntitySpawnList()) {
+            assertCellCenter(entity.getPos(), level.getTileSize(), entity.getId());
+        }
+        for (DoorInfo door : level.getDoors()) {
+            assertCellCenter(door.getPosition(), level.getTileSize(), door.getId());
+        }
     }
 
     @Test
@@ -64,5 +83,14 @@ class LevelGeometryImplTest {
                         PathNode.Dir.LEFT,
                         PathNode.Dir.RIGHT),
                 geometry.getValidExits("L01_node_fork"));
+    }
+
+    private static void assertCellCenter(Vector2D position, double tileSize, String label) {
+        double col = Math.floor(position.x() / tileSize);
+        double row = Math.floor(position.y() / tileSize);
+        assertEquals((col + 0.5) * tileSize, position.x(), 1.0e-9,
+                label + " x 必须位于格子中心");
+        assertEquals((row + 0.5) * tileSize, position.y(), 1.0e-9,
+                label + " y 必须位于格子中心");
     }
 }

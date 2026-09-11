@@ -16,7 +16,7 @@ public class Level01Footsteps {
 
     public static LevelData build() {
         TileType[][] grid = createTileGrid();
-        Vector2D spawnWorldPos = new Vector2D(TILE_SIZE * 5.0, TILE_SIZE * 1.0);
+        Vector2D spawnWorldPos = cellCenter(5, 1);
         List<PathNode> nodeList = buildPathNodes();
         List<EntitySpawnInfo> entityList = buildEntities();
         List<DoorInfo> doors = buildDoors();
@@ -63,76 +63,76 @@ public class Level01Footsteps {
 
         nodes.add(new PathNode(
                 "L01_node_spawn",
-                new Vector2D(5 * TILE_SIZE, 1 * TILE_SIZE),
+                cellCenter(5, 1),
                 EnumSet.of(PathNode.Dir.DOWN)));
         nodes.add(new PathNode(
                 "L01_node_corridor_01",
-                new Vector2D(5 * TILE_SIZE, 2 * TILE_SIZE),
+                cellCenter(5, 2),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
 
         nodes.add(new PathNode(
                 "L01_node_fork",
-                new Vector2D(5 * TILE_SIZE, 3 * TILE_SIZE),
+                cellCenter(5, 3),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT),
                 PathNode.Dir.UP));
 
         nodes.add(new PathNode(
                 "L01_node_center_01",
-                new Vector2D(5 * TILE_SIZE, 4 * TILE_SIZE),
+                cellCenter(5, 4),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
         nodes.add(new PathNode(
                 "L01_node_door",
-                new Vector2D(5 * TILE_SIZE, 5 * TILE_SIZE),
+                cellCenter(5, 5),
                 EnumSet.of(PathNode.Dir.UP)));
 
         nodes.add(new PathNode(
                 "L01_node_left_01",
-                new Vector2D(4 * TILE_SIZE, 3 * TILE_SIZE),
+                cellCenter(4, 3),
                 EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
         nodes.add(new PathNode(
                 "L01_node_left_02",
-                new Vector2D(3 * TILE_SIZE, 3 * TILE_SIZE),
+                cellCenter(3, 3),
                 EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
         nodes.add(new PathNode(
                 "L01_node_left_turn",
-                new Vector2D(2 * TILE_SIZE, 3 * TILE_SIZE),
+                cellCenter(2, 3),
                 EnumSet.of(PathNode.Dir.RIGHT, PathNode.Dir.DOWN)));
         nodes.add(new PathNode(
                 "L01_node_left_approach",
-                new Vector2D(2 * TILE_SIZE, 4 * TILE_SIZE),
+                cellCenter(2, 4),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
         nodes.add(new PathNode(
                 "L01_node_left_end",
-                new Vector2D(2 * TILE_SIZE, 5 * TILE_SIZE),
+                cellCenter(2, 5),
                 EnumSet.of(PathNode.Dir.UP)));
 
         nodes.add(new PathNode(
                 "L01_node_right_01",
-                new Vector2D(6 * TILE_SIZE, 3 * TILE_SIZE),
+                cellCenter(6, 3),
                 EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
         nodes.add(new PathNode(
                 "L01_node_right_02",
-                new Vector2D(7 * TILE_SIZE, 3 * TILE_SIZE),
+                cellCenter(7, 3),
                 EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
         nodes.add(new PathNode(
                 "L01_node_right_turn",
-                new Vector2D(8 * TILE_SIZE, 3 * TILE_SIZE),
+                cellCenter(8, 3),
                 EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.DOWN)));
         nodes.add(new PathNode(
                 "L01_node_right_approach",
-                new Vector2D(8 * TILE_SIZE, 4 * TILE_SIZE),
+                cellCenter(8, 4),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.RIGHT)));
         nodes.add(new PathNode(
                 "L01_node_right_end",
-                new Vector2D(8 * TILE_SIZE, 5 * TILE_SIZE),
+                cellCenter(8, 5),
                 EnumSet.of(PathNode.Dir.UP)));
         nodes.add(new PathNode(
                 "L01_node_exit_approach",
-                new Vector2D(9 * TILE_SIZE, 4 * TILE_SIZE),
+                cellCenter(9, 4),
                 EnumSet.of(PathNode.Dir.LEFT, PathNode.Dir.DOWN)));
         nodes.add(new PathNode(
                 "L01_node_exit_terminal",
-                new Vector2D(9 * TILE_SIZE, 5 * TILE_SIZE),
+                cellCenter(9, 5),
                 EnumSet.of(PathNode.Dir.UP)));
 
         return nodes;
@@ -144,21 +144,21 @@ public class Level01Footsteps {
         list.add(new EntitySpawnInfo(
                         "L01_plate_left",
                         "dock_plate",
-                        new Vector2D(2 * TILE_SIZE, 5 * TILE_SIZE),
+                        cellCenter(2, 5),
                         "L01_node_left_end")
                 .putProp("autoDock", true));
 
         list.add(new EntitySpawnInfo(
                         "L01_plate_right",
                         "dock_plate",
-                        new Vector2D(8 * TILE_SIZE, 5 * TILE_SIZE),
+                        cellCenter(8, 5),
                         "L01_node_right_end")
                 .putProp("autoDock", true));
 
         list.add(new EntitySpawnInfo(
                 "L01_exit_00",
                 "exit_terminal",
-                new Vector2D(9 * TILE_SIZE, 5 * TILE_SIZE),
+                cellCenter(9, 5),
                 "L01_node_exit_terminal"));
 
         return list;
@@ -168,9 +168,16 @@ public class Level01Footsteps {
         List<DoorInfo> doors = new ArrayList<>();
         doors.add(new DoorInfo(
                 "L01_door_01",
-                new Vector2D(5 * TILE_SIZE, 5 * TILE_SIZE),
+                cellCenter(5, 5),
                 false,
                 Set.of("L01_plate_left", "L01_plate_right")));
         return doors;
+    }
+
+    /** 第一关世界坐标约定：所有路径节点和可见物件位于对应格子的几何中心。 */
+    private static Vector2D cellCenter(int col, int row) {
+        return new Vector2D(
+                (col + 0.5) * TILE_SIZE,
+                (row + 0.5) * TILE_SIZE);
     }
 }
