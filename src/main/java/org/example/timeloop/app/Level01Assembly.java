@@ -40,6 +40,7 @@ import org.example.timeloop.replay.ReplayPort;
 import org.example.timeloop.replay.RoundClock;
 import org.example.timeloop.replay.TickContext;
 import org.example.timeloop.replay.TimelineEvent;
+import org.example.timeloop.replay.TimelineRecording;
 
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -138,6 +139,11 @@ public final class Level01Assembly {
         return copy;
     }
 
+    /** 本轮录制缓冲（只读；供诊断与集成测试核对帧/事件是否真的写进了记录）。 */
+    public Optional<TimelineRecording> currentRecording() {
+        return recording.currentBuffer();
+    }
+
     /** 推进一个逻辑刻：输入 → autoDock 决策 → 巡行/驻留 → 记录帧 → 事件 → 时钟推进。 */
     public void tick(InputIntent input) {
         Objects.requireNonNull(input, "input");
@@ -182,6 +188,11 @@ public final class Level01Assembly {
         lastTick = tick;
         recording.recordFrame(lastFrame);
         events.addAll(decision.events());
+        // 把本刻机关边沿写进本轮记录：残影回放只认记录里的事件（echo.eventsAt），
+        // 不写就会出现“残影路过驻留板却不占板”，第一关双板门永远打不开。
+        for (TimelineEvent event : decision.events()) {
+            recording.recordEvent(event);
+        }
         mirrorDockEvents(decision.events());
         replayEchoEvents(tick);
         interactIfRequested(tick, input);
@@ -369,8 +380,14 @@ public final class Level01Assembly {
         rightPlate.reset();
         door.reset();
         exit.reset();
+        // 轮末事务：封装满长记录、生成残影、清空 autoDock 占用（走 C3 的 reset 以便同时清掉它的本地驻留状态），
+        // 事务结束时时钟停在 READY（见 docs/development 的开发二 R-3 契约）。
         recording.completeNormalRound(
-                () -> autoDock.reset(AutoDockResetReason.ROUND_END, clock.roundTick()));
+                () -> dockController.reset(AutoDockResetReason.ROUND_END, clock.roundTick()));
+        // READY -> PLAYING：不接回 PLAYING 的话 tick() 会直接 return，第 2 轮起角色完全无法移动。
+        // README §三 要求的“短暂 READY 冻结”（玩家确认起始朝向）尚未实现，登记在 app 轮转待办里。
+        clock.transition(GamePhase.PLAYING);
+        pendingTurn = Optional.empty();
     }
 
     private DockingPlate plateById(String mechanismId) {
