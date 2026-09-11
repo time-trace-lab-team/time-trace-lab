@@ -16,8 +16,7 @@ import java.util.Optional;
 public record PathNode(
         String id,
         PathPoint center,
-        List<PathExit> exits,
-        Optional<Direction> defaultExit
+        List<PathExit> exits
 ) {
 
     public PathNode {
@@ -26,8 +25,6 @@ public record PathNode(
         }
         Objects.requireNonNull(center, "center");
         Objects.requireNonNull(exits, "exits");
-        Objects.requireNonNull(defaultExit, "defaultExit");
-
         exits = List.copyOf(exits);
         if (exits.isEmpty()) {
             throw new IllegalArgumentException("path node '" + id + "' must declare at least one exit");
@@ -42,16 +39,6 @@ public record PathNode(
                 }
             }
         }
-
-        if (defaultExit.isPresent() && exitFor(exits, defaultExit.get()).isEmpty()) {
-            throw new IllegalArgumentException(
-                    "path node '" + id + "' declares defaultExit " + defaultExit.get() + " without that exit");
-        }
-    }
-
-    /** Creates a node that has no author-declared fallback exit. */
-    public PathNode(String id, PathPoint center, List<PathExit> exits) {
-        this(id, center, exits, Optional.empty());
     }
 
     /** Looks up a declared exit without exposing mutable graph state. */
