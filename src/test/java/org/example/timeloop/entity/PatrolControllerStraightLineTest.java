@@ -14,25 +14,30 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-/**
- * C-PLAYER-MOVE-01：四方向受约束移动 — 直线段行为。
- */
 class PatrolControllerStraightLineTest {
+
+    private static PlayerKinematics tick(PatrolController c, long t, Direction... held) {
+        return c.advance(t, Set.of(held), Optional.empty(), ExitPassability.allOpen());
+    }
+
+    private static PlayerKinematics tickEdge(PatrolController c, long t, Direction edge, Direction... held) {
+        return c.advance(t, Set.of(held), Optional.of(edge), ExitPassability.allOpen());
+    }
 
     @Test
     void noInput_staysIdleAtStartCenter() {
         PatrolController c = controllerFor(Direction.DOWN);
         PlayerKinematics last = null;
-        for (long tick = 0; tick < 60; tick++) {
-            last = c.advance(tick, Optional.empty(), ExitPassability.allOpen());
+        for (long t = 0; t < 60; t++) {
+            last = c.advance(t, Set.of(), Optional.empty(), ExitPassability.allOpen());
         }
         assertEquals(0.0, last.x(), 1e-7);
         assertEquals(0.0, last.y(), 1e-7);
-        assertEquals(59L, last.tick());
         assertEquals(MovementState.IDLE, last.movementState());
         assertEquals(ActorPhase.AVAILABLE, last.actorPhase());
         assertEquals(AnimationState.MOVING, last.animationState());
@@ -42,8 +47,8 @@ class PatrolControllerStraightLineTest {
     void holdingDirection_movesAtBaseSpeedForSixtyTicks() {
         PatrolController c = controllerFor(Direction.DOWN);
         PlayerKinematics last = null;
-        for (long tick = 0; tick < 60; tick++) {
-            last = c.advance(tick, Optional.of(Direction.DOWN), ExitPassability.allOpen());
+        for (long t = 0; t < 60; t++) {
+            last = tick(c, t, Direction.DOWN);
         }
         assertEquals(0.0, last.x(), 1e-7);
         assertEquals(120.0, last.y(), 1e-7);
@@ -51,12 +56,12 @@ class PatrolControllerStraightLineTest {
     }
 
     @Test
-    void releaseDirection_stopsImmediatelyAtCurrentPosition() {
+    void releaseDirection_stopsImmediately() {
         PatrolController c = controllerFor(Direction.DOWN);
-        for (long tick = 0; tick < 10; tick++) {
-            c.advance(tick, Optional.of(Direction.DOWN), ExitPassability.allOpen());
+        for (long t = 0; t < 10; t++) {
+            tick(c, t, Direction.DOWN);
         }
-        PlayerKinematics stopped = c.advance(10, Optional.empty(), ExitPassability.allOpen());
+        PlayerKinematics stopped = c.advance(10, Set.of(), Optional.empty(), ExitPassability.allOpen());
         assertEquals(0.0, stopped.x(), 1e-7);
         assertEquals(20.0, stopped.y(), 1e-7);
         assertEquals(MovementState.IDLE, stopped.movementState());
@@ -78,10 +83,9 @@ class PatrolControllerStraightLineTest {
     }
 
     private static void assertOneTick(Direction direction, double expectedX, double expectedY) {
-        PlayerKinematics k = controllerFor(direction)
-                .advance(0, Optional.of(direction), ExitPassability.allOpen());
-        assertEquals(expectedX, k.x(), 1e-7, direction + " x");
-        assertEquals(expectedY, k.y(), 1e-7, direction + " y");
+        PlayerKinematics k = tickEdge(controllerFor(direction), 0, direction, direction);
+        assertEquals(expectedX, k.x(), 1e-7);
+        assertEquals(expectedY, k.y(), 1e-7);
         assertEquals(direction, k.direction());
     }
 

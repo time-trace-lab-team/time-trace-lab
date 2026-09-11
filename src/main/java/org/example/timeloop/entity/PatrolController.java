@@ -14,18 +14,21 @@ import org.example.timeloop.core.path.PathPoint;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
- * 玩家四方向受约束移动（C-PLAYER-MOVE-01，开发 1）。
+ * 玩家四方向受约束移动（C-PLAYER-MOVE-02，开发 1）。
  *
  * <p>行为规则：</p>
  * <ul>
- *   <li>无输入 → 静止（{@link MovementState#IDLE}），位置不变；</li>
+ *   <li>无输入 → 静止（{@link MovementState#IDLE}）；</li>
  *   <li>按住当前朝向 → 以 baseSpeed 沿段推进；</li>
- *   <li>到达节点中心 → 若直行合法则继续；否则停下等下一步输入（不自动寻路）；</li>
- *   <li>段中间按 90° 方向 → 停下（只能在节点中心转向）；</li>
- *   <li>按相反方向 → 停下（禁止主动掉头）；</li>
- *   <li>前方是墙/关闭门 → 停在节点中心（IDLE）；</li>
+ *   <li>段中间按 90° → 停下（只能在节点中心转向）；</li>
+ *   <li>节点中心：newestEdge 是 90° 且仍按住且合法 → 转向；
+ *       否则当前朝向合法 → 直行；否则检查死路掉头；否则 IDLE；</li>
+ *   <li><b>真死路掉头豁免</b>：{@code isPassable(当前节点, 当前朝向)==false}
+ *       且该节点无任何可通行 90° 方向 → 允许请求反方向；</li>
+ *   <li>同刻按住相反方向 → IDLE；</li>
  *   <li>始终吸附在正交路径中心线上。</li>
  * </ul>
  */
@@ -61,46 +64,68 @@ public final class PatrolController {
     /**
      * 推进一个逻辑刻。
      *
-     * @param tick               共享逻辑刻
-     * @param requestedDirection 本刻有效方向（空 = 无输入）
-     * @param passability        本刻可通行查询
+     * @param tick            共享逻辑刻
+     * @param heldDirections  本刻结束仍按住的方向（可多键）
+     * @param newestEdge      本刻最后新按下的方向（仅对首次到达的节点有效）
+     * @param passability     本刻可通行查询
      */
     public PlayerKinematics advance(
             long tick,
-            Optional<Direction> requestedDirection,
+            Set<Direction> heldDirections,
+            Optional<Direction> newestEdge,
             ExitPassability passability) {
         if (tick < 0) {
             throw new IllegalArgumentException("tick must be >= 0, actual " + tick);
         }
-        Objects.requireNonNull(requestedDirection, "requestedDirection");
+        Objects.requireNonNull(heldDirections, "heldDirections");
+        Objects.requireNonNull(newestEdge, "newestEdge");
         Objects.requireNonNull(passability, "passability");
 
-        if (requestedDirection.isEmpty()) {
+        // R1：同刻按住相反方向 → IDLE
+        if (heldDirections.contains(direction)
+                && heldDirections.contains(DirectionGeometry.opposite(direction))) {
             return idleFrame(tick);
         }
 
-        Direction requested = requestedDirection.get();
-
-        // 反方向：禁止主动掉头
-        if (requested == DirectionGeometry.opposite(direction)) {
+        // R2：无输入 → IDLE
+        if (heldDirections.isEmpty()) {
             return idleFrame(tick);
         }
 
-        // 90° 转向：只在节点中心提交
-        if (requested != direction) {
-            PathNode centerNode = centerNodeIfAtCenter();
-            if (centerNode == null) {
-                return idleFrame(tick);
-            }
-            if (!PathExitSelector.isPassable(graph, centerNode, requested, passability)) {
-                return idleFrame(tick);
-            }
-            direction = requested;
-            segmentStartNodeId = centerNode.id();
-            segmentEndNodeId = graph.neighbor(centerNode, requested).get().id();
-        }
+        double budget = config.baseSpeed();
+        Optional<Direction> pendingEdge = newestEdge;
 
-        return advanceAlongCurrentSegment(tick, passability);
+        while (budget > 0) {
+            PathNode center = centerNodeIfAtCenter();
+            if (center != null) {
+                Direction nextDir = decideDirection(center, heldDirections, pendingEdge, passability);
+                if (nextDir == null) {
+                    return idleFrame(tick);
+                }
+                if (nextDir != direction) {
+                    direction = nextDir;
+                    segmentStartNodeId = center.id();
+                    segmentEndNodeId = graph.neighbor(center, nextDir).get().id();
+                }
+            } else {
+                // 段中间：只按当前朝向才继续
+                if (!heldDirections.contains(direction)) {
+                    return idleFrame(tick);
+                }
+            }
+
+            PathNode destination = graph.node(segmentEndNodeId);
+            double dist = distanceToDestination(destination);
+            if (dist > budget) {
+                position = DirectionGeometry.move(position, direction, budget);
+                return cruisingFrame(tick);
+            } else {
+                position = destination.center();
+                budget -= dist;
+                pendingEdge = Optional.empty();
+            }
+        }
+        return cruisingFrame(tick);
     }
 
     /** 当前 tick-end world-space center。 */
@@ -120,6 +145,52 @@ public final class PatrolController {
 
     // ========== private ==========
 
+    /**
+     * 在节点中心决定下一方向。
+     *
+     * @return 决定的方向；返回 {@code null} 表示无法移动（IDLE）
+     */
+    private Direction decideDirection(
+            PathNode center,
+            Set<Direction> held,
+            Optional<Direction> newestEdge,
+            ExitPassability passability) {
+        // 1. newestEdge 是 90° 且仍按住且合法 → 转向
+        if (newestEdge.isPresent()) {
+            Direction edge = newestEdge.get();
+            if (edge != direction
+                    && edge != DirectionGeometry.opposite(direction)
+                    && held.contains(edge)
+                    && PathExitSelector.isPassable(graph, center, edge, passability)) {
+                return edge;
+            }
+        }
+
+        // 2. held 含当前朝向且直行合法 → 继续
+        if (held.contains(direction)
+                && PathExitSelector.isPassable(graph, center, direction, passability)) {
+            return direction;
+        }
+
+        // 3. 真死路掉头豁免
+        if (held.contains(DirectionGeometry.opposite(direction))
+                && !hasAny90Exit(center, passability)) {
+            return DirectionGeometry.opposite(direction);
+        }
+
+        // 4. 无法移动
+        return null;
+    }
+
+    private boolean hasAny90Exit(PathNode node, ExitPassability passability) {
+        for (Direction side : DirectionGeometry.sideDirections(direction)) {
+            if (PathExitSelector.isPassable(graph, node, side, passability)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private PlayerKinematics idleFrame(long tick) {
         return new PlayerKinematics(tick, position.x(), position.y(), direction,
                 MovementState.IDLE, ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
@@ -128,39 +199,6 @@ public final class PatrolController {
     private PlayerKinematics cruisingFrame(long tick) {
         return new PlayerKinematics(tick, position.x(), position.y(), direction,
                 MovementState.CRUISING, ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
-    }
-
-    private PlayerKinematics advanceAlongCurrentSegment(long tick, ExitPassability passability) {
-        double budget = config.baseSpeed();
-
-        while (budget > 0) {
-            PathNode destination = graph.node(segmentEndNodeId);
-            double dist = distanceToDestination(destination);
-
-            if (dist <= config.epsilon()) {
-                position = destination.center();
-
-                // 到达节点：若直行不合法 → 停下
-                if (!PathExitSelector.isPassable(graph, destination, direction, passability)) {
-                    return idleFrame(tick);
-                }
-
-                PathNode next = graph.neighbor(destination, direction).get();
-                segmentStartNodeId = destination.id();
-                segmentEndNodeId = next.id();
-                continue;
-            }
-
-            if (budget < dist) {
-                position = DirectionGeometry.move(position, direction, budget);
-                budget = 0;
-            } else {
-                position = destination.center();
-                budget -= dist;
-            }
-        }
-
-        return cruisingFrame(tick);
     }
 
     private PathNode centerNodeIfAtCenter() {
