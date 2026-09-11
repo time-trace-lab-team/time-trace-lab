@@ -63,16 +63,7 @@ public final class PatrolController {
         this.graph = Objects.requireNonNull(graph, "graph");
         this.config = Objects.requireNonNull(config, "config");
         this.speedModifier = Objects.requireNonNull(speedModifier, "speedModifier");
-        Objects.requireNonNull(initialDirection, "initialDirection");
-
-        PathNode start = graph.node(startNodeId);
-        PathNode end = graph.neighbor(start, initialDirection).orElseThrow(() -> new IllegalArgumentException(
-                "start node '" + start.id() + "' has no " + initialDirection + " exit"));
-
-        this.segmentStartNodeId = start.id();
-        this.segmentEndNodeId = end.id();
-        this.direction = initialDirection;
-        this.position = start.center();
+        resetTo(startNodeId, initialDirection);
     }
 
     /**
@@ -160,6 +151,25 @@ public final class PatrolController {
     /** 返回本控制器使用的配置。 */
     public PatrolConfig config() {
         return config;
+    }
+
+    /**
+     * Restores this controller to a round's start node and initial direction.
+     * This method only replaces internal movement state: it writes no frame,
+     * publishes no event, and does not affect replay-owned state.
+     */
+    public void resetTo(String startNodeId, Direction initialDirection) {
+        Objects.requireNonNull(initialDirection, "initialDirection");
+
+        PathNode start = graph.node(startNodeId);
+        PathNode end = graph.neighbor(start, initialDirection).orElseThrow(() -> new IllegalArgumentException(
+                "start node '" + start.id() + "' has no " + initialDirection + " exit"));
+
+        segmentStartNodeId = start.id();
+        segmentEndNodeId = end.id();
+        direction = initialDirection;
+        position = start.center();
+        pendingDirection = null;
     }
 
     // ========== private ==========

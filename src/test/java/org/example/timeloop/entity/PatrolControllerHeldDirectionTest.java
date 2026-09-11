@@ -75,6 +75,23 @@ class PatrolControllerHeldDirectionTest {
     }
 
     @Test
+    void resetRestoresStartStateClearsPendingTurnAndCanMoveImmediately() {
+        PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+
+        c.advance(0, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        c.advance(1, Set.of(Direction.DOWN, Direction.RIGHT), Optional.of(Direction.RIGHT), ExitPassability.allOpen());
+        c.resetTo("start", Direction.DOWN);
+
+        assertEquals(new PathPoint(0.0, -4.0), c.position());
+        assertEquals(Direction.DOWN, c.direction());
+
+        PlayerKinematics afterReset = c.advance(2, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        assertEquals(0.0, afterReset.x());
+        assertEquals(-2.0, afterReset.y());
+        assertEquals(Direction.DOWN, afterReset.direction());
+    }
+
+    @Test
     void holdingOppositeDirections_staysIdle() {
         PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
         c.advance(0, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
