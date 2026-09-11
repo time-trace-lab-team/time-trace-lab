@@ -1,5 +1,9 @@
 package org.example.timeloop.core.input;
 
+import org.example.timeloop.core.Direction;
+
+import java.util.Optional;
+
 /**
  * 逻辑输入键（C3）。
  *
@@ -17,5 +21,18 @@ public enum LogicalKey {
     /** E：终端交互。 */
     INTERACT,
     /** Space：相位下潜（C4 消费）。 */
-    PHASE
+    PHASE;
+
+    /**
+     * 返回该逻辑键对应的移动方向；非方向键不承载移动语义。
+     */
+    public Optional<Direction> direction() {
+        return switch (this) {
+            case DIR_UP -> Optional.of(Direction.UP);
+            case DIR_DOWN -> Optional.of(Direction.DOWN);
+            case DIR_LEFT -> Optional.of(Direction.LEFT);
+            case DIR_RIGHT -> Optional.of(Direction.RIGHT);
+            case INTERACT, PHASE -> Optional.empty();
+        };
+    }
 }
