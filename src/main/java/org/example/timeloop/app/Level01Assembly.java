@@ -43,7 +43,6 @@ import org.example.timeloop.replay.TimelineEvent;
 import org.example.timeloop.replay.TimelineRecording;
 
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -60,6 +59,9 @@ public final class Level01Assembly {
 
     private static final String PLAYER_ACTOR_ID = "player";
     private static final int PLAYER_SOURCE_ROUND = 0;
+    /** 第一关玩家出生节点与初始朝向（轮初复位用，与 PatrolController 构造参数一致）。 */
+    private static final String PLAYER_SPAWN_NODE_ID = "L01_node_spawn";
+    private static final Direction PLAYER_SPAWN_DIRECTION = Direction.DOWN;
 
     /** 判定“是否已走到驻留机关中心”的容差（世界单位）。 */
     private static final double DOCK_CENTER_EPSILON = 1e-6;
@@ -81,8 +83,6 @@ public final class Level01Assembly {
     private final List<TimelineEvent> events = new ArrayList<>();
     private PlayerFrame lastFrame;
     private long lastTick = -1;
-    /** 单槽方向意图：按住中的方向在下一个节点中心提交转向（见 {@link #updatePendingTurn}）。 */
-    private Optional<Direction> pendingTurn = Optional.empty();
 
     public Level01Assembly() {
         this.levelData = Level01Footsteps.build();
@@ -110,11 +110,12 @@ public final class Level01Assembly {
         this.exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId());
     }
 
-    /** 进入第一关会话：BOOT → … → READY → 开本轮缓冲 → PLAYING。 */
+    /** 进入第一关会话：BOOT → … → READY → 复位玩家 → 开本轮缓冲 → PLAYING。 */
     public void start() {
         clock.transition(GamePhase.MENU);
         clock.transition(GamePhase.LEVEL_SELECT);
         clock.transition(GamePhase.READY);
+        resetPlayerForNewRound();
         recording.beginRound();
         clock.transition(GamePhase.PLAYING);
     }
@@ -166,7 +167,9 @@ public final class Level01Assembly {
         } else if (decision.isFreeze()) {
             kinematics = dockedKinematics(tick);
         } else {
-            Set<Direction> heldDirections = heldDirections(input);
+            // CORE-1：held 投影与方向边沿都由 core 提供，app 不再维护第二份映射；
+            // ENT-1：单槽转向意图由 PatrolController 自己保留到节点中心/松手/提交。
+            Set<Direction> heldDirections = input.heldDirections();
             Optional<Direction> newestEdge;
             if (decision.departureDirection().isPresent()) {
                 // 驻留离开：C3 指定方向优先。即使玩家已经松手也要走出区域，
@@ -174,14 +177,10 @@ public final class Level01Assembly {
                 Direction departure = decision.departureDirection().get();
                 heldDirections = Set.of(departure);
                 newestEdge = Optional.of(departure);
-                pendingTurn = Optional.empty();
             } else {
-                newestEdge = updatePendingTurn(input, heldDirections);
+                newestEdge = input.lastDirectionEdge();
             }
             kinematics = patrol.advance(tick, heldDirections, newestEdge, passability());
-            if (pendingTurn.isPresent() && pendingTurn.get() == patrol.direction()) {
-                pendingTurn = Optional.empty();
-            }
         }
 
         lastFrame = toFrame(kinematics, input);
@@ -249,38 +248,14 @@ public final class Level01Assembly {
 
     // ---------- 内部 ----------
 
-    /** 本刻仍按住的全部方向（多键同时按住交给 C-PLAYER-MOVE-02 的 `hold` 规则处理）。 */
-    private static Set<Direction> heldDirections(InputIntent input) {
-        Set<Direction> directions = EnumSet.noneOf(Direction.class);
-        if (input.isHeld(LogicalKey.DIR_UP)) {
-            directions.add(Direction.UP);
-        }
-        if (input.isHeld(LogicalKey.DIR_DOWN)) {
-            directions.add(Direction.DOWN);
-        }
-        if (input.isHeld(LogicalKey.DIR_LEFT)) {
-            directions.add(Direction.LEFT);
-        }
-        if (input.isHeld(LogicalKey.DIR_RIGHT)) {
-            directions.add(Direction.RIGHT);
-        }
-        return directions;
-    }
-
     /**
-     * 单槽方向意图：本刻新按下的方向保留到它在某个节点中心被提交。
+     * 轮初复位：把玩家放回出生节点中心与初始朝向（ENT-3 的 `PatrolController.resetTo`）。
      *
-     * <p>转向只能在路径节点中心提交，而一格的行程有 24 个逻辑刻，若只在“新按下那一刻”生效，
-     * 玩家几乎没有机会在路口转向。因此这里按开发一的 `newestEdge` 语义保留意图：
-     * 按住期间一直转交，玩家松手（本刻不再按住）或转向已提交（朝向 == 意图）即作废，
-     * 不会在松手后“突然转向”。</p>
+     * <p>恰好对应“新轮玩家状态初始化”，每轮只调用一次（`READY` 之后、`PLAYING` 之前）：
+     * 不写帧、不发事件、不清残影；本轮缓冲与时钟由 `RecordingSession` 负责。</p>
      */
-    private Optional<Direction> updatePendingTurn(InputIntent input, Set<Direction> heldDirections) {
-        input.lastDirectionEdge().ifPresent(edge -> pendingTurn = Optional.of(edge));
-        if (pendingTurn.isPresent() && !heldDirections.contains(pendingTurn.get())) {
-            pendingTurn = Optional.empty();
-        }
-        return pendingTurn;
+    private void resetPlayerForNewRound() {
+        patrol.resetTo(PLAYER_SPAWN_NODE_ID, PLAYER_SPAWN_DIRECTION);
     }
 
     /**
@@ -387,7 +362,8 @@ public final class Level01Assembly {
         // READY -> PLAYING：不接回 PLAYING 的话 tick() 会直接 return，第 2 轮起角色完全无法移动。
         // README §三 要求的“短暂 READY 冻结”（玩家确认起始朝向）尚未实现，登记在 app 轮转待办里。
         clock.transition(GamePhase.PLAYING);
-        pendingTurn = Optional.empty();
+        // 轮初复位：恰好一次，把玩家放回出生节点中心与初始朝向（ENT-3 resetTo）
+        resetPlayerForNewRound();
     }
 
     private DockingPlate plateById(String mechanismId) {

@@ -7,7 +7,6 @@ import org.example.timeloop.core.input.LogicalKey;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -27,7 +26,8 @@ final class InputAccumulator {
     void onKeyPressed(LogicalKey key) {
         if (held.add(key)) {
             pressedThisTick.add(key);
-            toDirection(key).ifPresent(directionEdges::add);
+            // CORE-1：逻辑键 → 方向的映射归 core，app 不再自行维护第二份
+            key.direction().ifPresent(directionEdges::add);
         }
     }
 
@@ -55,15 +55,5 @@ final class InputAccumulator {
         releasedThisTick.clear();
         directionEdges.clear();
         return intent;
-    }
-
-    static Optional<Direction> toDirection(LogicalKey key) {
-        return switch (key) {
-            case DIR_UP -> Optional.of(Direction.UP);
-            case DIR_DOWN -> Optional.of(Direction.DOWN);
-            case DIR_LEFT -> Optional.of(Direction.LEFT);
-            case DIR_RIGHT -> Optional.of(Direction.RIGHT);
-            case INTERACT, PHASE -> Optional.empty();
-        };
     }
 }

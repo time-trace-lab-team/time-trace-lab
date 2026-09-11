@@ -31,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class Level01AssemblyRoundLoopTest {
 
     private static final double PLATE_LEFT_REGION_TOP_Y = 5 * 48.0;      // autoDock 区域上边界 = 240
+    private static final double SPAWN_Y = 1.5 * 48.0;                    // 出生节点 (5,1) 中心 = 72
     private static final long DURATION_TICKS = 16 * 60L;
 
     private Level01Assembly assembly;
@@ -55,14 +56,18 @@ class Level01AssemblyRoundLoopTest {
         assertEquals(2, a.hudContext().currentRound());
         assertEquals(0, a.hudContext().roundTick());
 
-        // 第 2 轮：角色仍站在左驻留板上（轮初复位 API 见开发一 ENT-3），按合法出口必须能离开
-        double before = player(a).y();
-        for (int i = 0; i < 30; i++) {
-            a.tick(press(tick++, LogicalKey.DIR_UP));
+        // 轮初复位（ENT-3 resetTo）：角色回到出生节点中心与初始朝向，而不是停在上轮落点
+        RenderViews.Player atSpawn = player(a);
+        assertEquals(SPAWN_Y, atSpawn.y(), 1e-9, "轮初应回到出生点，实际 y=" + atSpawn.y());
+        assertEquals(Direction.DOWN, atSpawn.direction());
+
+        // 第 2 轮必须能立即移动（出生点唯一出口是 DOWN）
+        for (int i = 0; i < 10; i++) {
+            a.tick(hold(tick++, LogicalKey.DIR_DOWN));
         }
         assertEquals(GamePhase.PLAYING, a.phase(), "第 2 轮仍在推进");
         assertEquals(2, a.hudContext().currentRound());
-        assertTrue(player(a).y() < before, "第 2 轮必须能移动，实际 y=" + player(a).y());
+        assertTrue(player(a).y() > SPAWN_Y, "第 2 轮必须能移动，实际 y=" + player(a).y());
     }
 
     @Test
@@ -89,16 +94,13 @@ class Level01AssemblyRoundLoopTest {
         Level01Assembly a = started();
         long tick = runFirstRoundToEnd(a);
 
-        // 第 2 轮先把“活玩家”从左驻留板上走开，释放本人占用
-        for (int i = 0; i < 30; i++) {
-            a.tick(press(tick++, LogicalKey.DIR_UP));
-        }
+        // 轮初复位后活玩家在出生点，左驻留板此刻必定空闲
         assertTrue(player(a).y() < PLATE_LEFT_REGION_TOP_Y,
-                "活玩家应已走出 autoDock 区域，实际 y=" + player(a).y());
+                "轮初复位后活玩家不应留在驻留板上，实际 y=" + player(a).y());
 
         // 走到残影录到 DOCK_ENTERED 之后的刻：此时只可能是残影在占板
         // （按轮内刻判断，不能用累计输入刻号）
-        while (a.hudContext().roundTick() < 260) {
+        while (a.hudContext().roundTick() < 200) {
             a.tick(InputIntent.empty(tick++));
         }
         assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"),
