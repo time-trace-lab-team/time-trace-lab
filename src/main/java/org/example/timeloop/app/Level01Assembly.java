@@ -29,6 +29,7 @@ import org.example.timeloop.mechanism.Door;
 import org.example.timeloop.mechanism.ExitTerminal;
 import org.example.timeloop.mechanism.autodock.AutoDockResetReason;
 import org.example.timeloop.mechanism.autodock.AutoDockService;
+import org.example.timeloop.mechanism.autodock.AutoDockView;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.render.RenderViews;
 import org.example.timeloop.replay.EchoQueue;
@@ -41,8 +42,11 @@ import org.example.timeloop.replay.TickContext;
 import org.example.timeloop.replay.TimelineEvent;
 
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * 第一关「留下的脚步」装配（集成层，纯 Java，不依赖 JavaFX）。
@@ -55,6 +59,9 @@ public final class Level01Assembly {
 
     private static final String PLAYER_ACTOR_ID = "player";
     private static final int PLAYER_SOURCE_ROUND = 0;
+
+    /** 判定“是否已走到驻留机关中心”的容差（世界单位）。 */
+    private static final double DOCK_CENTER_EPSILON = 1e-6;
 
     private final LevelData levelData;
     private final AutoDockService autoDock;
@@ -73,6 +80,8 @@ public final class Level01Assembly {
     private final List<TimelineEvent> events = new ArrayList<>();
     private PlayerFrame lastFrame;
     private long lastTick = -1;
+    /** 单槽方向意图：按住中的方向在下一个节点中心提交转向（见 {@link #updatePendingTurn}）。 */
+    private Optional<Direction> pendingTurn = Optional.empty();
 
     public Level01Assembly() {
         this.levelData = Level01Footsteps.build();
@@ -140,15 +149,33 @@ public final class Level01Assembly {
 
         C3DockDecision decision = dockController.step(tick, input, position);
         PlayerKinematics kinematics;
-        if (decision.isFreeze()) {
+        // 驻留机关的停驻中心 = 机关所在路径节点中心，而 autoDock 区域是边长 tileSize 的方格：
+        // 玩家在区域边界就被判定进入，此刻若直接冻结会停在离中心半格处，离开时又只能用反方向
+        // （被掉头规则拒绝）→ 位置出不了区域、占用永不释放。因此先把这一段沿中心线走完。
+        // 只在“机关中心还在前进方向上”时补走：离开驻留板时中心在身后，不能反向走回去。
+        Optional<Direction> toDockCenter = dockCenterApproach();
+        if (toDockCenter.isPresent() && toDockCenter.get() == patrol.direction()) {
+            Direction approach = toDockCenter.get();
+            kinematics = patrol.advance(tick, Set.of(approach), Optional.of(approach), passability());
+        } else if (decision.isFreeze()) {
             kinematics = dockedKinematics(tick);
         } else {
+            Set<Direction> heldDirections = heldDirections(input);
+            Optional<Direction> newestEdge;
             if (decision.departureDirection().isPresent()) {
-                patrol.queueDirection(decision.departureDirection().get());
+                // 驻留离开：C3 指定方向优先。即使玩家已经松手也要走出区域，
+                // 占用才会在出界刻被 tryLeave 释放。
+                Direction departure = decision.departureDirection().get();
+                heldDirections = Set.of(departure);
+                newestEdge = Optional.of(departure);
+                pendingTurn = Optional.empty();
             } else {
-                input.lastDirectionEdge().ifPresent(patrol::queueDirection);
+                newestEdge = updatePendingTurn(input, heldDirections);
             }
-            kinematics = patrol.advance(tick, passability());
+            kinematics = patrol.advance(tick, heldDirections, newestEdge, passability());
+            if (pendingTurn.isPresent() && pendingTurn.get() == patrol.direction()) {
+                pendingTurn = Optional.empty();
+            }
         }
 
         lastFrame = toFrame(kinematics, input);
@@ -210,6 +237,62 @@ public final class Level01Assembly {
     }
 
     // ---------- 内部 ----------
+
+    /** 本刻仍按住的全部方向（多键同时按住交给 C-PLAYER-MOVE-02 的 `hold` 规则处理）。 */
+    private static Set<Direction> heldDirections(InputIntent input) {
+        Set<Direction> directions = EnumSet.noneOf(Direction.class);
+        if (input.isHeld(LogicalKey.DIR_UP)) {
+            directions.add(Direction.UP);
+        }
+        if (input.isHeld(LogicalKey.DIR_DOWN)) {
+            directions.add(Direction.DOWN);
+        }
+        if (input.isHeld(LogicalKey.DIR_LEFT)) {
+            directions.add(Direction.LEFT);
+        }
+        if (input.isHeld(LogicalKey.DIR_RIGHT)) {
+            directions.add(Direction.RIGHT);
+        }
+        return directions;
+    }
+
+    /**
+     * 单槽方向意图：本刻新按下的方向保留到它在某个节点中心被提交。
+     *
+     * <p>转向只能在路径节点中心提交，而一格的行程有 24 个逻辑刻，若只在“新按下那一刻”生效，
+     * 玩家几乎没有机会在路口转向。因此这里按开发一的 `newestEdge` 语义保留意图：
+     * 按住期间一直转交，玩家松手（本刻不再按住）或转向已提交（朝向 == 意图）即作废，
+     * 不会在松手后“突然转向”。</p>
+     */
+    private Optional<Direction> updatePendingTurn(InputIntent input, Set<Direction> heldDirections) {
+        input.lastDirectionEdge().ifPresent(edge -> pendingTurn = Optional.of(edge));
+        if (pendingTurn.isPresent() && !heldDirections.contains(pendingTurn.get())) {
+            pendingTurn = Optional.empty();
+        }
+        return pendingTurn;
+    }
+
+    /**
+     * 驻留机关停驻中心方向：尚未走到机关中心时返回“走过去”的方向，已在中心返回空。
+     *
+     * <p>只在确实被本 actor 占用驻留时计算；未驻留（或已出界释放）返回空。</p>
+     */
+    private Optional<Direction> dockCenterApproach() {
+        Optional<AutoDockView> docked = dockController.dockedMechanismId().flatMap(autoDock::findById);
+        if (docked.isEmpty()) {
+            return Optional.empty();
+        }
+        Vector2D center = docked.get().center();
+        double dx = center.x() - patrol.position().x();
+        double dy = center.y() - patrol.position().y();
+        if (Math.abs(dx) <= DOCK_CENTER_EPSILON && Math.abs(dy) <= DOCK_CENTER_EPSILON) {
+            return Optional.empty();
+        }
+        if (Math.abs(dx) > Math.abs(dy)) {
+            return Optional.of(dx > 0 ? Direction.RIGHT : Direction.LEFT);
+        }
+        return Optional.of(dy > 0 ? Direction.DOWN : Direction.UP);
+    }
 
     private ExitPassability passability() {
         return this::isPassable;

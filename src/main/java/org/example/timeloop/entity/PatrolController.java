@@ -8,20 +8,31 @@ import org.example.timeloop.core.PlayerKinematics;
 import org.example.timeloop.core.path.DirectionGeometry;
 import org.example.timeloop.core.path.ExitPassability;
 import org.example.timeloop.core.path.OrthogonalPathGraph;
-import org.example.timeloop.core.path.PathExitDecision;
 import org.example.timeloop.core.path.PathExitSelector;
 import org.example.timeloop.core.path.PathNode;
 import org.example.timeloop.core.path.PathPoint;
 
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 /**
- * Current-player C2 greybox state for deterministic, constant-speed patrol.
+ * 玩家四方向受约束移动（C-PLAYER-MOVE-02，开发 1）。
  *
- * <p>This controller owns no clock. Its caller supplies the shared logical
- * tick solely for the returned tick-end {@link PlayerKinematics}; the movement
- * budget is always the frozen {@link PatrolConfig#baseSpeed()} for one call.</p>
+ * <p>行为规则：</p>
+ * <ul>
+ *   <li>无输入 → 静止 IDLE；</li>
+ *   <li>按住当前朝向 → 以 baseSpeed 沿段推进；</li>
+ *   <li>段中间按 90° → 停下；</li>
+ *   <li>节点中心：newestEdge 是 90° 且仍按住且合法 → 转向；否则当前朝向合法 → 直行；否则检查死路掉头；否则 IDLE；</li>
+ *   <li><b>真死路掉头豁免</b>（严格前置条件）：
+ *       前方（当前朝向）不可通行
+ *       且反方向确有出口
+ *       且无任何可通行 90° 出口
+ *       → 允许请求反方向；</li>
+ *   <li>同刻按住相反方向 → IDLE；</li>
+ *   <li>始终吸附在正交路径中心线上。</li>
+ * </ul>
  */
 public final class PatrolController {
 
@@ -32,18 +43,7 @@ public final class PatrolController {
     private String segmentEndNodeId;
     private Direction direction;
     private PathPoint position;
-    private Direction pendingDirection;
-    private String lockedNodeId;
-    private Direction lockedDirection;
 
-    /**
-     * Creates a controller at a node center with an explicit first segment.
-     *
-     * @param graph path graph whose topology was already validated
-     * @param startNodeId node at which this patrol begins
-     * @param initialDirection explicit initial direction; there is no hidden global default
-     * @param config frozen movement and geometry parameters
-     */
     public PatrolController(
             OrthogonalPathGraph graph,
             String startNodeId,
@@ -64,112 +64,161 @@ public final class PatrolController {
     }
 
     /**
-     * Advances exactly one C2 logical tick and returns its canonical end state.
+     * 推进一帧。
      *
-     * <p>When the destination enters the frozen lock distance, the five-level
-     * exit decision is made exactly once. The turn is committed only at the
-     * destination center; all remaining movement budget is then spent on the
-     * newly selected segment.</p>
-     *
-     * @param tick shared nonnegative logic tick to put in the snapshot
-     * @param passability read-only current-tick exit query
-     * @return immutable tick-end position and C2's CRUISING state
+     * @param tick            当前刻号（≥0）
+     * @param heldDirections  本刻末仍按住的方向集合（可为空）
+     * @param newestEdge      本刻最后新按下的方向（无则 {@link Optional#empty()}）；
+     *                        仅在到达节点中心时用于提交转向，段中间忽略
+     * @param passability     出口通行性判定
+     * @return 本刻的玩家运动学快照
      */
-    public PlayerKinematics advance(long tick, ExitPassability passability) {
+    public PlayerKinematics advance(
+            long tick,
+            Set<Direction> heldDirections,
+            Optional<Direction> newestEdge,
+            ExitPassability passability) {
         if (tick < 0) {
             throw new IllegalArgumentException("tick must be >= 0, actual " + tick);
         }
+        Objects.requireNonNull(heldDirections, "heldDirections");
+        Objects.requireNonNull(newestEdge, "newestEdge");
         Objects.requireNonNull(passability, "passability");
 
-        double remainingDistance = config.baseSpeed();
-        int arrivals = 0;
-        int maximumArrivals = maximumArrivalsFor(remainingDistance);
-
-        while (true) {
-            PathNode destination = graph.node(segmentEndNodeId);
-            double distanceToDestination = distanceToDestination(destination);
-
-            if (!isLockedFor(destination)) {
-                if (distanceToDestination <= config.turnLockDistance() + config.epsilon()) {
-                    lockExitFor(destination, passability);
-                    continue;
-                }
-                if (remainingDistance <= 0.0) {
-                    break;
-                }
-
-                double distanceToLockBoundary = distanceToDestination - config.turnLockDistance();
-                if (remainingDistance < distanceToLockBoundary) {
-                    position = DirectionGeometry.move(position, direction, remainingDistance);
-                    remainingDistance = 0.0;
-                    continue;
-                }
-                position = DirectionGeometry.move(position, direction, distanceToLockBoundary);
-                remainingDistance -= distanceToLockBoundary;
-                continue;
-            }
-
-            if (distanceToDestination <= config.epsilon()) {
-                position = destination.center();
-                commitLockedExit(destination);
-                arrivals = incrementArrivalCount(arrivals, maximumArrivals, tick);
-                continue;
-            }
-
-            if (remainingDistance <= 0.0) {
-                break;
-            }
-
-            if (remainingDistance < distanceToDestination) {
-                position = DirectionGeometry.move(position, direction, remainingDistance);
-                remainingDistance = 0.0;
-                continue;
-            }
-
-            position = DirectionGeometry.move(position, direction, distanceToDestination);
-            remainingDistance -= distanceToDestination;
+        // R1：同刻按住相反方向 → IDLE
+        if (heldDirections.contains(direction)
+                && heldDirections.contains(DirectionGeometry.opposite(direction))) {
+            return idleFrame(tick);
         }
 
-        return new PlayerKinematics(
-                tick,
-                position.x(),
-                position.y(),
-                direction,
-                MovementState.CRUISING,
-                ActorPhase.AVAILABLE,
-                0,
-                false,
-                AnimationState.MOVING);
-    }
+        // R2：无输入 → IDLE
+        if (heldDirections.isEmpty()) {
+            return idleFrame(tick);
+        }
 
-    /** Current tick-end world-space center, useful for pure-logic assertions. */
+        double budget = config.baseSpeed();
+        Optional<Direction> pendingEdge = newestEdge;
+
+        while (budget > 0) {
+            PathNode center = centerNodeIfAtCenter();
+            if (center != null) {
+                Direction nextDir = decideDirection(center, heldDirections, pendingEdge, passability);
+                if (nextDir == null) {
+                    return idleFrame(tick);
+                }
+                // P0-E 修复：站在段终点节点中心时，即使 nextDir == direction 也必须滚动 segment
+                if (nextDir != direction || center.id().equals(segmentEndNodeId)) {
+                    direction = nextDir;
+                    segmentStartNodeId = center.id();
+                    segmentEndNodeId = graph.neighbor(center, nextDir).get().id();
+                }
+            } else {
+                // 段中间：只按当前朝向才继续
+                if (!heldDirections.contains(direction)) {
+                    return idleFrame(tick);
+                }
+            }
+
+            PathNode destination = graph.node(segmentEndNodeId);
+            double dist = distanceToDestination(destination);
+            if (dist > budget) {
+                position = DirectionGeometry.move(position, direction, budget);
+                return cruisingFrame(tick);
+            } else {
+                position = destination.center();
+                budget -= dist;
+                pendingEdge = Optional.empty();
+            }
+        }
+        return cruisingFrame(tick);
+    }
+    /** 返回当前吸附位置（始终在路径中心线上）。 */
     public PathPoint position() {
         return position;
     }
 
-    /** Current segment direction after the most recent committed node arrival. */
+    /** 返回当前朝向。 */
     public Direction direction() {
         return direction;
     }
 
-    /** Returns the frozen session configuration. */
+    /** 返回本控制器使用的配置。 */
     public PatrolConfig config() {
         return config;
     }
 
-    /** Replaces the not-yet-committed single-slot direction intent. */
-    public void queueDirection(Direction requestedDirection) {
-        pendingDirection = Objects.requireNonNull(requestedDirection, "requestedDirection");
+    // ========== private ==========
+
+    private Direction decideDirection(
+            PathNode center,
+            Set<Direction> held,
+            Optional<Direction> newestEdge,
+            ExitPassability passability) {
+        // 1. newestEdge 是 90° 且仍按住且合法 → 转向
+        if (newestEdge.isPresent()) {
+            Direction edge = newestEdge.get();
+            if (edge != direction
+                    && edge != DirectionGeometry.opposite(direction)
+                    && held.contains(edge)
+                    && PathExitSelector.isPassable(graph, center, edge, passability)) {
+                return edge;
+            }
+        }
+
+        // 2. held 含当前朝向且直行合法 → 继续
+        if (held.contains(direction)
+                && PathExitSelector.isPassable(graph, center, direction, passability)) {
+            return direction;
+        }
+
+        // 3. P0-D 修复：真死路掉头豁免（严格前置条件）
+        Direction reverse = DirectionGeometry.opposite(direction);
+        if (held.contains(reverse)
+                && !PathExitSelector.isPassable(graph, center, direction, passability)  // 前方不可通行
+                && PathExitSelector.isPassable(graph, center, reverse, passability)    // 反方向确有出口
+                && !hasAny90Exit(center, passability)) {                               // 无任何 90° 出口
+            return reverse;
+        }
+
+        // 4. 无法移动
+        return null;
     }
 
-    /** Returns the input intent still reserved for a future, unlocked node. */
-    public Optional<Direction> pendingDirection() {
-        return Optional.ofNullable(pendingDirection);
+    private boolean hasAny90Exit(PathNode node, ExitPassability passability) {
+        for (Direction side : DirectionGeometry.sideDirections(direction)) {
+            if (PathExitSelector.isPassable(graph, node, side, passability)) {
+                return true;
+            }
+        }
+        return false;
     }
 
-    /** Returns the direction already locked for the current destination, if any. */
-    public Optional<Direction> lockedDirection() {
-        return Optional.ofNullable(lockedDirection);
+    private PlayerKinematics idleFrame(long tick) {
+        return new PlayerKinematics(tick, position.x(), position.y(), direction,
+                MovementState.IDLE, ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
+    }
+
+    private PlayerKinematics cruisingFrame(long tick) {
+        return new PlayerKinematics(tick, position.x(), position.y(), direction,
+                MovementState.CRUISING, ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
+    }
+
+    private PathNode centerNodeIfAtCenter() {
+        PathNode start = graph.node(segmentStartNodeId);
+        if (isAtCenterOf(start)) {
+            return start;
+        }
+        PathNode end = graph.node(segmentEndNodeId);
+        if (isAtCenterOf(end)) {
+            return end;
+        }
+        return null;
+    }
+
+    private boolean isAtCenterOf(PathNode node) {
+        double dx = position.x() - node.center().x();
+        double dy = position.y() - node.center().y();
+        return Math.abs(dx) <= config.epsilon() && Math.abs(dy) <= config.epsilon();
     }
 
     private double distanceToDestination(PathNode destination) {
@@ -200,63 +249,5 @@ public final class PatrolController {
                             + " while facing " + direction + ", position=" + position);
         }
         return Math.max(0.0, forwardDistance);
-    }
-
-    private boolean isLockedFor(PathNode destination) {
-        return lockedNodeId != null && lockedNodeId.equals(destination.id());
-    }
-
-    private void lockExitFor(PathNode destination, ExitPassability passability) {
-        if (lockedNodeId != null) {
-            if (!lockedNodeId.equals(destination.id())) {
-                throw new IllegalStateException(
-                        "locked node '" + lockedNodeId + "' does not match current destination '" + destination.id() + "'");
-            }
-            return;
-        }
-
-        PathExitDecision decision = PathExitSelector.select(
-                graph,
-                destination,
-                direction,
-                pendingDirection,
-                passability);
-        // The old slot belongs to this node whether it won or was invalid.
-        // Inputs submitted after this point populate a new slot for the next node.
-        pendingDirection = null;
-        lockedNodeId = destination.id();
-        lockedDirection = decision.direction();
-    }
-
-    private void commitLockedExit(PathNode destination) {
-        if (!isLockedFor(destination) || lockedDirection == null) {
-            throw new IllegalStateException("destination '" + destination.id() + "' was reached without a locked exit");
-        }
-        Direction committedDirection = lockedDirection;
-        PathNode next = graph.neighbor(destination, committedDirection).orElseThrow(() -> new IllegalStateException(
-                "locked direction " + committedDirection + " is missing at path node '" + destination.id() + "'"));
-        segmentStartNodeId = destination.id();
-        segmentEndNodeId = next.id();
-        direction = committedDirection;
-        lockedNodeId = null;
-        lockedDirection = null;
-    }
-
-    private int maximumArrivalsFor(double movementBudget) {
-        double rawBound = Math.ceil(movementBudget / graph.shortestSegmentLength()) + 1.0;
-        if (rawBound > Integer.MAX_VALUE) {
-            throw new IllegalStateException("movement budget creates an unsafe node-arrival bound: " + rawBound);
-        }
-        return (int) rawBound;
-    }
-
-    private int incrementArrivalCount(int arrivals, int maximumArrivals, long tick) {
-        int next = arrivals + 1;
-        if (next > maximumArrivals) {
-            throw new IllegalStateException(
-                    "patrol exceeded proven node-arrival bound at tick " + tick
-                            + ": " + next + " > " + maximumArrivals);
-        }
-        return next;
     }
 }
