@@ -44,6 +44,7 @@ public final class PatrolController {
     private String segmentEndNodeId;
     private Direction direction;
     private PathPoint position;
+    private Direction pendingDirection;
 
     public PatrolController(
             OrthogonalPathGraph graph,
@@ -96,6 +97,8 @@ public final class PatrolController {
         Objects.requireNonNull(newestEdge, "newestEdge");
         Objects.requireNonNull(passability, "passability");
 
+        refreshPendingDirection(heldDirections, newestEdge);
+
         // R1：同刻按住相反方向 → IDLE
         if (heldDirections.contains(direction)
                 && heldDirections.contains(DirectionGeometry.opposite(direction))) {
@@ -109,14 +112,15 @@ public final class PatrolController {
 
         double multiplier = speedMultiplier();
         double budget = config.baseSpeed() * multiplier;
-        Optional<Direction> pendingEdge = newestEdge;
-
         while (budget > 0) {
             PathNode center = centerNodeIfAtCenter();
             if (center != null) {
-                Direction nextDir = decideDirection(center, heldDirections, pendingEdge, passability);
+                Direction nextDir = decideDirection(center, heldDirections, passability);
                 if (nextDir == null) {
                     return idleFrame(tick);
+                }
+                if (nextDir == pendingDirection) {
+                    pendingDirection = null;
                 }
                 // P0-E 修复：站在段终点节点中心时，即使 nextDir == direction 也必须滚动 segment
                 if (nextDir != direction || center.id().equals(segmentEndNodeId)) {
@@ -139,7 +143,6 @@ public final class PatrolController {
             } else {
                 position = destination.center();
                 budget -= dist;
-                pendingEdge = Optional.empty();
             }
         }
         return movingFrame(tick, multiplier);
@@ -164,17 +167,12 @@ public final class PatrolController {
     private Direction decideDirection(
             PathNode center,
             Set<Direction> held,
-            Optional<Direction> newestEdge,
             ExitPassability passability) {
-        // 1. newestEdge 是 90° 且仍按住且合法 → 转向
-        if (newestEdge.isPresent()) {
-            Direction edge = newestEdge.get();
-            if (edge != direction
-                    && edge != DirectionGeometry.opposite(direction)
-                    && held.contains(edge)
-                    && PathExitSelector.isPassable(graph, center, edge, passability)) {
-                return edge;
-            }
+        // 1. 单槽方向意图仍按住且合法 → 转向
+        if (pendingDirection != null
+                && held.contains(pendingDirection)
+                && PathExitSelector.isPassable(graph, center, pendingDirection, passability)) {
+            return pendingDirection;
         }
 
         // 2. held 含当前朝向且直行合法 → 继续
@@ -194,6 +192,19 @@ public final class PatrolController {
 
         // 4. 无法移动
         return null;
+    }
+
+    private void refreshPendingDirection(Set<Direction> heldDirections, Optional<Direction> newestEdge) {
+        if (pendingDirection != null && !heldDirections.contains(pendingDirection)) {
+            pendingDirection = null;
+        }
+        newestEdge.ifPresent(edge -> {
+            if (heldDirections.contains(edge)
+                    && edge != direction
+                    && edge != DirectionGeometry.opposite(direction)) {
+                pendingDirection = edge;
+            }
+        });
     }
 
     private boolean hasAny90Exit(PathNode node, ExitPassability passability) {
