@@ -256,6 +256,9 @@ public final class Level01Assembly {
      */
     private void resetPlayerForNewRound() {
         patrol.resetTo(PLAYER_SPAWN_NODE_ID, PLAYER_SPAWN_DIRECTION);
+        // 本轮还没有任何帧：清掉上一轮末刻的缓存帧，避免轮初这一小段渲染出上一轮的落点
+        // （lastTick 保留，残影轨迹仍按上一轮整轮采样）。
+        lastFrame = null;
     }
 
     /**
