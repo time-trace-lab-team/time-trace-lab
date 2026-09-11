@@ -38,29 +38,32 @@ public final class PatrolController {
 
     private final OrthogonalPathGraph graph;
     private final PatrolConfig config;
+    private final SpeedModifierPort speedModifier;
 
     private String segmentStartNodeId;
     private String segmentEndNodeId;
     private Direction direction;
     private PathPoint position;
+    private Direction pendingDirection;
 
     public PatrolController(
             OrthogonalPathGraph graph,
             String startNodeId,
             Direction initialDirection,
             PatrolConfig config) {
+        this(graph, startNodeId, initialDirection, config, SpeedModifierPort.normalSpeed());
+    }
+
+    public PatrolController(
+            OrthogonalPathGraph graph,
+            String startNodeId,
+            Direction initialDirection,
+            PatrolConfig config,
+            SpeedModifierPort speedModifier) {
         this.graph = Objects.requireNonNull(graph, "graph");
         this.config = Objects.requireNonNull(config, "config");
-        Objects.requireNonNull(initialDirection, "initialDirection");
-
-        PathNode start = graph.node(startNodeId);
-        PathNode end = graph.neighbor(start, initialDirection).orElseThrow(() -> new IllegalArgumentException(
-                "start node '" + start.id() + "' has no " + initialDirection + " exit"));
-
-        this.segmentStartNodeId = start.id();
-        this.segmentEndNodeId = end.id();
-        this.direction = initialDirection;
-        this.position = start.center();
+        this.speedModifier = Objects.requireNonNull(speedModifier, "speedModifier");
+        resetTo(startNodeId, initialDirection);
     }
 
     /**
@@ -85,6 +88,8 @@ public final class PatrolController {
         Objects.requireNonNull(newestEdge, "newestEdge");
         Objects.requireNonNull(passability, "passability");
 
+        refreshPendingDirection(heldDirections, newestEdge);
+
         // R1：同刻按住相反方向 → IDLE
         if (heldDirections.contains(direction)
                 && heldDirections.contains(DirectionGeometry.opposite(direction))) {
@@ -96,15 +101,17 @@ public final class PatrolController {
             return idleFrame(tick);
         }
 
-        double budget = config.baseSpeed();
-        Optional<Direction> pendingEdge = newestEdge;
-
+        double multiplier = speedMultiplier();
+        double budget = config.baseSpeed() * multiplier;
         while (budget > 0) {
             PathNode center = centerNodeIfAtCenter();
             if (center != null) {
-                Direction nextDir = decideDirection(center, heldDirections, pendingEdge, passability);
+                Direction nextDir = decideDirection(center, heldDirections, passability);
                 if (nextDir == null) {
                     return idleFrame(tick);
+                }
+                if (nextDir == pendingDirection) {
+                    pendingDirection = null;
                 }
                 // P0-E 修复：站在段终点节点中心时，即使 nextDir == direction 也必须滚动 segment
                 if (nextDir != direction || center.id().equals(segmentEndNodeId)) {
@@ -123,14 +130,13 @@ public final class PatrolController {
             double dist = distanceToDestination(destination);
             if (dist > budget) {
                 position = DirectionGeometry.move(position, direction, budget);
-                return cruisingFrame(tick);
+                return movingFrame(tick, multiplier);
             } else {
                 position = destination.center();
                 budget -= dist;
-                pendingEdge = Optional.empty();
             }
         }
-        return cruisingFrame(tick);
+        return movingFrame(tick, multiplier);
     }
     /** 返回当前吸附位置（始终在路径中心线上）。 */
     public PathPoint position() {
@@ -147,22 +153,36 @@ public final class PatrolController {
         return config;
     }
 
+    /**
+     * Restores this controller to a round's start node and initial direction.
+     * This method only replaces internal movement state: it writes no frame,
+     * publishes no event, and does not affect replay-owned state.
+     */
+    public void resetTo(String startNodeId, Direction initialDirection) {
+        Objects.requireNonNull(initialDirection, "initialDirection");
+
+        PathNode start = graph.node(startNodeId);
+        PathNode end = graph.neighbor(start, initialDirection).orElseThrow(() -> new IllegalArgumentException(
+                "start node '" + start.id() + "' has no " + initialDirection + " exit"));
+
+        segmentStartNodeId = start.id();
+        segmentEndNodeId = end.id();
+        direction = initialDirection;
+        position = start.center();
+        pendingDirection = null;
+    }
+
     // ========== private ==========
 
     private Direction decideDirection(
             PathNode center,
             Set<Direction> held,
-            Optional<Direction> newestEdge,
             ExitPassability passability) {
-        // 1. newestEdge 是 90° 且仍按住且合法 → 转向
-        if (newestEdge.isPresent()) {
-            Direction edge = newestEdge.get();
-            if (edge != direction
-                    && edge != DirectionGeometry.opposite(direction)
-                    && held.contains(edge)
-                    && PathExitSelector.isPassable(graph, center, edge, passability)) {
-                return edge;
-            }
+        // 1. 单槽方向意图仍按住且合法 → 转向
+        if (pendingDirection != null
+                && held.contains(pendingDirection)
+                && PathExitSelector.isPassable(graph, center, pendingDirection, passability)) {
+            return pendingDirection;
         }
 
         // 2. held 含当前朝向且直行合法 → 继续
@@ -184,6 +204,19 @@ public final class PatrolController {
         return null;
     }
 
+    private void refreshPendingDirection(Set<Direction> heldDirections, Optional<Direction> newestEdge) {
+        if (pendingDirection != null && !heldDirections.contains(pendingDirection)) {
+            pendingDirection = null;
+        }
+        newestEdge.ifPresent(edge -> {
+            if (heldDirections.contains(edge)
+                    && edge != direction
+                    && edge != DirectionGeometry.opposite(direction)) {
+                pendingDirection = edge;
+            }
+        });
+    }
+
     private boolean hasAny90Exit(PathNode node, ExitPassability passability) {
         for (Direction side : DirectionGeometry.sideDirections(direction)) {
             if (PathExitSelector.isPassable(graph, node, side, passability)) {
@@ -198,9 +231,19 @@ public final class PatrolController {
                 MovementState.IDLE, ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
     }
 
-    private PlayerKinematics cruisingFrame(long tick) {
+    private PlayerKinematics movingFrame(long tick, double multiplier) {
         return new PlayerKinematics(tick, position.x(), position.y(), direction,
-                MovementState.CRUISING, ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
+                multiplier < 1.0 ? MovementState.SLOWED : MovementState.CRUISING,
+                ActorPhase.AVAILABLE, 0, false, AnimationState.MOVING);
+    }
+
+    private double speedMultiplier() {
+        double multiplier = speedModifier.speedMultiplier();
+        if (!Double.isFinite(multiplier) || multiplier < 0.0) {
+            throw new IllegalStateException(
+                    "speed multiplier must be finite and >= 0, actual " + multiplier);
+        }
+        return multiplier;
     }
 
     private PathNode centerNodeIfAtCenter() {
