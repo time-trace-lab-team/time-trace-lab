@@ -1,6 +1,7 @@
 package org.example.timeloop.entity;
 
 import org.example.timeloop.core.Direction;
+import org.example.timeloop.core.MovementState;
 import org.example.timeloop.core.PlayerKinematics;
 import org.example.timeloop.core.path.ExitPassability;
 import org.example.timeloop.core.path.OrthogonalPathGraph;
@@ -11,233 +12,150 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * C-PLAYER-MOVE-01：四方向受约束移动 — 节点/转向/障碍行为。
+ */
 class PatrolControllerNodeBehaviorTest {
 
-    private static final double EPSILON = PatrolConfig.C2_EPSILON;
+    private static final double EPS = PatrolConfig.C2_EPSILON;
+    private static final Optional<Direction> NONE = Optional.empty();
+
+    // ========== 1. 无输入到达路口不自动转向 ==========
 
     @Test
-    void locksOneChoiceBeforeCenterAndPreservesLaterInputForNextNode() {
-        PatrolController controller = new PatrolController(
-                lockedQueueGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
-        controller.queueDirection(Direction.RIGHT);
+    void noInputAtJunction_doesNotAutoTurn() {
+        PatrolController c = new PatrolController(
+                lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
 
-        PlayerKinematics enteringLock = controller.advance(0, ExitPassability.allOpen());
-        assertEquals(Direction.DOWN, enteringLock.direction(), "turn is not committed before the center");
-        assertEquals(Direction.RIGHT, controller.lockedDirection().orElseThrow());
-        assertFalse(controller.pendingDirection().isPresent());
-
-        controller.queueDirection(Direction.DOWN);
-        assertEquals(Direction.DOWN, controller.pendingDirection().orElseThrow());
-
-        PlayerKinematics atFirstCenter = null;
-        for (long tick = 1; tick <= 3; tick++) {
-            atFirstCenter = controller.advance(tick, ExitPassability.allOpen());
+        // 按住 DOWN，走到 junction 中心后直行不可通行（jct 无 DOWN 出口）→ 停在中心
+        PlayerKinematics last = null;
+        for (long tick = 0; tick < 20; tick++) {
+            last = c.advance(tick, Optional.of(Direction.DOWN), ExitPassability.allOpen());
         }
-        assertEquals(0.0, atFirstCenter.x(), EPSILON);
-        assertEquals(0.0, atFirstCenter.y(), EPSILON);
-        assertEquals(Direction.RIGHT, atFirstCenter.direction());
-        assertEquals(Direction.DOWN, controller.pendingDirection().orElseThrow(),
-                "input submitted after the lock belongs to the next node");
+        assertEquals(0.0, last.x(), EPS);
+        assertEquals(0.0, last.y(), EPS);
+        assertEquals(MovementState.IDLE, last.movementState(),
+                "直行不可通行时应在节点中心停下");
+    }
 
-        PlayerKinematics atSecondCenter = null;
-        for (long tick = 4; tick <= 7; tick++) {
-            atSecondCenter = controller.advance(tick, ExitPassability.allOpen());
+    // ========== 2. 段中间按 90° → 停下 ==========
+
+    @Test
+    void perpendicularMidSegment_stopsIdle() {
+        PatrolController c = new PatrolController(
+                lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+
+        // 先走几 tick，脱离段起点但没到 junction
+        for (long tick = 0; tick < 2; tick++) {
+            c.advance(tick, Optional.of(Direction.DOWN), ExitPassability.allOpen());
         }
-        assertEquals(8.0, atSecondCenter.x(), EPSILON);
-        assertEquals(0.0, atSecondCenter.y(), EPSILON);
-        assertEquals(Direction.DOWN, atSecondCenter.direction());
-        assertFalse(controller.pendingDirection().isPresent());
+        // 此时 y ≈ -4（段 start(-8) → junction(0)），未到中心
+        PlayerKinematics result = c.advance(2, Optional.of(Direction.RIGHT), ExitPassability.allOpen());
+        assertEquals(MovementState.IDLE, result.movementState(),
+                "段中间按 90° 应停在原地");
+        assertEquals(0.0, result.x(), EPS);
     }
 
-    @Test
-    void commitsTurnAtCenterAndSpendsOvershootOnNewCenterLine() {
-        PatrolController controller = new PatrolController(
-                shortTurnGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
-        controller.queueDirection(Direction.RIGHT);
-
-        PlayerKinematics end = controller.advance(0, ExitPassability.allOpen());
-
-        assertEquals(Direction.RIGHT, end.direction());
-        assertEquals(1.0, end.x(), EPSILON,
-                "one world unit remains after reaching the center and must be consumed on the new segment");
-        assertEquals(0.0, end.y(), EPSILON,
-                "turning at the center snaps the perpendicular axis to the new center line");
-    }
+    // ========== 3. 节点中心按 90° → 提交转向 ==========
 
     @Test
-    void latestUncommittedIntentReplacesTheEarlierOne() {
-        PatrolController controller = new PatrolController(
-                lockedQueueGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
-        controller.queueDirection(Direction.LEFT);
-        controller.queueDirection(Direction.RIGHT);
+    void perpendicularAtCenter_commitsTurn() {
+        PatrolController c = new PatrolController(
+                lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
 
-        PlayerKinematics atCenter = null;
-        for (long tick = 0; tick <= 3; tick++) {
-            atCenter = controller.advance(tick, ExitPassability.allOpen());
+        // 走到 junction 中心（start(-8) → junction(0)：距离 8，需要 4 tick）
+        for (long tick = 0; tick < 4; tick++) {
+            c.advance(tick, Optional.of(Direction.DOWN), ExitPassability.allOpen());
         }
-
-        assertEquals(Direction.RIGHT, atCenter.direction());
-        assertFalse(controller.pendingDirection().isPresent());
+        // 此时在 junction 中心；按 RIGHT
+        PlayerKinematics turned = c.advance(4, Optional.of(Direction.RIGHT), ExitPassability.allOpen());
+        assertEquals(Direction.RIGHT, turned.direction());
+        assertEquals(MovementState.CRUISING, turned.movementState());
+        assertEquals(2.0, turned.x(), EPS, "转向后沿新段推进 2 单位");
+        assertEquals(0.0, turned.y(), EPS);
     }
 
+    // ========== 4. 前方关门 → 停在节点中心 ==========
+
     @Test
-    void excludesAClosedStraightExitAtTheNodeInsteadOfWaitingAtIt() {
-        PatrolController controller = new PatrolController(
-                shortTurnGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+    void closedDoorAhead_stopsAtNodeCenter() {
+        PatrolController c = new PatrolController(
+                lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
 
-        PlayerKinematics end = controller.advance(0, (from, exit, target) ->
-                !(from.id().equals("junction") && exit.direction() == Direction.DOWN));
+        // 关门：junction 处 DOWN 出口不可通行
+        ExitPassability closedDown = (from, exit, target) ->
+                !(from.id().equals("junction") && exit.direction() == Direction.DOWN);
 
-        assertEquals(Direction.RIGHT, end.direction());
-        assertEquals(1.0, end.x(), EPSILON);
-        assertEquals(0.0, end.y(), EPSILON);
+        PlayerKinematics last = null;
+        for (long tick = 0; tick < 6; tick++) {
+            last = c.advance(tick, Optional.of(Direction.DOWN), closedDown);
+        }
+        assertEquals(0.0, last.x(), EPS);
+        assertEquals(0.0, last.y(), EPS);
+        assertEquals(MovementState.IDLE, last.movementState());
     }
 
+    // ========== 5. 按反方向 → 停下 ==========
+
     @Test
-    void trueDeadEndAutomaticallyReversesInsteadOfStopping() {
-        PatrolController controller = new PatrolController(
-                deadEndGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
-        PlayerKinematics end = null;
+    void oppositeDirection_stopsIdle() {
+        PatrolController c = new PatrolController(
+                lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+
+        for (long tick = 0; tick < 2; tick++) {
+            c.advance(tick, Optional.of(Direction.DOWN), ExitPassability.allOpen());
+        }
+        PlayerKinematics result = c.advance(2, Optional.of(Direction.UP), ExitPassability.allOpen());
+        assertEquals(MovementState.IDLE, result.movementState());
+        assertEquals(Direction.DOWN, result.direction(), "朝向不因反方向输入改变");
+    }
+
+    // ========== 6. 残影式确定性：同输入 → 同结果 ==========
+
+    @Test
+    void sameInputs_produceIdenticalStates() {
+        PatrolController a = new PatrolController(
+                lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+        PatrolController b = new PatrolController(
+                lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+
+        for (long tick = 0; tick < 10; tick++) {
+            Optional<Direction> dir = (tick < 4) ? Optional.of(Direction.DOWN) : Optional.empty();
+            PlayerKinematics ra = a.advance(tick, dir, ExitPassability.allOpen());
+            PlayerKinematics rb = b.advance(tick, dir, ExitPassability.allOpen());
+            assertEquals(ra, rb, "tick " + tick);
+        }
+    }
+
+    // ========== 7. IDLE 段仍逐 tick 写入帧 ==========
+
+    @Test
+    void idleWritesFrameEveryTick() {
+        PatrolController c = new PatrolController(
+                lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
 
         for (long tick = 0; tick < 5; tick++) {
-            end = controller.advance(tick, ExitPassability.allOpen());
-        }
-
-        assertEquals(0.0, end.x(), EPSILON);
-        assertEquals(0.0, end.y(), EPSILON);
-        assertEquals(Direction.UP, end.direction());
-    }
-
-    @Test
-    void consumesOneLargeTickBudgetAcrossMultipleShortSegments() {
-        PatrolController controller = new PatrolController(
-                shortSegmentGraph(), "n0", Direction.RIGHT, PatrolConfig.c2Greybox());
-
-        PlayerKinematics end = controller.advance(0, ExitPassability.allOpen());
-
-        assertEquals(2.0, end.x(), EPSILON);
-        assertEquals(0.0, end.y(), EPSILON);
-        assertEquals(Direction.RIGHT, end.direction());
-    }
-
-    @Test
-    void holdsCenterLineWithoutDriftForTenAndOneThousandTurns() {
-        assertStableTurns(10);
-        assertStableTurns(1_000);
-    }
-
-    @Test
-    void reproducesIdenticalTickEndStatesForEqualInputsAndPassabilitySequence() {
-        PatrolController first = new PatrolController(squareGraph(), "a", Direction.RIGHT, PatrolConfig.c2Greybox());
-        PatrolController second = new PatrolController(squareGraph(), "a", Direction.RIGHT, PatrolConfig.c2Greybox());
-
-        for (long tick = 0; tick < 80; tick++) {
-            if (tick % 11 == 0) {
-                first.queueDirection(Direction.DOWN);
-                second.queueDirection(Direction.DOWN);
-            } else if (tick % 11 == 5) {
-                first.queueDirection(Direction.LEFT);
-                second.queueDirection(Direction.LEFT);
-            }
-            boolean blockLeftForThisTick = tick % 7 == 0;
-            ExitPassability firstQuery = (from, exit, target) ->
-                    !(blockLeftForThisTick && exit.direction() == Direction.LEFT);
-            ExitPassability secondQuery = (from, exit, target) ->
-                    !(blockLeftForThisTick && exit.direction() == Direction.LEFT);
-
-            assertEquals(first.advance(tick, firstQuery), second.advance(tick, secondQuery), "tick " + tick);
+            PlayerKinematics k = c.advance(tick, NONE, ExitPassability.allOpen());
+            assertEquals(tick, k.tick(), "IDLE 帧必须逐 tick 写入");
+            assertEquals(MovementState.IDLE, k.movementState());
         }
     }
 
-    private static void assertStableTurns(int requiredTurns) {
-        PatrolController controller = new PatrolController(squareGraph(), "a", Direction.RIGHT, PatrolConfig.c2Greybox());
-        Direction previousDirection = controller.direction();
-        int turns = 0;
-        long tick = 0;
+    // ========== 图形 ==========
 
-        while (turns < requiredTurns) {
-            PlayerKinematics end = controller.advance(tick++, ExitPassability.allOpen());
-            assertTrue(onSquareCenterLine(end.x(), end.y()),
-                    () -> "off center line at tick " + end.tick() + ": (" + end.x() + ", " + end.y() + ")");
-            if (end.direction() != previousDirection) {
-                turns++;
-                previousDirection = end.direction();
-            }
-            assertTrue(tick < 20_000, "a valid square graph must not miss a node or loop forever");
-        }
-    }
-
-    private static boolean onSquareCenterLine(double x, double y) {
-        return Math.abs(x) <= EPSILON
-                || Math.abs(x - 10.0) <= EPSILON
-                || Math.abs(y) <= EPSILON
-                || Math.abs(y - 10.0) <= EPSILON;
-    }
-
-    private static OrthogonalPathGraph lockedQueueGraph() {
+    /**
+     * start(0,-8) --DOWN--> junction(0,0) --RIGHT--> east(8,0)
+     */
+    private static OrthogonalPathGraph lockedGraph() {
         return new OrthogonalPathGraph(List.of(
                 node("start", 0.0, -8.0, List.of(new PathExit(Direction.DOWN, "junction"))),
-                new PathNode(
-                        "junction",
-                        new PathPoint(0.0, 0.0),
-                        List.of(
-                                new PathExit(Direction.UP, "start"),
-                                new PathExit(Direction.RIGHT, "east"),
-                                new PathExit(Direction.DOWN, "south"),
-                                new PathExit(Direction.LEFT, "west")),
-                        Optional.of(Direction.RIGHT)),
-                node("east", 8.0, 0.0, List.of(
-                        new PathExit(Direction.LEFT, "junction"), new PathExit(Direction.DOWN, "eastSouth"))),
-                node("eastSouth", 8.0, 8.0, List.of(new PathExit(Direction.UP, "east"))),
-                node("south", 0.0, 8.0, List.of(new PathExit(Direction.UP, "junction"))),
-                node("west", -8.0, 0.0, List.of(new PathExit(Direction.RIGHT, "junction")))));
-    }
-
-    private static OrthogonalPathGraph shortTurnGraph() {
-        return new OrthogonalPathGraph(List.of(
-                node("start", 0.0, -1.0, List.of(new PathExit(Direction.DOWN, "junction"))),
-                new PathNode(
-                        "junction",
-                        new PathPoint(0.0, 0.0),
-                        List.of(
-                                new PathExit(Direction.UP, "start"),
-                                new PathExit(Direction.RIGHT, "right"),
-                                new PathExit(Direction.DOWN, "blockedStraight"),
-                                new PathExit(Direction.LEFT, "left")),
-                        Optional.of(Direction.RIGHT)),
-                node("right", 10.0, 0.0, List.of(new PathExit(Direction.LEFT, "junction"))),
-                node("blockedStraight", 0.0, 10.0, List.of(new PathExit(Direction.UP, "junction"))),
-                node("left", -10.0, 0.0, List.of(new PathExit(Direction.RIGHT, "junction")))));
-    }
-
-    private static OrthogonalPathGraph deadEndGraph() {
-        return new OrthogonalPathGraph(List.of(
-                node("start", 0.0, -10.0, List.of(new PathExit(Direction.DOWN, "end"))),
-                node("end", 0.0, 0.0, List.of(new PathExit(Direction.UP, "start")))));
-    }
-
-    private static OrthogonalPathGraph shortSegmentGraph() {
-        return new OrthogonalPathGraph(List.of(
-                node("n0", 0.0, 0.0, List.of(new PathExit(Direction.RIGHT, "n1"))),
-                node("n1", 0.5, 0.0, List.of(new PathExit(Direction.RIGHT, "n2"))),
-                node("n2", 1.0, 0.0, List.of(new PathExit(Direction.RIGHT, "n3"))),
-                node("n3", 1.5, 0.0, List.of(new PathExit(Direction.RIGHT, "n4"))),
-                node("n4", 2.0, 0.0, List.of(new PathExit(Direction.RIGHT, "n5"))),
-                node("n5", 2.5, 0.0, List.of(new PathExit(Direction.LEFT, "n4")))));
-    }
-
-    private static OrthogonalPathGraph squareGraph() {
-        return new OrthogonalPathGraph(List.of(
-                node("a", 0.0, 0.0, List.of(new PathExit(Direction.RIGHT, "b"), new PathExit(Direction.DOWN, "d"))),
-                node("b", 10.0, 0.0, List.of(new PathExit(Direction.LEFT, "a"), new PathExit(Direction.DOWN, "c"))),
-                node("c", 10.0, 10.0, List.of(new PathExit(Direction.UP, "b"), new PathExit(Direction.LEFT, "d"))),
-                node("d", 0.0, 10.0, List.of(new PathExit(Direction.RIGHT, "c"), new PathExit(Direction.UP, "a")))));
+                node("junction", 0.0, 0.0, List.of(
+                        new PathExit(Direction.UP, "start"),
+                        new PathExit(Direction.RIGHT, "east"))),
+                node("east", 8.0, 0.0, List.of(new PathExit(Direction.LEFT, "junction")))));
     }
 
     private static PathNode node(String id, double x, double y, List<PathExit> exits) {

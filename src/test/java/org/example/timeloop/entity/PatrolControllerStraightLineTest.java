@@ -13,52 +13,76 @@ import org.example.timeloop.core.path.PathPoint;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+/**
+ * C-PLAYER-MOVE-01：四方向受约束移动 — 直线段行为。
+ */
 class PatrolControllerStraightLineTest {
 
     @Test
-    void cruisesForSixtyTicksWithoutAnyQueuedDirection() {
-        PatrolController controller = controllerFor(Direction.DOWN);
+    void noInput_staysIdleAtStartCenter() {
+        PatrolController c = controllerFor(Direction.DOWN);
         PlayerKinematics last = null;
-
         for (long tick = 0; tick < 60; tick++) {
-            last = controller.advance(tick, ExitPassability.allOpen());
+            last = c.advance(tick, Optional.empty(), ExitPassability.allOpen());
         }
-
-        assertEquals(0.0, last.x(), 0.0000001);
-        assertEquals(120.0, last.y(), 0.0000001);
+        assertEquals(0.0, last.x(), 1e-7);
+        assertEquals(0.0, last.y(), 1e-7);
         assertEquals(59L, last.tick());
-        assertEquals(Direction.DOWN, last.direction());
-        assertEquals(MovementState.CRUISING, last.movementState());
+        assertEquals(MovementState.IDLE, last.movementState());
         assertEquals(ActorPhase.AVAILABLE, last.actorPhase());
-        assertEquals(0, last.actorPhaseTicksRemaining());
         assertEquals(AnimationState.MOVING, last.animationState());
     }
 
     @Test
+    void holdingDirection_movesAtBaseSpeedForSixtyTicks() {
+        PatrolController c = controllerFor(Direction.DOWN);
+        PlayerKinematics last = null;
+        for (long tick = 0; tick < 60; tick++) {
+            last = c.advance(tick, Optional.of(Direction.DOWN), ExitPassability.allOpen());
+        }
+        assertEquals(0.0, last.x(), 1e-7);
+        assertEquals(120.0, last.y(), 1e-7);
+        assertEquals(MovementState.CRUISING, last.movementState());
+    }
+
+    @Test
+    void releaseDirection_stopsImmediatelyAtCurrentPosition() {
+        PatrolController c = controllerFor(Direction.DOWN);
+        for (long tick = 0; tick < 10; tick++) {
+            c.advance(tick, Optional.of(Direction.DOWN), ExitPassability.allOpen());
+        }
+        PlayerKinematics stopped = c.advance(10, Optional.empty(), ExitPassability.allOpen());
+        assertEquals(0.0, stopped.x(), 1e-7);
+        assertEquals(20.0, stopped.y(), 1e-7);
+        assertEquals(MovementState.IDLE, stopped.movementState());
+    }
+
+    @Test
     void advancesAllFourDirectionsInWorldCoordinates() {
-        assertAfterOneTick(Direction.UP, 0.0, -2.0);
-        assertAfterOneTick(Direction.RIGHT, 2.0, 0.0);
-        assertAfterOneTick(Direction.DOWN, 0.0, 2.0);
-        assertAfterOneTick(Direction.LEFT, -2.0, 0.0);
+        assertOneTick(Direction.UP, 0.0, -2.0);
+        assertOneTick(Direction.RIGHT, 2.0, 0.0);
+        assertOneTick(Direction.DOWN, 0.0, 2.0);
+        assertOneTick(Direction.LEFT, -2.0, 0.0);
     }
 
     @Test
     void requiresAnExplicitDeclaredInitialExit() {
         OrthogonalPathGraph graph = graphFor(Direction.RIGHT);
-
         assertThrows(IllegalArgumentException.class,
                 () -> new PatrolController(graph, "start", Direction.UP, PatrolConfig.c2Greybox()));
     }
 
-    private static void assertAfterOneTick(Direction direction, double expectedX, double expectedY) {
-        PlayerKinematics kinematics = controllerFor(direction).advance(0, ExitPassability.allOpen());
-        assertEquals(expectedX, kinematics.x(), 0.0000001, direction + " x");
-        assertEquals(expectedY, kinematics.y(), 0.0000001, direction + " y");
-        assertEquals(direction, kinematics.direction());
+    private static void assertOneTick(Direction direction, double expectedX, double expectedY) {
+        PlayerKinematics k = controllerFor(direction)
+                .advance(0, Optional.of(direction), ExitPassability.allOpen());
+        assertEquals(expectedX, k.x(), 1e-7, direction + " x");
+        assertEquals(expectedY, k.y(), 1e-7, direction + " y");
+        assertEquals(direction, k.direction());
     }
 
     private static PatrolController controllerFor(Direction direction) {
