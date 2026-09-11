@@ -30,7 +30,7 @@ class AutoDockServiceTest {
 
         AutoDockView left = service.findById("L01_plate_left").orElseThrow();
         assertEquals("L01_node_left_end", left.pathNodeId());
-        assertEquals(new Vector2D(96.0, 240.0), left.center());
+        assertEquals(new Vector2D(120.0, 264.0), left.center());
         assertEquals(Set.of(PathNode.Dir.UP), left.legalExitDirections());
         assertFalse(left.occupancy().occupied());
         assertTrue(left.region().contains(left.center()));
@@ -68,7 +68,7 @@ class AutoDockServiceTest {
     @Test
     void oneDockAcceptsOnlyOneActor() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
-        Vector2D center = new Vector2D(96.0, 240.0);
+        Vector2D center = new Vector2D(120.0, 264.0);
 
         AutoDockResult first = service.tryEnter("L01_plate_left", "echo_1", 1, 10, center);
         AutoDockResult second = service.tryEnter("L01_plate_left", "player", 1, 10, center);
@@ -82,10 +82,10 @@ class AutoDockServiceTest {
     @Test
     void nonOwnerCannotReleaseDock() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
-        service.tryEnter("L01_plate_left", "echo_1", 1, 10, new Vector2D(96.0, 240.0));
+        service.tryEnter("L01_plate_left", "echo_1", 1, 10, new Vector2D(120.0, 264.0));
 
         AutoDockResult result = service.tryLeave(
-                "L01_plate_left", "player", 1, 11, PathNode.Dir.UP, new Vector2D(96.0, 215.0));
+                "L01_plate_left", "player", 1, 11, PathNode.Dir.UP, new Vector2D(120.0, 239.0));
 
         assertEquals(AutoDockResult.Status.NOT_OCCUPANT, result.status());
         assertTrue(service.findById("L01_plate_left").orElseThrow().occupancy().occupied());
@@ -94,11 +94,11 @@ class AutoDockServiceTest {
     @Test
     void legalLeaveReleasesAtSameTickAndBlocksReentryUntilNextTick() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
-        Vector2D center = new Vector2D(96.0, 240.0);
+        Vector2D center = new Vector2D(120.0, 264.0);
         service.tryEnter("L01_plate_left", "player", 1, 10, center);
 
         AutoDockResult left = service.tryLeave(
-                "L01_plate_left", "player", 1, 11, PathNode.Dir.UP, new Vector2D(96.0, 215.0));
+                "L01_plate_left", "player", 1, 11, PathNode.Dir.UP, new Vector2D(120.0, 239.0));
         AutoDockResult sameTick = service.tryEnter("L01_plate_left", "echo_1", 1, 11, center);
         AutoDockResult nextTick = service.tryEnter("L01_plate_left", "echo_1", 1, 12, center);
 
@@ -111,11 +111,11 @@ class AutoDockServiceTest {
     @Test
     void invalidDirectionOrStillInsideDoesNotRelease() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
-        Vector2D center = new Vector2D(96.0, 240.0);
+        Vector2D center = new Vector2D(120.0, 264.0);
         service.tryEnter("L01_plate_left", "player", 1, 10, center);
 
         AutoDockResult invalidDirection = service.tryLeave(
-                "L01_plate_left", "player", 1, 11, PathNode.Dir.DOWN, new Vector2D(96.0, 215.0));
+                "L01_plate_left", "player", 1, 11, PathNode.Dir.DOWN, new Vector2D(120.0, 239.0));
         AutoDockResult stillInside = service.tryLeave(
                 "L01_plate_left", "player", 1, 12, PathNode.Dir.UP, center);
 
@@ -127,12 +127,12 @@ class AutoDockServiceTest {
     @Test
     void echoReleaseAndRoundResetClearOccupancy() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
-        service.tryEnter("L01_plate_left", "echo_1", 1, 10, new Vector2D(96.0, 240.0));
+        service.tryEnter("L01_plate_left", "echo_1", 1, 10, new Vector2D(120.0, 264.0));
 
         assertEquals(1, service.releaseActor("echo_1", 1, 11));
         assertFalse(service.findById("L01_plate_left").orElseThrow().occupancy().occupied());
 
-        service.tryEnter("L01_plate_left", "player", 1, 12, new Vector2D(96.0, 240.0));
+        service.tryEnter("L01_plate_left", "player", 1, 12, new Vector2D(120.0, 264.0));
         service.reset(AutoDockResetReason.ROUND_END, 13);
         AutoDockView view = service.findById("L01_plate_left").orElseThrow();
         assertFalse(view.occupancy().occupied());

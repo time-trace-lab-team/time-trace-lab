@@ -19,7 +19,7 @@ class AutoDockSnapshotTest {
     void snapshotRestoresOccupancyAsAnImmutableValue() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
         AutoDockSnapshotPort snapshotPort = service;
-        Vector2D center = new Vector2D(96.0, 240.0);
+        Vector2D center = new Vector2D(120.0, 264.0);
 
         assertEquals(AutoDockResult.Status.ENTERED,
                 service.tryEnter("L01_plate_left", "echo_1", 1, 10, center).status());
@@ -42,12 +42,12 @@ class AutoDockSnapshotTest {
     @Test
     void snapshotRestoresReentryBoundaryAndResetClearsEveryDynamicField() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
-        Vector2D center = new Vector2D(96.0, 240.0);
+        Vector2D center = new Vector2D(120.0, 264.0);
 
         service.tryEnter("L01_plate_left", "player", 1, 10, center);
         assertEquals(AutoDockResult.Status.LEFT, service.tryLeave(
                 "L01_plate_left", "player", 1, 11, PathNode.Dir.UP,
-                new Vector2D(96.0, 215.0)).status());
+                new Vector2D(120.0, 239.0)).status());
         AutoDockStateSnapshot afterLeave = service.createSnapshot();
 
         service.reset(AutoDockResetReason.ROUND_END, 12);
@@ -72,7 +72,7 @@ class AutoDockSnapshotTest {
     @Test
     void mismatchedSnapshotIsRejectedWithoutPartialRestore() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
-        Vector2D center = new Vector2D(96.0, 240.0);
+        Vector2D center = new Vector2D(120.0, 264.0);
         service.tryEnter("L01_plate_left", "echo_1", 1, 10, center);
 
         AutoDockStateSnapshot invalid = new AutoDockStateSnapshot(List.of(
@@ -88,7 +88,7 @@ class AutoDockSnapshotTest {
     @Test
     void completeSnapshotWithAdditionalUnknownIdIsRejected() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
-        Vector2D center = new Vector2D(96.0, 240.0);
+        Vector2D center = new Vector2D(120.0, 264.0);
         service.tryEnter("L01_plate_left", "echo_1", 1, 10, center);
         AutoDockStateSnapshot complete = service.createSnapshot();
 
