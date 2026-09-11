@@ -20,6 +20,11 @@ import org.example.timeloop.core.GamePhase;
  *       恢复初始机关（注入回调）→ READY（第 1 轮）。</li>
  * </ul>
  *
+ * <p><b>轮末停靠契约</b>：{@link #completeNormalRound} 与 {@link #restartFromFirstRound}
+ * 结束后，时钟停在 {@link GamePhase#READY}、本轮新缓冲已开好；<b>由调用方负责
+ * {@code clock.transition(PLAYING)}</b> 启动下一轮。本类只管理时钟与缓冲，
+ * 不自行把阶段推进到 PLAYING。</p>
+ *
  * <p>机关快照恢复端口尚未由开发 3 冻结，因此以注入的 {@link Runnable} 表达
  * （与 core 包 OrderedTickUpdatePort 的回调注入模式一致）；射线命中不调用任何边界方法，
  * 本类也没有生命值/死亡语义。轮内玩家位置、排队方向等由开发 1 各自重置，不在本类职责内。</p>
@@ -84,6 +89,9 @@ public final class RecordingSession {
 
     /**
      * 普通轮末事务（非最终轮读秒归零时调用，整个操作在同一逻辑边界完成）。
+     *
+     * <p>结束后时钟停在 {@link GamePhase#READY}（轮次 +1、刻归零）、新缓冲已开好；
+     * 由调用方负责 {@code clock.transition(PLAYING)} 启动下一轮。</p>
      *
      * @param mechanismRestorer 恢复轮内机关状态的注入端口（开发 3 快照恢复；未接入前可传空操作）
      * @return 本轮生成的新残影
