@@ -11,25 +11,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 集成层（{@code app/}）对 C-PLAYER-MOVE-02 的适配测试。
  *
  * <p>覆盖：无输入静止 / 按住走 / 松开同刻停 / 同刻相反方向停 / 按住前进键再按垂直方向不冻住 /
- * 单槽方向意图在节点中心提交转向 / 真死路掉头 / 驻留板走到中心后停驻并能离开释放占用。</p>
- *
- * <p>另含 2 条<b>现状记录</b>测试（{@code currentBehaviour}），把开发一当前实现的两个缺口
- * 固化成可复现证据，供 PM 裁决后翻转：</p>
- * <ul>
- *   <li>在出生点这类“反方向没有出口”的节点按反方向会抛 {@link NoSuchElementException}；</li>
- *   <li>普通直廊节点（只有一进一出）也能原地掉头，与 README「仅真死路可掉头」不符。</li>
- * </ul>
+ * 单槽方向意图在节点中心提交转向 / 真死路掉头 / 普通直廊节点拒绝掉头 / 出生点反方向不崩 /
+ * 驻留板走到中心后停驻并能离开释放占用。</p>
  */
 class Level01AssemblyMovementTest {
 
@@ -190,25 +182,30 @@ class Level01AssemblyMovementTest {
     }
 
     /**
-     * 现状记录（P0-D 待裁决）：出生点只有 DOWN 出口，按 UP（反方向）时真死路豁免直接改用反方向，
-     * 但反方向在该节点没有出口，{@code graph.neighbor(...).get()} 抛 {@link NoSuchElementException}。
-     * 即：开局按一下反方向就会崩。开发一修复（补反方向可通行判定）后本测试应改为断言“不崩且静止”。
+     * P0-D 修复后的回归：出生点只有 DOWN 出口，按 UP（反方向）时豁免不成立
+     * （反方向在该节点没有出口）→ 既不崩也不掉头，保持静止。
      */
     @Test
-    void currentBehaviourReverseAtSpawnThrows() {
+    void reverseAtSpawnStaysIdleWithoutCrash() {
         Level01Assembly a = started();
         a.tick(InputIntent.empty(0));
+        double spawnY = player(a).y();
 
-        assertThrows(NoSuchElementException.class, () -> a.tick(press(1, LogicalKey.DIR_UP)));
+        a.tick(press(1, LogicalKey.DIR_UP));
+        a.tick(hold(2, LogicalKey.DIR_UP));
+
+        RenderViews.Player idle = player(a);
+        assertEquals(MovementState.IDLE, idle.movementState());
+        assertEquals(Direction.DOWN, idle.direction());
+        assertEquals(spawnY, idle.y(), EPSILON);
     }
 
     /**
-     * 现状记录（P0-D 待裁决）：普通直廊节点 (5,2) 只有 UP/DOWN 两个出口，前方（DOWN）仍然可通行，
-     * 但当前实现只检查“有没有 90° 出口”，因此按住反方向就能掉头，与 README「仅真死路可掉头」不符。
-     * 修复（补“当前朝向不可通行”前置条件）后本测试应改为断言 IDLE。
+     * P0-D 修复后的回归：普通直廊节点 (5,2) 前方（DOWN）仍可通行，不属于真死路，
+     * 因此按反方向必须被拒绝（README「仅真死路可掉头」）。
      */
     @Test
-    void currentBehaviourReversalAllowedAtPlainCorridorNode() {
+    void reversalRejectedAtPlainCorridorNode() {
         Level01Assembly a = started();
         a.tick(InputIntent.empty(0));
         double spawnY = player(a).y();
@@ -218,7 +215,10 @@ class Level01AssemblyMovementTest {
         assertEquals(spawnY + TILE_SIZE, player(a).y(), EPSILON);
 
         a.tick(press(tick, LogicalKey.DIR_UP));
-        assertEquals(Direction.UP, player(a).direction(), "当前实现允许在普通直廊节点掉头");
+        RenderViews.Player idle = player(a);
+        assertEquals(MovementState.IDLE, idle.movementState());
+        assertEquals(Direction.DOWN, idle.direction());
+        assertEquals(spawnY + TILE_SIZE, idle.y(), EPSILON);
     }
 
     // ---------- 工具 ----------
