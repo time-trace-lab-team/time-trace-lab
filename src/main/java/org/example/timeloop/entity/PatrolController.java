@@ -21,13 +21,15 @@ import java.util.Set;
  *
  * <p>行为规则：</p>
  * <ul>
- *   <li>无输入 → 静止（{@link MovementState#IDLE}）；</li>
+ *   <li>无输入 → 静止 IDLE；</li>
  *   <li>按住当前朝向 → 以 baseSpeed 沿段推进；</li>
- *   <li>段中间按 90° → 停下（只能在节点中心转向）；</li>
- *   <li>节点中心：newestEdge 是 90° 且仍按住且合法 → 转向；
- *       否则当前朝向合法 → 直行；否则检查死路掉头；否则 IDLE；</li>
- *   <li><b>真死路掉头豁免</b>：{@code isPassable(当前节点, 当前朝向)==false}
- *       且该节点无任何可通行 90° 方向 → 允许请求反方向；</li>
+ *   <li>段中间按 90° → 停下；</li>
+ *   <li>节点中心：newestEdge 是 90° 且仍按住且合法 → 转向；否则当前朝向合法 → 直行；否则检查死路掉头；否则 IDLE；</li>
+ *   <li><b>真死路掉头豁免</b>（严格前置条件）：
+ *       前方（当前朝向）不可通行
+ *       且反方向确有出口
+ *       且无任何可通行 90° 出口
+ *       → 允许请求反方向；</li>
  *   <li>同刻按住相反方向 → IDLE；</li>
  *   <li>始终吸附在正交路径中心线上。</li>
  * </ul>
@@ -61,14 +63,6 @@ public final class PatrolController {
         this.position = start.center();
     }
 
-    /**
-     * 推进一个逻辑刻。
-     *
-     * @param tick            共享逻辑刻
-     * @param heldDirections  本刻结束仍按住的方向（可多键）
-     * @param newestEdge      本刻最后新按下的方向（仅对首次到达的节点有效）
-     * @param passability     本刻可通行查询
-     */
     public PlayerKinematics advance(
             long tick,
             Set<Direction> heldDirections,
@@ -102,7 +96,8 @@ public final class PatrolController {
                 if (nextDir == null) {
                     return idleFrame(tick);
                 }
-                if (nextDir != direction) {
+                // P0-E 修复：站在段终点节点中心时，即使 nextDir == direction 也必须滚动 segment
+                if (nextDir != direction || center.id().equals(segmentEndNodeId)) {
                     direction = nextDir;
                     segmentStartNodeId = center.id();
                     segmentEndNodeId = graph.neighbor(center, nextDir).get().id();
@@ -128,28 +123,20 @@ public final class PatrolController {
         return cruisingFrame(tick);
     }
 
-    /** 当前 tick-end world-space center。 */
     public PathPoint position() {
         return position;
     }
 
-    /** 当前段方向。 */
     public Direction direction() {
         return direction;
     }
 
-    /** 冻结的会话配置。 */
     public PatrolConfig config() {
         return config;
     }
 
     // ========== private ==========
 
-    /**
-     * 在节点中心决定下一方向。
-     *
-     * @return 决定的方向；返回 {@code null} 表示无法移动（IDLE）
-     */
     private Direction decideDirection(
             PathNode center,
             Set<Direction> held,
@@ -172,10 +159,13 @@ public final class PatrolController {
             return direction;
         }
 
-        // 3. 真死路掉头豁免
-        if (held.contains(DirectionGeometry.opposite(direction))
-                && !hasAny90Exit(center, passability)) {
-            return DirectionGeometry.opposite(direction);
+        // 3. P0-D 修复：真死路掉头豁免（严格前置条件）
+        Direction reverse = DirectionGeometry.opposite(direction);
+        if (held.contains(reverse)
+                && !PathExitSelector.isPassable(graph, center, direction, passability)  // 前方不可通行
+                && PathExitSelector.isPassable(graph, center, reverse, passability)    // 反方向确有出口
+                && !hasAny90Exit(center, passability)) {                               // 无任何 90° 出口
+            return reverse;
         }
 
         // 4. 无法移动
