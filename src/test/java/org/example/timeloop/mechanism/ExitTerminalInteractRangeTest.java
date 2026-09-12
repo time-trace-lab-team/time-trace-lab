@@ -2,7 +2,7 @@ package org.example.timeloop.mechanism;
 
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.event.EventDispatcher;
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>第一关坐标：右驻留板中心 (8,5) = (408,264)、出口终端 (9,5) = (456,264)、分叉 (5,3) = (264,168)。
  * 硬下限是 1 格（48）——必须覆盖「右驻留板 → 出口终端」这 1 格距离，否则玩家须离开右板才能按 E，
  * 而离开即释放占用、`Door` 不闩锁会重新上锁 → 第一关无解。</p>
+ *
+ * <p>BUG-002-LIFECYCLE Phase 1 起使用独立事件总线，不再手工清理全局单例。</p>
  */
 class ExitTerminalInteractRangeTest {
 
@@ -24,9 +26,11 @@ class ExitTerminalInteractRangeTest {
     private static final Vector2D RIGHT_PLATE_CENTER = new Vector2D(408.0, 264.0);
     private static final Vector2D FORK = new Vector2D(264.0, 168.0);
 
-    @AfterEach
-    void clearGlobalMechanismState() {
-        EventDispatcher.getInstance().clear();
+    private EventDispatcher bus;
+
+    @BeforeEach
+    void freshMechanismScope() {
+        bus = new EventDispatcher();
     }
 
     @Test
@@ -55,10 +59,11 @@ class ExitTerminalInteractRangeTest {
 
     @Test
     void defaultRadiusIsAtLeastOneTile() {
-        ExitTerminal exit = new ExitTerminal("L01_exit_00", TERMINAL_CENTER, "L01_door_01");
+        ExitTerminal exit = new ExitTerminal("L01_exit_00", TERMINAL_CENTER, "L01_door_01",
+                ExitTerminal.DEFAULT_INTERACT_RADIUS, bus);
 
         assertEquals(48.0, exit.getInteractRadius(), 1e-9);
-        assertTrue(exit.getInteractRadius() >= TILE,
+        assertTrue(ExitTerminal.DEFAULT_INTERACT_RADIUS >= TILE,
                 "兼容默认半径不得小于 1 格，否则第一关无解");
         assertTrue(exit.isInInteractRange(RIGHT_PLATE_CENTER),
                 "默认半径也必须恰好覆盖相邻的右驻留板中心");
@@ -77,13 +82,13 @@ class ExitTerminalInteractRangeTest {
     @Test
     void invalidRadiusIsRejected() {
         assertThrows(IllegalArgumentException.class,
-                () -> new ExitTerminal("L01_exit_00", TERMINAL_CENTER, "L01_door_01", 0.0));
+                () -> new ExitTerminal("L01_exit_00", TERMINAL_CENTER, "L01_door_01", 0.0, bus));
         assertThrows(IllegalArgumentException.class,
-                () -> new ExitTerminal("L01_exit_00", TERMINAL_CENTER, "L01_door_01", Double.NaN));
+                () -> new ExitTerminal("L01_exit_00", TERMINAL_CENTER, "L01_door_01", Double.NaN, bus));
     }
 
-    private static ExitTerminal exitWithRecommendedRadius() {
+    private ExitTerminal exitWithRecommendedRadius() {
         return new ExitTerminal("L01_exit_00", TERMINAL_CENTER, "L01_door_01",
-                ExitTerminal.interactRadiusForTileSize(TILE));
+                ExitTerminal.interactRadiusForTileSize(TILE), bus);
     }
 }
