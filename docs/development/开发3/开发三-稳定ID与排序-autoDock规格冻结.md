@@ -50,6 +50,17 @@
    | 第 `sourceRound` 轮生成的残影 | `echo_<sourceRound>`，例如 `echo_1`、`echo_2` |
 
    `sourceRound` 是回放语义字段，不拼入机制 ID，也不能用 `E1` 等显示简称替代。
+
+   **（X-MOVE-COLLAPSE-01 v2 §B 冻结确认，2026-09-11）** `echo_<sourceRound>` 是**冻结约定**，`sourceRound` **从 1 起算**。
+   当前实现有两处依赖它，任何一方改动都必须同步另一方：
+
+   | 依赖点 | 位置 | 依赖内容 |
+   | --- | --- | --- |
+   | 端口校验 | `AutoDockService.requireActor(...)` | 强制 actorId 为 `player` 或 `echo_<n>`，且 `n` 必须等于传入的 `sourceRound` |
+   | 残影消散释放 | `DockingPlate.onEvent(ECHO_DISAPPEARED)` | 仅当占用者等于 `"echo_" + event.sourceRound()` 时才释放占用 |
+
+   推论：**回放侧必须以 `echo_<sourceRound>` 身份提交进入/离开边沿**。若沿用录制时的 `player` / `0`，
+   残影消散时占用不会被释放，驻留板将**永久占用**（该缺陷由 `X-MOVE-COLLAPSE-01-ECHO-ACTOR` 跟踪）。
 6. 路径节点不是机制，但所有机制关联的节点也必须有稳定节点 ID。推荐形态为 `<关卡前缀>_node_<语义>`，例如 `L01_node_left_end`。机制与路径节点之间只能通过 ID 引用，不能通过列表位置或坐标最近值隐式绑定。
 7. 以下值禁止作为稳定 ID 或 ID 决胜依据：UUID、对象地址、显示名、集合迭代序号、数组下标、`HashMap`/`HashSet` 的遍历顺序和 enum `ordinal()`。
 
@@ -187,6 +198,9 @@ compare(a, b):
 3. 持续停留不重复产生 `DOCK_ENTERED`。只有前一采样在区域外、当前 tick 的有效位置进入区域内，才产生一次进入事实。
 4. 非占用者调用释放不能改变状态，不能产生 `OCCUPANCY_RELEASED`，并返回明确的 `NOT_OCCUPANT` 诊断。
 5. 同一个 actor 不能以第二个占用记录覆盖现有占用；另一个 actor 进入已占用 dock 返回 `ALREADY_OCCUPIED`，不改变原占用者。
+6. **`Door` 计数口径（X-MOVE-COLLAPSE-01 v2 §B 明确，2026-09-11）**：`Door` 只读 `DockingPlateRegistry.isOccupied(plateId)`，
+   **不区分占用者身份**。因此残影占板与当前玩家占板在门条件上**等价** —— 一枚板不会因占用者是 `echo_<n>` 而少算。
+   若后续需要按身份区分（例如只允许玩家触发某类门），必须先修改本节契约并经 PM 确认，不得在实现里隐式区分。
 
 ### 5.2 进入、离开和 tick 归属
 
