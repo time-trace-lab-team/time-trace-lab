@@ -82,6 +82,14 @@ public final class Level01Assembly {
     private final Door door;
     private final ExitTerminal exit;
 
+    /**
+     * 路径节点静态几何（只读投影，供 R-2 节点提示图层消费）。
+     *
+     * <p>只承载关卡路径节点的稳定 ID 与世界坐标，不含玩家选择、门/开关/占用等玩法状态；
+     * 由 {@code levelData.getPathNodes()} 一次性投影，不随帧变化。</p>
+     */
+    private final List<RenderViews.PathNodeMarker> pathNodeMarkers;
+
     private final List<TimelineEvent> events = new ArrayList<>();
     private PlayerFrame lastFrame;
     private long lastTick = -1;
@@ -93,6 +101,7 @@ public final class Level01Assembly {
 
         OrthogonalPathGraph graph =
                 new PathGraphBridge(levelData.getPathNodes(), levelData.getTileSize()).toGraph();
+        this.pathNodeMarkers = projectPathNodeMarkers(levelData);
         this.patrol = new PatrolController(graph, "L01_node_spawn", Direction.DOWN, PatrolConfig.c2Greybox());
         this.dockController = new C3DockController(autoDock, autoDock, PLAYER_ACTOR_ID, PLAYER_SOURCE_ROUND);
 
@@ -146,6 +155,15 @@ public final class Level01Assembly {
     /** 本轮录制缓冲（只读；供诊断与集成测试核对帧/事件是否真的写进了记录）。 */
     public Optional<TimelineRecording> currentRecording() {
         return recording.currentBuffer();
+    }
+
+    /**
+     * 路径节点静态几何（只读）：供节点提示图层（{@code PathNodeHintLayer}）一次性注入。
+     *
+     * <p>返回不可变列表；内容只来自关卡路径节点，与玩家状态、门/开关/占用无关。</p>
+     */
+    public List<RenderViews.PathNodeMarker> pathNodeMarkers() {
+        return pathNodeMarkers;
     }
 
     /** 推进一个逻辑刻：输入 → autoDock 决策 → 巡行/驻留 → 记录帧 → 事件 → 时钟推进。 */
@@ -250,6 +268,20 @@ public final class Level01Assembly {
     }
 
     // ---------- 内部 ----------
+
+    /**
+     * 把关卡路径节点投影成只读的 {@link RenderViews.PathNodeMarker} 列表（R-2 节点提示数据源）。
+     *
+     * <p>只取稳定 ID 与世界坐标；<b>不</b>读取玩家状态、门的运行状态或占用信息。</p>
+     */
+    private static List<RenderViews.PathNodeMarker> projectPathNodeMarkers(LevelData levelData) {
+        List<RenderViews.PathNodeMarker> markers = new ArrayList<>();
+        for (org.example.timeloop.level.model.PathNode node : levelData.getPathNodes()) {
+            markers.add(new RenderViews.PathNodeMarker(
+                    node.getId(), node.getWorldPos().x(), node.getWorldPos().y()));
+        }
+        return List.copyOf(markers);
+    }
 
     /**
      * 轮初复位：把玩家放回出生节点中心与初始朝向（ENT-3 的 `PatrolController.resetTo`）。

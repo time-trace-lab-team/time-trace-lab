@@ -16,6 +16,7 @@ import org.example.timeloop.render.CanvasAdapter;
 import org.example.timeloop.render.EchoTrailLayer;
 import org.example.timeloop.render.GroundWallLayer;
 import org.example.timeloop.render.MechanismLayer;
+import org.example.timeloop.render.PathNodeHintLayer;
 import org.example.timeloop.render.PlayerLayer;
 import org.example.timeloop.render.RenderViews;
 import org.example.timeloop.render.WorldTransform;
@@ -74,6 +75,8 @@ public final class TimeTraceLabApplication extends Application {
         canvasAdapter.addLayer(new MechanismLayer(frames, 48.0, transform));
         canvasAdapter.addLayer(new PlayerLayer(frames, 48.0, transform));
         canvasAdapter.addLayer(new EchoTrailLayer(frames, transform));
+        // R-2：路径节点转向提示（静态几何来自装配层投影，逐帧只读玩家位置决定亮度档位）
+        canvasAdapter.addLayer(new PathNodeHintLayer(frames, assembly.pathNodeMarkers(), 48.0, transform));
 
         Pane canvasHolder = new Pane(canvas);
         canvas.widthProperty().bind(canvasHolder.widthProperty());
