@@ -172,8 +172,8 @@ public final class Level01Assembly {
             Set<Direction> heldDirections = input.heldDirections();
             Optional<Direction> newestEdge;
             if (decision.departureDirection().isPresent()) {
-                // 驻留离开：C3 指定方向优先。即使玩家已经松手也要走出区域，
-                // 占用才会在出界刻被 tryLeave 释放。
+                // 驻留离开（ENT-2a/2b 同刻释放语义）：C3 在离开边沿刻已调用 tryLeave 并释放占用，
+                // 本刻把该方向作为唯一请求方向传给移动层，让角色立即按所选方向出发。
                 Direction departure = decision.departureDirection().get();
                 heldDirections = Set.of(departure);
                 newestEdge = Optional.of(departure);
@@ -264,7 +264,7 @@ public final class Level01Assembly {
     /**
      * 驻留机关停驻中心方向：尚未走到机关中心时返回“走过去”的方向，已在中心返回空。
      *
-     * <p>只在确实被本 actor 占用驻留时计算；未驻留（或已出界释放）返回空。</p>
+     * <p>只在确实被本 actor 占用驻留时计算；未驻留（或占用已被离开边沿释放）返回空。</p>
      */
     private Optional<Direction> dockCenterApproach() {
         Optional<AutoDockView> docked = dockController.dockedMechanismId().flatMap(autoDock::findById);
