@@ -4,6 +4,7 @@ import org.example.timeloop.level.StableIdValidator;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
+import org.example.timeloop.mechanism.event.GameEventBus;
 import org.example.timeloop.mechanism.event.GameObserver;
 
 import java.util.Objects;
@@ -25,12 +26,13 @@ public class ExitTerminal implements GameObserver {
     private final Vector2D position;
     private final String associatedDoorId;
     private final double interactRadius;
+    private final GameEventBus bus;
     private boolean doorUnlocked = false;
     private boolean triggered = false;
 
-    /** 兼容构造器：半径取 {@link #DEFAULT_INTERACT_RADIUS}（1 × tileSize）。 */
+    /** 兼容构造器：半径取 {@link #DEFAULT_INTERACT_RADIUS}（1 × tileSize），总线取兼容单例。 */
     public ExitTerminal(String id, Vector2D position, String associatedDoorId) {
-        this(id, position, associatedDoorId, DEFAULT_INTERACT_RADIUS);
+        this(id, position, associatedDoorId, DEFAULT_INTERACT_RADIUS, EventDispatcher.getInstance());
     }
 
     /**
@@ -38,6 +40,15 @@ public class ExitTerminal implements GameObserver {
      *                       （第一关 = 72，见 {@link #interactRadiusForTileSize(double)}）
      */
     public ExitTerminal(String id, Vector2D position, String associatedDoorId, double interactRadius) {
+        this(id, position, associatedDoorId, interactRadius, EventDispatcher.getInstance());
+    }
+
+    /** 完全注入（推荐，BUG-002-LIFECYCLE Phase 1）：事件总线由关卡装配持有。 */
+    public ExitTerminal(String id,
+                        Vector2D position,
+                        String associatedDoorId,
+                        double interactRadius,
+                        GameEventBus bus) {
         this.id = StableIdValidator.requireMechanismId(id, "exit", "exitTerminal.id");
         this.position = Objects.requireNonNull(position);
         this.associatedDoorId = StableIdValidator.requireMechanismId(
@@ -47,7 +58,8 @@ public class ExitTerminal implements GameObserver {
                     "exitTerminal.interactRadius 必须为有限正数: " + interactRadius);
         }
         this.interactRadius = interactRadius;
-        EventDispatcher.getInstance().register(GameEvent.DOOR_UNLOCKED, this);
+        this.bus = Objects.requireNonNull(bus, "bus");
+        bus.register(GameEvent.DOOR_UNLOCKED, this);
     }
 
     /** 按关卡 {@code tileSize} 计算推荐交互半径（{@link #INTERACT_RADIUS_TILES} × tileSize；第一关 = 72）。 */
@@ -80,7 +92,7 @@ public class ExitTerminal implements GameObserver {
     public boolean interact(long tick, int sourceRound) {
         if (!doorUnlocked || triggered) return false;
         triggered = true;
-        EventDispatcher.getInstance().dispatch(GameEvent.exitTriggered(id, tick, sourceRound));
+        bus.dispatch(GameEvent.exitTriggered(id, tick, sourceRound));
         return true;
     }
 
@@ -90,7 +102,7 @@ public class ExitTerminal implements GameObserver {
     }
 
     public void dispose() {
-        EventDispatcher.getInstance().unregisterAll(this);
+        bus.unregisterAll(this);
     }
 
     @Override

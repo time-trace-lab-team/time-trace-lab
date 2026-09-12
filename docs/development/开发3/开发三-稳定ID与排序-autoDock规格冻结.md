@@ -284,3 +284,54 @@ AutoDockOccupancyPort
 - [x] **（2026-09-10 追加，X-MOVE-COLLAPSE-01-DEV3 L-1 / `ENT-2a`）** 同刻释放：合法出口按下即 `LEFT` 并清占用，不要求位置出界；`NOT_OUTSIDE_REGION` 保留枚举但标 `@Deprecated`，不再由 `tryLeave` 产生。经 PM 批准，与开发一 `ENT-2b` **成对合并**（集成分支 `codex/ent2-paired`），不单独进入 `develop`。
 
 W1/W4 已在 `mechanism/**`、`level/**` 及开发三测试范围内按本规格落地；下一步 W2 负责修复第一关路径图并完成 `LevelGeometryImpl` 构造验收。
+
+---
+
+## 9. 注册表与事件总线的生命周期（BUG-002-LIFECYCLE Phase 1）
+
+> 依据：PM 裁决 `BUG-002-注册表与事件总线生命周期-PM裁决.md` §六。日期 2026-09-12。
+
+### 9.1 实例归属
+
+- `DockingPlateRegistry` 与 `EventDispatcher` 的**权威形态是"每个关卡装配持有自己的实例"**；
+  同一实例内的驻留板 ID 必须唯一，**跨实例同名 ID 互不冲突**。
+- `getInstance()` 只是**兼容层**（Phase 1 保留），Phase 2 在 app 与测试全部迁移后删除。
+
+### 9.2 注入优先（强制）
+
+- 新代码**一律使用注入构造器**：
+  - `DockingPlate(id, position, DockingPlateOccupancyPort, GameEventBus)`
+  - `Door(id, position, requiredPlateIds, DockingPlateOccupancyPort, GameEventBus)`
+  - `ExitTerminal(id, position, associatedDoorId, interactRadius, GameEventBus)`
+- 消费者（`Door` 等）只依赖窄端口 `DockingPlateOccupancyPort`，**不得**直接引用 `DockingPlateRegistry`。
+- 不允许长期并存"有的板注册到单例、有的注册到实例"的分裂状态。
+
+### 9.3 场景退出 / 重开时必须释放的引用
+
+| 时机 | 必须做的动作 |
+| --- | --- |
+| 普通轮末 | `DockingPlate.reset()` + `Door.reset()` + `ExitTerminal.reset()`（现有轮末事务） |
+| 整局重开 / 场景退出 | 释放装配持有的注册表与总线实例（不再依赖全局 `clear()`）；机关 `dispose()` 反注册 |
+| 关卡装配销毁 | 旧实例不得被 Canvas / listener / 缓存继续持有（与 `RecordingSession` 契约同款要求） |
+
+### 9.4 Door 计数口径（与 §5.1 第 6 条一致）
+
+`Door` 通过 `DockingPlateOccupancyPort.isOccupied(plateId)` 判定，**不区分占用者身份**；
+残影占板与当前玩家占板在门条件上等价。
+
+### 9.5 Phase 2 前置结论（开发三已核）
+
+`DockingPlate.Snapshot`、`MechanismSnapshot`、`AutoDockSnapshotPort` 及其测试
+**均不引用注册表或事件总线单例**（`git grep "DockingPlateRegistry|getInstance()"` 在
+`src/main/java/.../{snapshot,mechanism/autodock,replay}` 下为空）。
+因此 **Phase 2 删除单例不会破坏快照族**。
+
+**Phase 2 删除清单**：`DockingPlateRegistry.getInstance()`、`EventDispatcher.getInstance()`
+以及所有"取单例"的兼容构造器；另需先处理零引用的 `mechanism/ray/Ray.java`（见 §9.6）。
+
+### 9.6 零引用死代码登记
+
+- `mechanism/ray/RayManager.java`：**已随本次删除**（零生产引用，与 `PhaseManager` 同类处理）。
+- `mechanism/ray/Ray.java`：删除 `RayManager` 后**已无任何引用者**（仅自引用）。它是 README 第五节的
+  "时滞射线"机制实现，第二关需要它，故**暂不删除**；但它仍通过兼容单例注册事件，
+  **Phase 2 删除单例前必须先决定"接线"还是"删除"**，否则会编译失败。

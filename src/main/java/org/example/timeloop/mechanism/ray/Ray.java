@@ -91,7 +91,7 @@ public class Ray implements GameObserver {
 
     @Override
     public void onEvent(GameEvent event) {
-        // 监听 tick 更新，由 RayManager 统一调度或直接响应
+        // 监听 tick 更新；当前无生产调用方（RayManager 已删除），由调用方直接驱动 update(roundTick)
     }
 
     @Override

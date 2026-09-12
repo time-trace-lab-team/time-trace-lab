@@ -4,6 +4,7 @@ import org.example.timeloop.level.StableIdValidator;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
+import org.example.timeloop.mechanism.event.GameEventBus;
 import org.example.timeloop.mechanism.event.GameObserver;
 
 import java.util.Collections;
@@ -18,9 +19,33 @@ public class Door implements GameObserver {
     private final String id;
     private final Vector2D position;
     private final Set<String> requiredPlateIds;
+    private final DockingPlateOccupancyPort occupancy;
+    private final GameEventBus bus;
     private State state = State.LOCKED;
 
+    /** 兼容构造器：占用注册表与事件总线都取全局单例（Phase 2 删除单例后不再保留）。 */
     public Door(String id, Vector2D position, Set<String> requiredPlateIds) {
+        this(id, position, requiredPlateIds,
+                DockingPlateRegistry.getInstance(), EventDispatcher.getInstance());
+    }
+
+    /** 注入占用注册表；事件总线仍取兼容单例。新代码请用五参构造器。 */
+    public Door(String id,
+                Vector2D position,
+                Set<String> requiredPlateIds,
+                DockingPlateOccupancyPort occupancy) {
+        this(id, position, requiredPlateIds, occupancy, EventDispatcher.getInstance());
+    }
+
+    /**
+     * 完全注入（推荐，BUG-002-LIFECYCLE Phase 1）：门只通过窄端口查询板占用，
+     * 不再直接依赖注册表具体类或全局单例。
+     */
+    public Door(String id,
+                Vector2D position,
+                Set<String> requiredPlateIds,
+                DockingPlateOccupancyPort occupancy,
+                GameEventBus bus) {
         this.id = StableIdValidator.requireMechanismId(id, "door", "door.id");
         this.position = Objects.requireNonNull(position);
         if (requiredPlateIds == null) {
@@ -32,8 +57,10 @@ public class Door implements GameObserver {
                     plateId, "plate", "door.requiredPlateIds"));
         }
         this.requiredPlateIds = Collections.unmodifiableSet(sortedPlateIds);
-        EventDispatcher.getInstance().register(GameEvent.PLATE_ENTERED, this);
-        EventDispatcher.getInstance().register(GameEvent.PLATE_EXITED, this);
+        this.occupancy = Objects.requireNonNull(occupancy, "occupancy");
+        this.bus = Objects.requireNonNull(bus, "bus");
+        bus.register(GameEvent.PLATE_ENTERED, this);
+        bus.register(GameEvent.PLATE_EXITED, this);
     }
 
     public String getId() { return id; }
@@ -42,9 +69,8 @@ public class Door implements GameObserver {
     public boolean isUnlocked() { return state == State.UNLOCKED; }
 
     private boolean checkAllPlatesOccupied() {
-        DockingPlateRegistry registry = DockingPlateRegistry.getInstance();
         for (String plateId : requiredPlateIds) {
-            if (!registry.isOccupied(plateId)) return false;
+            if (!occupancy.isOccupied(plateId)) return false;
         }
         return true;
     }
@@ -55,7 +81,7 @@ public class Door implements GameObserver {
         if (newState != state) {
             state = newState;
             if (state == State.UNLOCKED) {
-                EventDispatcher.getInstance().dispatch(GameEvent.doorUnlocked(id, tick));
+                bus.dispatch(GameEvent.doorUnlocked(id, tick));
             }
         }
     }
@@ -63,7 +89,7 @@ public class Door implements GameObserver {
     public void reset() { state = State.LOCKED; }
 
     public void dispose() {
-        EventDispatcher.getInstance().unregisterAll(this);
+        bus.unregisterAll(this);
     }
 
     @Override

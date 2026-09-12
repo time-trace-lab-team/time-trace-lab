@@ -4,6 +4,7 @@ import org.example.timeloop.level.StableIdValidator;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
+import org.example.timeloop.mechanism.event.GameEventBus;
 import org.example.timeloop.mechanism.event.GameObserver;
 
 import java.util.Objects;
@@ -16,17 +17,38 @@ public class DockingPlate implements GameObserver {
 
     private final String id;
     private final Vector2D position;
+    private final DockingPlateOccupancyPort occupancy;
+    private final GameEventBus bus;
     private State state = State.UNOCCUPIED;
     private String occupantId = null;
     private int occupantSourceRound = 0;
 
+    /** 兼容构造器：占用注册表与事件总线都取全局单例（Phase 2 删除单例后不再保留）。 */
     public DockingPlate(String id, Vector2D position) {
+        this(id, position, DockingPlateRegistry.getInstance(), EventDispatcher.getInstance());
+    }
+
+    /** 注入占用注册表；事件总线仍取兼容单例。新代码请用四参构造器。 */
+    public DockingPlate(String id, Vector2D position, DockingPlateOccupancyPort occupancy) {
+        this(id, position, occupancy, EventDispatcher.getInstance());
+    }
+
+    /**
+     * 完全注入（推荐，BUG-002-LIFECYCLE Phase 1）：占用注册表与事件总线都由关卡装配持有，
+     * 同一实例内的板 ID 必须唯一，场景切换/重开时随装配一起丢弃。
+     */
+    public DockingPlate(String id,
+                        Vector2D position,
+                        DockingPlateOccupancyPort occupancy,
+                        GameEventBus bus) {
         this.id = StableIdValidator.requireMechanismId(id, "plate", "dockingPlate.id");
         this.position = Objects.requireNonNull(position);
-        DockingPlateRegistry.getInstance().register(this);
-        EventDispatcher.getInstance().register(GameEvent.PLATE_ENTERED, this);
-        EventDispatcher.getInstance().register(GameEvent.PLATE_EXITED, this);
-        EventDispatcher.getInstance().register(GameEvent.ECHO_DISAPPEARED, this);
+        this.occupancy = Objects.requireNonNull(occupancy, "occupancy");
+        this.bus = Objects.requireNonNull(bus, "bus");
+        occupancy.register(this);
+        bus.register(GameEvent.PLATE_ENTERED, this);
+        bus.register(GameEvent.PLATE_EXITED, this);
+        bus.register(GameEvent.ECHO_DISAPPEARED, this);
     }
 
     public String getId() {
@@ -60,7 +82,7 @@ public class DockingPlate implements GameObserver {
         state = State.OCCUPIED;
         occupantId = actorId;
         occupantSourceRound = sourceRound;
-        EventDispatcher.getInstance().dispatch(GameEvent.plateEntered(id, tick, sourceRound));
+        bus.dispatch(GameEvent.plateEntered(id, tick, sourceRound));
         return true;
     }
 
@@ -71,7 +93,7 @@ public class DockingPlate implements GameObserver {
         state = State.UNOCCUPIED;
         occupantId = null;
         occupantSourceRound = 0;
-        EventDispatcher.getInstance().dispatch(GameEvent.plateExited(id, tick, sourceRound));
+        bus.dispatch(GameEvent.plateExited(id, tick, sourceRound));
         return true;
     }
 
@@ -82,8 +104,8 @@ public class DockingPlate implements GameObserver {
     }
 
     public void dispose() {
-        EventDispatcher.getInstance().unregisterAll(this);
-        DockingPlateRegistry.getInstance().unregister(id);
+        bus.unregisterAll(this);
+        occupancy.unregister(id);
     }
 
     @Override

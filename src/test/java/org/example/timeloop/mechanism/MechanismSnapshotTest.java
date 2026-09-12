@@ -3,7 +3,7 @@ package org.example.timeloop.mechanism;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Set;
@@ -14,22 +14,41 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * 机关快照的不可变性与恢复语义。
+ *
+ * <p>BUG-002-LIFECYCLE Phase 1 起，每个用例使用**独立的注册表与事件总线**，
+ * 不再依赖也不再手工清理全局单例。</p>
+ */
 class MechanismSnapshotTest {
 
-    @AfterEach
-    void clearGlobalMechanismState() {
-        EventDispatcher.getInstance().clear();
-        DockingPlateRegistry.getInstance().clear();
+    private DockingPlateRegistry registry;
+    private EventDispatcher bus;
+
+    @BeforeEach
+    void freshMechanismScope() {
+        registry = new DockingPlateRegistry();
+        bus = new EventDispatcher();
+    }
+
+    private DockingPlate plate(String id, double x, double y) {
+        return new DockingPlate(id, new Vector2D(x, y), registry, bus);
+    }
+
+    private Door door(String id, double x, double y, Set<String> plates) {
+        return new Door(id, new Vector2D(x, y), plates, registry, bus);
+    }
+
+    private ExitTerminal exit(String id, double x, double y, String doorId) {
+        return new ExitTerminal(id, new Vector2D(x, y), doorId,
+                ExitTerminal.DEFAULT_INTERACT_RADIUS, bus);
     }
 
     @Test
     void snapshotsAreImmutableAndRestoreWithoutGameplayEvents() {
-        DockingPlate plate = new DockingPlate(
-                "L01_plate_left", new Vector2D(96.0, 240.0));
-        Door door = new Door(
-                "L01_door_01", new Vector2D(240.0, 240.0), Set.of("L01_plate_left"));
-        ExitTerminal exit = new ExitTerminal(
-                "L01_exit_00", new Vector2D(432.0, 240.0), "L01_door_01");
+        DockingPlate plate = plate("L01_plate_left", 96.0, 240.0);
+        Door door = door("L01_door_01", 240.0, 240.0, Set.of("L01_plate_left"));
+        ExitTerminal exit = exit("L01_exit_00", 432.0, 240.0, "L01_door_01");
 
         assertTrue(plate.tryEnter("echo_1", 1, 5));
         assertTrue(exit.interact(6, 1));
@@ -53,8 +72,7 @@ class MechanismSnapshotTest {
         assertTrue(exitSnapshot.isTriggered());
 
         AtomicInteger restoredEvents = new AtomicInteger();
-        EventDispatcher.getInstance().register(
-                GameEvent.DOOR_UNLOCKED, event -> restoredEvents.incrementAndGet());
+        bus.register(GameEvent.DOOR_UNLOCKED, event -> restoredEvents.incrementAndGet());
 
         plate.restore(plateSnapshot);
         door.restore(doorSnapshot);
@@ -74,18 +92,12 @@ class MechanismSnapshotTest {
 
     @Test
     void restoreRejectsSnapshotsBelongingToAnotherMechanism() {
-        DockingPlate firstPlate = new DockingPlate(
-                "L01_plate_left", new Vector2D(96.0, 240.0));
-        DockingPlate secondPlate = new DockingPlate(
-                "L01_plate_right", new Vector2D(336.0, 240.0));
-        Door firstDoor = new Door(
-                "L01_door_left", new Vector2D(192.0, 240.0), Set.of("L01_plate_left"));
-        Door secondDoor = new Door(
-                "L01_door_right", new Vector2D(288.0, 240.0), Set.of("L01_plate_right"));
-        ExitTerminal firstExit = new ExitTerminal(
-                "L01_exit_left", new Vector2D(432.0, 240.0), "L01_door_left");
-        ExitTerminal secondExit = new ExitTerminal(
-                "L01_exit_right", new Vector2D(480.0, 240.0), "L01_door_right");
+        DockingPlate firstPlate = plate("L01_plate_left", 96.0, 240.0);
+        DockingPlate secondPlate = plate("L01_plate_right", 336.0, 240.0);
+        Door firstDoor = door("L01_door_left", 192.0, 240.0, Set.of("L01_plate_left"));
+        Door secondDoor = door("L01_door_right", 288.0, 240.0, Set.of("L01_plate_right"));
+        ExitTerminal firstExit = exit("L01_exit_left", 432.0, 240.0, "L01_door_left");
+        ExitTerminal secondExit = exit("L01_exit_right", 480.0, 240.0, "L01_door_right");
 
         assertThrows(IllegalArgumentException.class,
                 () -> secondPlate.restore(firstPlate.createSnapshot()));
@@ -97,8 +109,7 @@ class MechanismSnapshotTest {
 
     @Test
     void inconsistentPlateSnapshotIsRejectedBeforeStateChanges() {
-        DockingPlate plate = new DockingPlate(
-                "L01_plate_left", new Vector2D(96.0, 240.0));
+        DockingPlate plate = plate("L01_plate_left", 96.0, 240.0);
         DockingPlate.Snapshot validSnapshot = plate.createSnapshot();
 
         assertThrows(IllegalArgumentException.class,
