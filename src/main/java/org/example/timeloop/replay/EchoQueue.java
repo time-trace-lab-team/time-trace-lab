@@ -53,11 +53,20 @@ public final class EchoQueue {
      * <p>淘汰条件：{@code nextRound - sourceRound > L}。例（L=2）：第 3 轮末
      * 加入 E3 且 nextRound=4 时，4-1=3&gt;2，E1 被淘汰 —— 与 README 表格一致。</p>
      *
+     * <p><b>淘汰观察契约（X-MOVE-COLLAPSE-01 · E-4）</b>：返回本次被淘汰的残影
+     * 列表（按来源轮次升序、只读），供调用方（app）在轮末边界以「残影消失」语义派发
+     * 机关释放。淘汰发生刻 = <b>轮末边界刻</b>（刚结束那轮的最后一刻，与
+     * {@code completeNormalRound} 的事务刻一致）。列表同时覆盖<b>寿命淘汰</b>（超龄）
+     * 与<b>容量淘汰</b>（第 3 个残影入队时最旧的被挤出；L=CAPACITY=2 时二者等价，
+     * 都表现为最旧的 sourceRound 被移除）。</p>
+     *
      * @param echo      本轮生成的残影（来源轮次必须等于刚结束的这一轮）
      * @param nextRound 即将进入的轮次（刚结束轮次 + 1）
-     * @throws IllegalArgumentException 来源轮次重复，或容量越界
+     * @return 本次被淘汰的残影（可能为空列表，只读）
+     * @throws IllegalArgumentException 来源轮次重复
+     * @throws IllegalStateException    容量越界（淘汰窗口失效）
      */
-    public void addOnRoundEnd(EchoState echo, int nextRound) {
+    public List<EchoState> addOnRoundEnd(EchoState echo, int nextRound) {
         Objects.requireNonNull(echo, "echo");
         int sourceRound = echo.sourceRound();
         if (echoes.containsKey(sourceRound)) {
@@ -65,12 +74,20 @@ public final class EchoQueue {
                     "来源轮次重复：" + sourceRound + "，一轮只能生成一条记录");
         }
         echoes.put(sourceRound, echo);
-        echoes.entrySet().removeIf(e -> nextRound - e.getKey() > lifetimeRounds);
+        List<EchoState> evicted = new ArrayList<>();
+        echoes.entrySet().removeIf(e -> {
+            if (nextRound - e.getKey() > lifetimeRounds) {
+                evicted.add(e.getValue());
+                return true;
+            }
+            return false;
+        });
         if (echoes.size() > CAPACITY) {
             throw new IllegalStateException(
                     "残影数量 " + echoes.size() + " 超过容量 " + CAPACITY
                             + "：淘汰窗口失效，请检查 L 与轮次推进");
         }
+        return List.copyOf(evicted);
     }
 
     /**

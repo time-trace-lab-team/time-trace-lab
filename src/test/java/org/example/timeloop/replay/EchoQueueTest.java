@@ -63,6 +63,35 @@ class EchoQueueTest {
     }
 
     @Test
+    void addOnRoundEnd_returnsEvictedEchoes() {
+        EchoQueue q = new EchoQueue(2);
+        assertTrue(q.addOnRoundEnd(echoOfRound(1), 2).isEmpty(), "第 1 轮末无淘汰");
+        assertTrue(q.addOnRoundEnd(echoOfRound(2), 3).isEmpty(), "第 2 轮末无淘汰");
+
+        // 第 3 轮末入队 E3、nextRound=4：E1 超龄被淘汰，出现在返回列表
+        List<EchoState> evicted = q.addOnRoundEnd(echoOfRound(3), 4);
+        assertEquals(1, evicted.size(), "本次应恰好淘汰 1 个残影");
+        assertEquals(1, evicted.get(0).sourceRound(), "被淘汰的应是 E1");
+        // E1 不再活跃
+        assertEquals(List.of(2, 3),
+                q.activeEchoes(4).stream().map(EchoState::sourceRound).toList(),
+                "淘汰后 E1 不再 activeEchoes");
+    }
+
+    @Test
+    void lifetimeOne_evictsPreviousOnRoundEnd() {
+        EchoQueue q = new EchoQueue(1);
+        q.addOnRoundEnd(echoOfRound(1), 2);
+
+        // 第 2 轮末入队 E2、nextRound=3：E1 超龄（3-1=2>1）被淘汰
+        List<EchoState> evicted = q.addOnRoundEnd(echoOfRound(2), 3);
+        assertEquals(1, evicted.size());
+        assertEquals(1, evicted.get(0).sourceRound(), "L=1 时上一轮残影被淘汰");
+        assertEquals(List.of(2),
+                q.activeEchoes(3).stream().map(EchoState::sourceRound).toList());
+    }
+
+    @Test
     void duplicateSourceRound_rejected() {
         EchoQueue q = new EchoQueue(2);
         q.addOnRoundEnd(echoOfRound(1), 2);

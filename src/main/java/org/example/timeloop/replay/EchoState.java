@@ -86,6 +86,11 @@ public final class EchoState {
      * 以满足机关侧「{@code echo_<N>} 且 N == sourceRound」的占用约定；
      * 否则残影消失后其占用的机关不会被释放（占用永久泄漏）。</p>
      *
+     * <p><b>残影消失契约（X-MOVE-COLLAPSE-01 · E-4）</b>：残影消失（寿命到期被淘汰）
+     * 的机关释放语义由调用方（app）负责派发，replay 层<b>不持有机关状态</b>、
+     * 也不派发任何「消失」事件——被淘汰的残影由 {@link EchoQueue#addOnRoundEnd}
+     * 返回给调用方。</p>
+     *
      * @param roundTick 共享逻辑刻
      * @return 不可修改的事件列表（该 tick 的残影允许事件）
      */
