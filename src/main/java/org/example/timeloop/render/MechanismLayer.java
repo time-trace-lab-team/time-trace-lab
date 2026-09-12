@@ -60,6 +60,10 @@ public final class MechanismLayer implements RenderLayer {
                     gc.strokePolygon(
                             new double[]{cx, cx + half, cx, cx - half},
                             new double[]{cy - half, cy, cy + half, cy}, 4);
+                    if (mechanism.active()) {
+                        gc.setFill(RenderPalette.INTERACTIVE);
+                        gc.fillText("E", cx - size * 0.08, top - transform.scaled(4.0));
+                    }
                 }
             }
         }

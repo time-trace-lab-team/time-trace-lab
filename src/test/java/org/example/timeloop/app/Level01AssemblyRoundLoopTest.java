@@ -32,8 +32,6 @@ class Level01AssemblyRoundLoopTest {
 
     private static final double PLATE_LEFT_REGION_TOP_Y = 5 * 48.0;      // autoDock 区域上边界 = 240
     private static final double SPAWN_Y = 1.5 * 48.0;                    // 出生节点 (5,1) 中心 = 72
-    private static final long DURATION_TICKS = 16 * 60L;
-
     private Level01Assembly assembly;
 
     @AfterEach
@@ -109,7 +107,7 @@ class Level01AssemblyRoundLoopTest {
 
     // ---------- 工具 ----------
 
-    /** 第 1 轮跑到轮末（960 刻，其中前 168 刻走到左驻留板并停驻）。 */
+    /** 第 1 轮从首个移动输入开始跑到轮末，其中前 168 个有效逻辑刻走到左驻留板并停驻。 */
     private static long runFirstRoundToEnd(Level01Assembly a) {
         long tick = 0;
         a.tick(InputIntent.empty(tick++));
@@ -117,7 +115,7 @@ class Level01AssemblyRoundLoopTest {
         tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);   // 分叉 → 左端拐角 (2,3)
         tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);   // (2,3) → 驻留板 (2,5)
         a.tick(InputIntent.empty(tick++));                // 停驻
-        while (tick < DURATION_TICKS) {
+        while (a.hudContext().currentRound() == 1) {
             a.tick(InputIntent.empty(tick++));
         }
         return tick;

@@ -1,5 +1,6 @@
 package org.example.timeloop.ui;
 
+import org.example.timeloop.core.GamePhase;
 import org.example.timeloop.replay.TickContext;
 
 import java.util.Objects;
@@ -48,5 +49,15 @@ public record HudViewModel(int remainingSeconds,
 
     public String roundText() {
         return "第 " + currentRound + " / " + maxRounds + " 轮";
+    }
+
+    /** Returns the terminal phase feedback shown beside the shared timer. */
+    public static String phaseText(GamePhase phase) {
+        Objects.requireNonNull(phase, "phase");
+        return switch (phase) {
+            case RESULT -> "通关完成";
+            case FAILED -> "挑战失败";
+            default -> "";
+        };
     }
 }

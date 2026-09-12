@@ -2,6 +2,7 @@ package org.example.timeloop.ui;
 
 import javafx.scene.control.Label;
 import javafx.scene.layout.HBox;
+import org.example.timeloop.core.GamePhase;
 import org.example.timeloop.replay.TickContext;
 
 import java.util.Objects;
@@ -16,6 +17,7 @@ public final class SharedHud extends HBox {
 
     private final Label countdownLabel = new Label();
     private final Label roundLabel = new Label();
+    private final Label phaseLabel = new Label();
 
     private HudViewModel viewModel;
 
@@ -23,8 +25,10 @@ public final class SharedHud extends HBox {
         getStyleClass().add("shared-hud");
         countdownLabel.getStyleClass().add("shared-hud-countdown");
         roundLabel.getStyleClass().add("shared-hud-round");
+        phaseLabel.getStyleClass().add("shared-hud-phase");
+        phaseLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #d99b24;");
         setSpacing(16.0);
-        getChildren().addAll(countdownLabel, roundLabel);
+        getChildren().addAll(countdownLabel, roundLabel, phaseLabel);
     }
 
     /**
@@ -33,10 +37,16 @@ public final class SharedHud extends HBox {
      * @param context 开发 2 的共享时间上下文
      */
     public void render(TickContext context) {
+        render(context, GamePhase.PLAYING);
+    }
+
+    /** Refreshes the shared timer and any terminal phase feedback. */
+    public void render(TickContext context, GamePhase phase) {
         HudViewModel next = HudViewModel.from(Objects.requireNonNull(context, "context"));
         viewModel = next;
         countdownLabel.setText(next.countdownText());
         roundLabel.setText(next.roundText());
+        phaseLabel.setText(HudViewModel.phaseText(phase));
     }
 
     /** 最近一次渲染的不可变投影；尚未渲染时返回 {@code null}。 */
@@ -50,5 +60,9 @@ public final class SharedHud extends HBox {
 
     public String getRoundText() {
         return roundLabel.getText();
+    }
+
+    public String getPhaseText() {
+        return phaseLabel.getText();
     }
 }

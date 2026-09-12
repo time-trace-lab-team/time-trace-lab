@@ -1,5 +1,6 @@
 package org.example.timeloop.ui;
 
+import org.example.timeloop.core.GamePhase;
 import org.example.timeloop.replay.TickContext;
 import org.junit.jupiter.api.Test;
 
@@ -48,5 +49,12 @@ class HudViewModelTest {
                         "HUD 投影字段必须为 final: " + field.getName());
             }
         }
+    }
+
+    @Test
+    void terminalPhaseHasVisibleFeedback() {
+        assertEquals("通关完成", HudViewModel.phaseText(GamePhase.RESULT));
+        assertEquals("挑战失败", HudViewModel.phaseText(GamePhase.FAILED));
+        assertEquals("", HudViewModel.phaseText(GamePhase.PLAYING));
     }
 }

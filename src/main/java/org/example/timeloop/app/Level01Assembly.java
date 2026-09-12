@@ -93,6 +93,7 @@ public final class Level01Assembly {
     private final List<TimelineEvent> events = new ArrayList<>();
     private PlayerFrame lastFrame;
     private long lastTick = -1;
+    private boolean firstMovementStarted;
 
     public Level01Assembly() {
         this.levelData = Level01Footsteps.build();
@@ -129,6 +130,7 @@ public final class Level01Assembly {
         clock.transition(GamePhase.READY);
         resetPlayerForNewRound();
         recording.beginRound();
+        firstMovementStarted = false;
         clock.transition(GamePhase.PLAYING);
     }
 
@@ -171,6 +173,14 @@ public final class Level01Assembly {
         Objects.requireNonNull(input, "input");
         if (!clock.isPlaying()) {
             return;
+        }
+        // 第一轮先显示完整时间并接收输入；首个方向输入出现前不写帧、不推进 roundTick。
+        // 后续轮次必须立即推进，才能让当前玩家与残影继续共享同一逻辑时钟。
+        if (!firstMovementStarted) {
+            if (input.heldDirections().isEmpty()) {
+                return;
+            }
+            firstMovementStarted = true;
         }
         long tick = clock.roundTick();
         Vector2D position = new Vector2D(patrol.position().x(), patrol.position().y());
@@ -228,7 +238,7 @@ public final class Level01Assembly {
         PlayerFrame player = lastFrame;
         RenderViews.Player playerView = player == null
                 ? new RenderViews.Player(patrol.position().x(), patrol.position().y(),
-                        patrol.direction(), MovementState.CRUISING, false)
+                        patrol.direction(), MovementState.IDLE, false)
                 : new RenderViews.Player(player.x(), player.y(), player.direction(),
                         player.movementState(), player.isPhaseDodging());
 
