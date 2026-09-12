@@ -17,8 +17,6 @@ public interface LevelGeometry {
 
     Set<PathNode.Dir> getValidExits(String nodeId);
 
-    PathNode.Dir getDefaultExit(String nodeId);
-
     boolean isConnected(String nodeIdA, String nodeIdB);
 
     boolean isWall(Vector2D position);
