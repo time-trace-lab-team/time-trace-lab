@@ -423,8 +423,7 @@ class Level01TwoRoundSimulationTest {
             nodes.add(new org.example.timeloop.core.path.PathNode(
                     node.getId(),
                     new PathPoint(node.getWorldPos().x(), node.getWorldPos().y()),
-                    exits,
-                    Optional.empty()));
+                    exits));
         }
         return new OrthogonalPathGraph(nodes);
     }
