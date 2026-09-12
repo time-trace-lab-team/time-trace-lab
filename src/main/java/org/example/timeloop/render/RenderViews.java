@@ -54,6 +54,18 @@ public final class RenderViews {
         }
     }
 
+    /** 关卡路径图投影出的静态节点中心；不携带玩法状态。 */
+    public record PathNodeMarker(String id, double x, double y) {
+        public PathNodeMarker {
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException("path node marker id 不能为空白");
+            }
+            if (!Double.isFinite(x) || !Double.isFinite(y)) {
+                throw new IllegalArgumentException("path node marker 坐标必须为有限数");
+            }
+        }
+    }
+
     /** 驻留板 / 门 / 出口终端。 */
     public record Mechanism(String id,
                             double x,
