@@ -65,7 +65,7 @@ R-2 不扩展 `RenderViews.Frame`。节点不是玩法状态：不能从地格�
 | v2-A / v2-B / v2-C 开发一实现 | ✅ | 以原配对头 `ed5bcac` 为起点的实现已完成，随后已合并最新 `origin/develop @ b76c14c`。 |
 | v3 §二 测试数自证 | ✅ | `ed5bcac clean test = 288`；历史 v2 提交 `1675c87 clean test = 300`，即 288 + 速度 5 + 视觉投影 4 + 节点提示 3。先前 303 是未执行 `clean` 时旧编译测试产物多计 3 条。 |
 | v3 §四 状态 × 相位矩阵 | ✅ | `PlayerVisualProjectionTest` 新增一条 4×2 矩阵用例：4 个状态、每个状态各验证 phased true / false，确认全枚举分支都有确定投影。 |
-| v3 §一 推送 | ⏳ | 分支含最新 develop 合并和 v3 矩阵提交；待用户授权推送后 PM 才能进行 `app/**` R-2 接线。 |
+| v3 §一 推送 | ✅ | `origin/codex/dev1-move-v2` 已推送；开发一代码交付提交为 `c9b11f4`，PM 现在可进行 `app/**` R-2 接线。 |
 | v3 §五 画面取证 | ⏳ | PM 接线后在目标机以 `./mvnw.cmd -o javafx:run` 启动；记录三态与节点远/中/近的四张图。 |
 
 当前干净基线的 `clean test` 为 331/0/0：最新 `origin/develop` 的 318 条，加开发一 13 条（速度 5、视觉投影 4 + 矩阵 1、节点提示 3）。

@@ -1,6 +1,7 @@
 # X-MOVE-COLLAPSE-01-DEV1-v3 · 交付与接线状态
 
-> 分支：`codex/dev1-move-v2`（本地 tip 待推送）
+> 分支：`origin/codex/dev1-move-v2`（已推送）
+> 开发一代码交付提交：`c9b11f4`
 > 当前合并基线：`origin/develop @ b76c14c`
 > 状态：开发一代码、测试数自证、渲染矩阵已完成；等待推送、PM app 接线和目标机画面取证。
 
@@ -8,7 +9,7 @@
 
 | v3 项 | 状态 | 结果 |
 | --- | --- | --- |
-| §一 追上 develop | ✅ 本地完成 | 已从 `ed5bcac` 合并到 `b76c14c`；没有冲突，保留 v2 render provider。 |
+| §一 追上 develop 并推送 | ✅ | 已从 `ed5bcac` 合并到 `b76c14c`；代码交付 `c9b11f4` 已推到 `origin/codex/dev1-move-v2`。 |
 | §二 数字自证 | ✅ | `ed5bcac clean test = 288`，`1675c87 clean test = 300`；旧报告的 303 是未清理输出目录时多计的 3 条旧编译测试，不能作为交付数字。 |
 | §四 状态 × 相位矩阵 | ✅ | 一条测试内部穷举 `IDLE` / `CRUISING` / `SLOWED` / `DOCKED` × phased true/false 共 8 组；每组断言形状、方向刻痕、减速反馈和相位环的确定投影。 |
 | §三 PM R-2 接线 | ⏳ PM | 推送后，PM 将关卡路径节点投影为 `PathNodeMarker` 并注册 `PathNodeHintLayer`；开发一只在 API 不匹配时修 `render/**`。 |
