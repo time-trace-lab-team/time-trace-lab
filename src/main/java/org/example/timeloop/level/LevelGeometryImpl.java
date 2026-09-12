@@ -11,7 +11,6 @@ public class LevelGeometryImpl implements LevelGeometry {
     private final List<PathNode> pathNodes;
     private final Map<String, PathNode> nodeMap;
     private final Map<String, Set<PathNode.Dir>> validExitsMap;
-    private final Map<String, PathNode.Dir> defaultExitMap;
     private final Map<String, Set<String>> adjacencyMap;
     private final Set<Vector2D> wallPositions;
     private final Set<String> closedDoors;
@@ -29,12 +28,8 @@ public class LevelGeometryImpl implements LevelGeometry {
         validateNodes();
 
         this.validExitsMap = new HashMap<>();
-        this.defaultExitMap = new HashMap<>();
         for (PathNode node : pathNodes) {
             validExitsMap.put(node.getId(), Collections.unmodifiableSet(node.getAllowDirs()));
-            if (node.getDefaultExit() != null) {
-                defaultExitMap.put(node.getId(), node.getDefaultExit());
-            }
         }
 
         this.adjacencyMap = buildAdjacency();
@@ -108,14 +103,6 @@ public class LevelGeometryImpl implements LevelGeometry {
             }
         }
 
-        for (PathNode node : pathNodes) {
-            if (node.getDefaultExit() != null && !node.getAllowDirs().contains(node.getDefaultExit())) {
-                throw new IllegalArgumentException(
-                        "节点 " + node.getId() + " 的 defaultExit " + node.getDefaultExit() +
-                                " 不在合法出口集合中: " + node.getAllowDirs()
-                );
-            }
-        }
     }
 
     private Map<String, Set<String>> buildAdjacency() {
@@ -184,11 +171,6 @@ public class LevelGeometryImpl implements LevelGeometry {
     @Override
     public Set<PathNode.Dir> getValidExits(String nodeId) {
         return validExitsMap.getOrDefault(nodeId, Collections.emptySet());
-    }
-
-    @Override
-    public PathNode.Dir getDefaultExit(String nodeId) {
-        return defaultExitMap.get(nodeId);
     }
 
     @Override

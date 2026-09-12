@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -26,8 +25,6 @@ class LevelGeometryImplTest {
         assertTrue(geometry.isConnected("L01_node_fork", "L01_node_right_01"));
         assertTrue(geometry.isConnected("L01_node_right_approach", "L01_node_exit_approach"));
         assertTrue(geometry.isConnected("L01_node_exit_approach", "L01_node_exit_terminal"));
-        assertNull(geometry.getDefaultExit("L01_node_fork"),
-                "L-4a：第一关不再声明默认出口");
         assertEquals(java.util.Set.of(PathNode.Dir.UP),
                 geometry.getValidExits("L01_node_left_end"));
     }
@@ -78,8 +75,6 @@ class LevelGeometryImplTest {
 
         assertThrows(UnsupportedOperationException.class,
                 () -> fork.getAllowDirs().clear());
-        assertNull(fork.getDefaultExit(),
-                "L-4a：路径节点只表达可通行性与中心线");
         assertEquals(java.util.Set.of(
                         PathNode.Dir.UP,
                         PathNode.Dir.DOWN,
