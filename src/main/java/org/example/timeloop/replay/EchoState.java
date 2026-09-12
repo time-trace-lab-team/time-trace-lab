@@ -79,6 +79,13 @@ public final class EchoState {
      * 本刻残影触发的事件（已过滤到只允许残影触发的类型）。
      * 顺序由 {@link TimelineEvent#STABLE_ORDER} 保证稳定。
      *
+     * <p><b>actor 归属契约（X-MOVE-COLLAPSE-01 · E-3）</b>：本方法返回的事件的
+     * {@code actorId} 仍是<b>录制时的原值</b>（例如活玩家录制时写入的 {@code "player"}）；
+     * replay 层<b>不负责改写</b>，也不把 {@code "player"} 当作残影身份。
+     * 调用方（app）把事件写入机关前，需把 actor 改写为 {@code "echo_" + sourceRound}，
+     * 以满足机关侧「{@code echo_<N>} 且 N == sourceRound」的占用约定；
+     * 否则残影消失后其占用的机关不会被释放（占用永久泄漏）。</p>
+     *
      * @param roundTick 共享逻辑刻
      * @return 不可修改的事件列表（该 tick 的残影允许事件）
      */
