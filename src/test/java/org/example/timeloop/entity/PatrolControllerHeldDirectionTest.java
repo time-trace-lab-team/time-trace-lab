@@ -64,14 +64,14 @@ class PatrolControllerHeldDirectionTest {
     }
 
     @Test
-    void currentAndOppositeEdgesDoNotPopulateTheTurnIntentSlot() {
+    void newestOppositeEdgeReversesTheCurrentSegmentImmediately() {
         PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
 
         c.advance(0, Set.of(Direction.DOWN), Optional.of(Direction.DOWN), ExitPassability.allOpen());
-        PlayerKinematics result = c.advance(1, Set.of(Direction.DOWN, Direction.UP), Optional.of(Direction.UP), ExitPassability.allOpen());
-
-        assertEquals(MovementState.IDLE, result.movementState());
-        assertEquals(Direction.DOWN, result.direction());
+        PlayerKinematics reversed = c.advance(1, Set.of(Direction.DOWN, Direction.UP), Optional.of(Direction.UP), ExitPassability.allOpen());
+        assertEquals(MovementState.CRUISING, reversed.movementState());
+        assertEquals(Direction.UP, reversed.direction(), "最后按下的反方向应同 tick 生效");
+        assertEquals(-4.0, reversed.y());
     }
 
     @Test
@@ -92,12 +92,106 @@ class PatrolControllerHeldDirectionTest {
     }
 
     @Test
-    void holdingOppositeDirections_staysIdle() {
+    void holdingOppositeDirectionsWithoutANewEdge_staysIdle() {
         PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
         c.advance(0, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
-        // 同刻按 DOWN + UP（相反）
+        // 没有新边沿时无法判断用户最后选择，保持静止。
         PlayerKinematics result = c.advance(1, Set.of(Direction.DOWN, Direction.UP), Optional.empty(), ExitPassability.allOpen());
-        assertEquals(MovementState.IDLE, result.movementState(), "同刻相反方向应 IDLE");
+        assertEquals(MovementState.IDLE, result.movementState());
+        assertEquals(Direction.DOWN, result.direction());
+    }
+
+    @Test
+    void idleNearJunction_newSideEdgeSnapsAndTurnsInTheSameTick() {
+        PatrolController c = new PatrolController(longJunctionGraph(), "start", Direction.DOWN,
+                PatrolConfig.c2Greybox());
+        movePastJunctionToY2(c);
+        c.advance(6, Set.of(), Optional.empty(), ExitPassability.allOpen());
+
+        PlayerKinematics turned = c.advance(7, Set.of(Direction.RIGHT), Optional.of(Direction.RIGHT),
+                ExitPassability.allOpen());
+
+        assertEquals(MovementState.CRUISING, turned.movementState());
+        assertEquals(Direction.RIGHT, turned.direction());
+        assertEquals(2.0, turned.x(), EPS);
+        assertEquals(0.0, turned.y(), EPS);
+    }
+
+    @Test
+    void idleBeyondSnapDistance_newSideEdgeDoesNotPullBackToJunction() {
+        PatrolController c = new PatrolController(longJunctionGraph(), "start", Direction.DOWN,
+                PatrolConfig.c2Greybox());
+        movePastJunctionToY8(c);
+        c.advance(9, Set.of(), Optional.empty(), ExitPassability.allOpen());
+
+        PlayerKinematics result = c.advance(10, Set.of(Direction.RIGHT), Optional.of(Direction.RIGHT),
+                ExitPassability.allOpen());
+
+        assertEquals(MovementState.IDLE, result.movementState());
+        assertEquals(Direction.DOWN, result.direction());
+        assertEquals(0.0, result.x(), EPS);
+        assertEquals(8.0, result.y(), EPS);
+    }
+
+    @Test
+    void idleExactlyAtSnapDistance_isInsideTheClosedBoundary() {
+        PatrolController c = new PatrolController(boundaryJunctionGraph(), "start", Direction.DOWN,
+                new PatrolConfig(48.0, 2.4, EPS));
+        for (long tick = 0; tick < 8; tick++) {
+            c.advance(tick, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        }
+        c.advance(8, Set.of(), Optional.empty(), ExitPassability.allOpen());
+
+        PlayerKinematics turned = c.advance(9, Set.of(Direction.RIGHT), Optional.of(Direction.RIGHT),
+                ExitPassability.allOpen());
+
+        assertEquals(Direction.RIGHT, turned.direction());
+        assertEquals(2.4, turned.x(), EPS);
+        assertEquals(0.0, turned.y(), EPS);
+    }
+
+    @Test
+    void movingNearJunction_doesNotUseStationaryPullBack() {
+        PatrolController c = new PatrolController(longJunctionGraph(), "start", Direction.DOWN,
+                PatrolConfig.c2Greybox());
+        movePastJunctionToY2(c);
+
+        PlayerKinematics result = c.advance(6, Set.of(Direction.RIGHT), Optional.of(Direction.RIGHT),
+                ExitPassability.allOpen());
+
+        assertEquals(MovementState.IDLE, result.movementState());
+        assertEquals(Direction.DOWN, result.direction());
+        assertEquals(0.0, result.x(), EPS);
+        assertEquals(2.0, result.y(), EPS);
+    }
+
+    @Test
+    void idleNearJunction_blockedSideExitDoesNotSnapThroughObstacle() {
+        PatrolController c = new PatrolController(longJunctionGraph(), "start", Direction.DOWN,
+                PatrolConfig.c2Greybox());
+        movePastJunctionToY2(c);
+        c.advance(6, Set.of(), Optional.empty(), ExitPassability.allOpen());
+        ExitPassability rightBlocked = (from, exit, target) -> exit.direction() != Direction.RIGHT;
+
+        PlayerKinematics result = c.advance(7, Set.of(Direction.RIGHT), Optional.of(Direction.RIGHT),
+                rightBlocked);
+
+        assertEquals(MovementState.IDLE, result.movementState());
+        assertEquals(Direction.DOWN, result.direction());
+        assertEquals(0.0, result.x(), EPS);
+        assertEquals(2.0, result.y(), EPS);
+    }
+
+    private static void movePastJunctionToY2(PatrolController c) {
+        for (long tick = 0; tick < 6; tick++) {
+            c.advance(tick, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        }
+    }
+
+    private static void movePastJunctionToY8(PatrolController c) {
+        for (long tick = 0; tick < 9; tick++) {
+            c.advance(tick, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        }
     }
 
     private static OrthogonalPathGraph junctionGraph() {
@@ -107,6 +201,28 @@ class PatrolControllerHeldDirectionTest {
                         new PathExit(Direction.UP, "start"),
                         new PathExit(Direction.RIGHT, "east"))),
                 node("east", 8.0, 0.0, List.of(new PathExit(Direction.LEFT, "jct")))));
+    }
+
+    private static OrthogonalPathGraph longJunctionGraph() {
+        return new OrthogonalPathGraph(List.of(
+                node("start", 0.0, -10.0, List.of(new PathExit(Direction.DOWN, "jct"))),
+                node("jct", 0.0, 0.0, List.of(
+                        new PathExit(Direction.UP, "start"),
+                        new PathExit(Direction.DOWN, "south"),
+                        new PathExit(Direction.RIGHT, "east"))),
+                node("south", 0.0, 20.0, List.of(new PathExit(Direction.UP, "jct"))),
+                node("east", 20.0, 0.0, List.of(new PathExit(Direction.LEFT, "jct")))));
+    }
+
+    private static OrthogonalPathGraph boundaryJunctionGraph() {
+        return new OrthogonalPathGraph(List.of(
+                node("start", 0.0, -12.0, List.of(new PathExit(Direction.DOWN, "jct"))),
+                node("jct", 0.0, 0.0, List.of(
+                        new PathExit(Direction.UP, "start"),
+                        new PathExit(Direction.DOWN, "south"),
+                        new PathExit(Direction.RIGHT, "east"))),
+                node("south", 0.0, 24.0, List.of(new PathExit(Direction.UP, "jct"))),
+                node("east", 24.0, 0.0, List.of(new PathExit(Direction.LEFT, "jct")))));
     }
 
     private static PathNode node(String id, double x, double y, List<PathExit> exits) {

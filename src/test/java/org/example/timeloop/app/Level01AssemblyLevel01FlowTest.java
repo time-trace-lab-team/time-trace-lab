@@ -34,7 +34,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class Level01AssemblyLevel01FlowTest {
 
     private static final double TILE_SIZE = 48.0;
-    private static final long DURATION_TICKS = 16 * 60L;
     /** 左驻留板节点 (2,5) 中心 y；到出口终端 (9,5) 相距 7 格，远超 1.5 格宽容半径。 */
     private static final double LEFT_PLATE_Y = 5.5 * TILE_SIZE;
 
@@ -103,7 +102,7 @@ class Level01AssemblyLevel01FlowTest {
         tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
         tick = drive(a, tick, LogicalKey.DIR_RIGHT, 72);
         tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
-        while (tick < 2 * DURATION_TICKS) {
+        while (a.hudContext().currentRound() < 3) {
             a.tick(InputIntent.empty(tick++));
         }
         assertEquals(3, a.hudContext().currentRound());
@@ -141,7 +140,7 @@ class Level01AssemblyLevel01FlowTest {
         tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);      // 分叉 → (2,3)
         tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);      // (2,3) → 左驻留板 (2,5)
         a.tick(InputIntent.empty(tick++));                   // 停驻
-        while (tick < DURATION_TICKS) {
+        while (a.hudContext().currentRound() == 1) {
             a.tick(InputIntent.empty(tick++));
         }
         return tick;

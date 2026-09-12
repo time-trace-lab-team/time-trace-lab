@@ -41,12 +41,19 @@ class PatrolControllerNodeBehaviorTest {
     }
 
     @Test
-    void perpendicularMidSegment_stopsIdle() {
+    void perpendicularMidSegment_isAnticipatedAndTurnsAtUpcomingNode() {
         PatrolController c = new PatrolController(lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
         tick(c, 0, Direction.DOWN);
         tick(c, 1, Direction.DOWN);
-        PlayerKinematics result = tickEdge(c, 2, Direction.RIGHT, Direction.RIGHT);
-        assertEquals(MovementState.IDLE, result.movementState());
+        PlayerKinematics approaching = tickEdge(c, 2, Direction.RIGHT, Direction.RIGHT);
+        assertEquals(MovementState.CRUISING, approaching.movementState());
+        assertEquals(Direction.DOWN, approaching.direction(), "段中间只预判，不提前斜切");
+
+        tick(c, 3, Direction.RIGHT);
+        PlayerKinematics turned = tick(c, 4, Direction.RIGHT);
+        assertEquals(Direction.RIGHT, turned.direction());
+        assertEquals(2.0, turned.x(), EPS);
+        assertEquals(0.0, turned.y(), EPS, "应先吸附到节点中心再转向");
     }
 
     @Test
@@ -75,13 +82,14 @@ class PatrolControllerNodeBehaviorTest {
     }
 
     @Test
-    void oppositeDirection_openSegment_staysIdle() {
+    void oppositeDirection_openSegment_reversesImmediately() {
         PatrolController c = new PatrolController(lockedGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
         tick(c, 0, Direction.DOWN);
         tick(c, 1, Direction.DOWN);
-        // 段中间按反方向：held 不含当前朝向 → IDLE
-        PlayerKinematics result = tick(c, 2, Direction.UP);
-        assertEquals(MovementState.IDLE, result.movementState());
+        PlayerKinematics reversed = tickEdge(c, 2, Direction.UP, Direction.UP);
+        assertEquals(MovementState.CRUISING, reversed.movementState());
+        assertEquals(Direction.UP, reversed.direction());
+        assertEquals(-6.0, reversed.y(), EPS, "段中间应同 tick 原路返回");
     }
 
     @Test

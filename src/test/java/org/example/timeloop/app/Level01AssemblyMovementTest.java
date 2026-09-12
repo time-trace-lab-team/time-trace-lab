@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 集成层（{@code app/}）对 C-PLAYER-MOVE-02 的适配测试。
  *
  * <p>覆盖：无输入静止 / 按住走 / 松开同刻停 / 同刻相反方向停 / 按住前进键再按垂直方向不冻住 /
- * 单槽方向意图在节点中心提交转向 / 真死路掉头 / 普通直廊节点拒绝掉头 / 出生点反方向不崩 /
+ * 单槽方向意图在节点中心提交转向 / 普通路段与节点主动掉头 / 出生点反方向不崩 /
  * 驻留板走到中心后停驻并能离开释放占用。</p>
  */
 class Level01AssemblyMovementTest {
@@ -134,6 +134,54 @@ class Level01AssemblyMovementTest {
         assertEquals(spawnY + 2 * TILE_SIZE, turned.y(), EPSILON, "转向发生在分叉所在行");
     }
 
+    @Test
+    void countdownWaitsForTheFirstMovementKey() {
+        Level01Assembly a = started();
+
+        for (long tick = 0; tick < 240; tick++) {
+            a.tick(InputIntent.empty(tick));
+        }
+        assertEquals(0L, a.hudContext().roundTick(), "等待玩家时不得消耗第一轮时间");
+        assertEquals(0, a.currentRecording().orElseThrow().size(), "等待阶段不得写空闲帧");
+
+        a.tick(press(0, LogicalKey.DIR_DOWN));
+        assertEquals(1L, a.hudContext().roundTick(), "首个移动输入应从 tick 0 启动计时");
+        assertEquals(1, a.currentRecording().orElseThrow().size());
+        assertEquals(MovementState.CRUISING, player(a).movementState());
+    }
+
+    @Test
+    void reversingMidSegmentTakesEffectOnTheSameTick() {
+        Level01Assembly a = started();
+        long tick = 0;
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 12);
+        double before = player(a).y();
+
+        a.tick(press(tick, LogicalKey.DIR_UP));
+        RenderViews.Player reversed = player(a);
+        assertEquals(Direction.UP, reversed.direction());
+        assertEquals(before - BASE_SPEED, reversed.y(), EPSILON);
+    }
+
+    /** BUG-001：松开前进键后只按住侧向键，也能预判下一路口并吸附转向。 */
+    @Test
+    void releasingForwardThenHoldingSideTurnsAtTheNextJunction() {
+        Level01Assembly a = started();
+        a.tick(InputIntent.empty(0));
+
+        long tick = 1;
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 30);
+        a.tick(press(tick++, LogicalKey.DIR_LEFT));
+        for (int i = 0; i < 40; i++) {
+            a.tick(hold(tick++, LogicalKey.DIR_LEFT));
+        }
+
+        RenderViews.Player turned = player(a);
+        assertEquals(Direction.LEFT, turned.direction());
+        assertTrue(turned.x() < 264.0, "应在分叉吸附后向左移动，实际 x=" + turned.x());
+        assertEquals(3.5 * TILE_SIZE, turned.y(), EPSILON, "转向必须发生在分叉节点中心行");
+    }
+
     /** P0-A：前方被关闭门挡住且没有 90° 出口时，允许原路返回。 */
     @Test
     void closedDoorDeadEndAllowsReversal() {
@@ -200,12 +248,9 @@ class Level01AssemblyMovementTest {
         assertEquals(spawnY, idle.y(), EPSILON);
     }
 
-    /**
-     * P0-D 修复后的回归：普通直廊节点 (5,2) 前方（DOWN）仍可通行，不属于真死路，
-     * 因此按反方向必须被拒绝（README「仅真死路可掉头」）。
-     */
+    /** PM 对 BUG-001 的裁决：普通直廊节点也允许玩家主动按反方向掉头。 */
     @Test
-    void reversalRejectedAtPlainCorridorNode() {
+    void reversalAllowedAtPlainCorridorNode() {
         Level01Assembly a = started();
         a.tick(InputIntent.empty(0));
         double spawnY = player(a).y();
@@ -215,10 +260,10 @@ class Level01AssemblyMovementTest {
         assertEquals(spawnY + TILE_SIZE, player(a).y(), EPSILON);
 
         a.tick(press(tick, LogicalKey.DIR_UP));
-        RenderViews.Player idle = player(a);
-        assertEquals(MovementState.IDLE, idle.movementState());
-        assertEquals(Direction.DOWN, idle.direction());
-        assertEquals(spawnY + TILE_SIZE, idle.y(), EPSILON);
+        RenderViews.Player reversed = player(a);
+        assertEquals(MovementState.CRUISING, reversed.movementState());
+        assertEquals(Direction.UP, reversed.direction());
+        assertEquals(spawnY + TILE_SIZE - BASE_SPEED, reversed.y(), EPSILON);
     }
 
     // ---------- 工具 ----------

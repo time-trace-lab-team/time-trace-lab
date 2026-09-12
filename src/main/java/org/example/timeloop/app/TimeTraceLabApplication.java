@@ -109,7 +109,7 @@ public final class TimeTraceLabApplication extends Application {
             public void handle(long nanoTime) {
                 loop.onAnimationFrame(nanoTime, assembly.phase());
                 canvasAdapter.renderFrame(WORLD_WIDTH, WORLD_HEIGHT, loop.interpolationAlpha());
-                hud.render(assembly.hudContext());
+                hud.render(assembly.hudContext(), assembly.phase());
             }
         };
 

@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * P0-A + P0-D + P0-E 真死路掉头豁免与直行穿节点。
+ * BUG-001：反向输入、节点吸附与直行穿节点。
  */
 class PatrolControllerDeadEndTest {
 
@@ -50,11 +50,13 @@ class PatrolControllerDeadEndTest {
 
     @Test
     @Timeout(value = 1, unit = TimeUnit.SECONDS)
-    void openSegmentRequestReversal_isRejected() {
-        PatrolController c = new PatrolController(straightGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+    void openSegmentRequestReversal_isImmediate() {
+        PatrolController c = new PatrolController(corridorGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
         tick(c, 0, Direction.DOWN);
-        PlayerKinematics result = tick(c, 1, Direction.UP);
-        assertEquals(MovementState.IDLE, result.movementState(), "开放路段中间不允许反方向");
+        PlayerKinematics reversed = tickEdge(c, 1, Direction.UP, Direction.UP);
+        assertEquals(MovementState.CRUISING, reversed.movementState());
+        assertEquals(Direction.UP, reversed.direction(), "段中间反方向应同 tick 生效");
+        assertEquals(0.0, reversed.y(), EPS);
     }
 
     @Test
@@ -76,13 +78,14 @@ class PatrolControllerDeadEndTest {
 
     @Test
     @Timeout(value = 1, unit = TimeUnit.SECONDS)
-    void junctionWithSideExit_stillRejectsReversal() {
+    void junctionWithSideExit_allowsRequestedReversal() {
         PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
-        for (long t = 0; t < 3; t++) {
+        for (long t = 0; t < 2; t++) {
             tick(c, t, Direction.DOWN);
         }
-        PlayerKinematics result = tick(c, 3, Direction.UP);
-        assertEquals(MovementState.IDLE, result.movementState(), "有 90° 出口的节点不允许掉头");
+        PlayerKinematics result = tickEdge(c, 2, Direction.UP, Direction.UP);
+        assertEquals(Direction.UP, result.direction(), "普通路口也允许玩家主动反向");
+        assertEquals(MovementState.CRUISING, result.movementState());
     }
 
     @Test
@@ -98,17 +101,17 @@ class PatrolControllerDeadEndTest {
 
     @Test
     @Timeout(value = 1, unit = TimeUnit.SECONDS)
-    void reversalAtPlainCorridorNode_isRejected() {
-        // (5,2) 类普通直廊节点：UP/DOWN 都开放，按 UP 不允许掉头
+    void reversalAtPlainCorridorNode_isAllowed() {
+        // (5,2) 类普通直廊节点：UP/DOWN 都开放，按 UP 主动掉头。
         PatrolController c = new PatrolController(corridorGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
         // start(0,-4) --DOWN--> mid(0,0) --DOWN--> end(0,4)
         // 走到 mid 中心
-        for (long t = 0; t < 3; t++) {
+        for (long t = 0; t < 2; t++) {
             tick(c, t, Direction.DOWN);
         }
-        PlayerKinematics result = tick(c, 3, Direction.UP);
-        assertEquals(MovementState.IDLE, result.movementState(),
-                "普通直廊节点前方仍可通行，不允许掉头");
+        PlayerKinematics result = tickEdge(c, 2, Direction.UP, Direction.UP);
+        assertEquals(Direction.UP, result.direction());
+        assertEquals(MovementState.CRUISING, result.movementState());
     }
 
     // ========== P0-E：直行穿节点不挂死 ==========
