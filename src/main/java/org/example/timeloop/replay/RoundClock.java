@@ -28,6 +28,9 @@ import java.util.Set;
  *   <li>{@link GamePhase#FAILED}：仅在第 {@code maxRounds} 轮读秒归零仍未通关时进入。</li>
  * </ul>
  *
+ * <p><b>轮末停靠契约</b>：轮次事务结束后时钟停在 {@link GamePhase#READY}，
+ * 由调用方负责 {@code transition(PLAYING)} 启动下一轮；本类不自行推进到 PLAYING。</p>
+ *
  * <p>非法阶段转移会抛出 {@link IllegalStateException}。轮次切换事务中的
  * 记录封装、残影队列、快照恢复属于 R3/R5，不在本类实现；本类只负责时钟状态自身的
  * 阶段、{@code roundTick} 与 {@code currentRound} 推进。</p>

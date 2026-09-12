@@ -73,8 +73,7 @@ public class Level01Footsteps {
         nodes.add(new PathNode(
                 "L01_node_fork",
                 cellCenter(5, 3),
-                EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT),
-                PathNode.Dir.UP));
+                EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
 
         nodes.add(new PathNode(
                 "L01_node_center_01",

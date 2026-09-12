@@ -32,9 +32,9 @@ import java.util.Set;
  *   <li>只有<b>新发生的方向按下边沿</b>（{@code InputIntent.directionEdges}）才可能离开；
  *       进入前一直按住的旧键不会出现在边沿里，天然被拦截。</li>
  *   <li>离开方向必须是该 dock 的合法出口，否则保持驻留。</li>
- *   <li><b>已知偏差（待 PM 裁决）</b>：{@code AutoDockOccupancyPort.tryLeave} 要求位置已在区域外，
- *       因此 {@code DOCK_LEFT} 记在<b>出界刻</b>而非 README 所述“离开即释放”。本类按 API 实现，
- *       代码注释与交接文档均已标注。</li>
+ *   <li>合法出口边沿在同一逻辑刻调用 {@code tryLeave}；成功时立即发布
+ *       {@code DOCK_LEFT} 并释放占用。</li>
+ *   <li>进入只接受同一 dock 的 {@code outside -> inside} 边沿，避免离开后仍在区域内时重入。</li>
  * </ul>
  */
 public final class C3DockController {
@@ -52,7 +52,7 @@ public final class C3DockController {
 
     private String dockedMechanismId;
     private Set<LogicalKey> heldAtEntry = Set.of();
-    private Direction departureDirection;
+    private Set<String> previousInsideMechanismIds = Set.of();
     private int interactBufferTicks;
 
     public C3DockController(AutoDockReadPort readPort,
@@ -101,16 +101,27 @@ public final class C3DockController {
 
         updateInteractBuffer(input);
         List<TimelineEvent> events = new ArrayList<>();
+        Set<String> currentInsideMechanismIds = insideMechanismIds(position);
 
+        C3DockDecision decision;
         if (dockedMechanismId == null) {
-            return cruiseStep(tick, input, position, events);
+            decision = cruiseStep(tick, input, position, events, currentInsideMechanismIds);
+        } else {
+            decision = dockedStep(tick, input, position, events);
         }
-        return dockedStep(tick, input, position, events);
+        previousInsideMechanismIds = currentInsideMechanismIds;
+        return decision;
     }
 
-    private C3DockDecision cruiseStep(long tick, InputIntent input, Vector2D position, List<TimelineEvent> events) {
+    private C3DockDecision cruiseStep(long tick,
+                                      InputIntent input,
+                                      Vector2D position,
+                                      List<TimelineEvent> events,
+                                      Set<String> currentInsideMechanismIds) {
         Optional<AutoDockView> candidate = readPort.findNearest(position, 0.0);
-        if (candidate.isEmpty()) {
+        if (candidate.isEmpty()
+                || !currentInsideMechanismIds.contains(candidate.get().mechanismId())
+                || previousInsideMechanismIds.contains(candidate.get().mechanismId())) {
             return cruise(events);
         }
 
@@ -123,37 +134,29 @@ public final class C3DockController {
 
         dockedMechanismId = view.mechanismId();
         heldAtEntry = Set.copyOf(input.held());
-        departureDirection = null;
         events.add(new TimelineEvent(tick, actorId, sourceRound, view.mechanismId(),
                 TimelineEvent.EventType.DOCK_ENTERED, null, null));
         return new C3DockDecision(C3DockDecision.Status.FREEZE, Optional.empty(), events, interactBuffered());
     }
 
     private C3DockDecision dockedStep(long tick, InputIntent input, Vector2D position, List<TimelineEvent> events) {
-        if (departureDirection == null) {
-            Optional<Direction> edge = input.lastDirectionEdge();
-            if (edge.isEmpty()) {
-                return freeze(events);
-            }
-            Direction requested = edge.get();
-            if (!isLegalExit(dockedMechanismId, requested)) {
-                return freeze(events);
-            }
-            // 离开边沿成立：本刻起按所选方向移动；占用在出界刻释放（见类注释的已知偏差）。
-            departureDirection = requested;
-            return new C3DockDecision(C3DockDecision.Status.CRUISE, Optional.of(requested), events, interactBuffered());
+        Optional<Direction> edge = input.lastDirectionEdge();
+        if (edge.isEmpty()) {
+            return freeze(events);
         }
-
+        Direction requested = edge.get();
+        if (!isLegalExit(dockedMechanismId, requested)) {
+            return freeze(events);
+        }
         AutoDockResult leave = occupancyPort.tryLeave(
-                dockedMechanismId, actorId, sourceRound, tick, toDir(departureDirection), position);
+                dockedMechanismId, actorId, sourceRound, tick, toDir(requested), position);
         if (leave.status() == AutoDockResult.Status.LEFT) {
             events.add(new TimelineEvent(tick, actorId, sourceRound, dockedMechanismId,
-                    TimelineEvent.EventType.DOCK_LEFT, departureDirection, REASON_NEW_DIRECTION));
+                    TimelineEvent.EventType.DOCK_LEFT, requested, REASON_NEW_DIRECTION));
             clearDockState();
-            return cruise(events);
+            return new C3DockDecision(C3DockDecision.Status.CRUISE, Optional.of(requested), events, interactBuffered());
         }
-        // 仍在区域内：继续按离开方向移动，占用保留到出界刻。
-        return new C3DockDecision(C3DockDecision.Status.CRUISE, Optional.of(departureDirection), events, interactBuffered());
+        return freeze(events);
     }
 
     /**
@@ -186,6 +189,7 @@ public final class C3DockController {
         }
         occupancyPort.reset(reason, tick);
         clearDockState();
+        previousInsideMechanismIds = Set.of();
         interactBufferTicks = 0;
         return List.copyOf(events);
     }
@@ -212,8 +216,14 @@ public final class C3DockController {
 
     private void clearDockState() {
         dockedMechanismId = null;
-        departureDirection = null;
         heldAtEntry = Set.of();
+    }
+
+    private Set<String> insideMechanismIds(Vector2D position) {
+        return readPort.snapshot().stream()
+                .filter(view -> view.region().contains(position))
+                .map(AutoDockView::mechanismId)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
     }
 
     private C3DockDecision cruise(List<TimelineEvent> events) {

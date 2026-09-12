@@ -50,6 +50,17 @@
    | 第 `sourceRound` 轮生成的残影 | `echo_<sourceRound>`，例如 `echo_1`、`echo_2` |
 
    `sourceRound` 是回放语义字段，不拼入机制 ID，也不能用 `E1` 等显示简称替代。
+
+   **（X-MOVE-COLLAPSE-01 v2 §B 冻结确认，2026-09-11）** `echo_<sourceRound>` 是**冻结约定**，`sourceRound` **从 1 起算**。
+   当前实现有两处依赖它，任何一方改动都必须同步另一方：
+
+   | 依赖点 | 位置 | 依赖内容 |
+   | --- | --- | --- |
+   | 端口校验 | `AutoDockService.requireActor(...)` | 强制 actorId 为 `player` 或 `echo_<n>`，且 `n` 必须等于传入的 `sourceRound` |
+   | 残影消散释放 | `DockingPlate.onEvent(ECHO_DISAPPEARED)` | 仅当占用者等于 `"echo_" + event.sourceRound()` 时才释放占用 |
+
+   推论：**回放侧必须以 `echo_<sourceRound>` 身份提交进入/离开边沿**。若沿用录制时的 `player` / `0`，
+   残影消散时占用不会被释放，驻留板将**永久占用**（该缺陷由 `X-MOVE-COLLAPSE-01-ECHO-ACTOR` 跟踪）。
 6. 路径节点不是机制，但所有机制关联的节点也必须有稳定节点 ID。推荐形态为 `<关卡前缀>_node_<语义>`，例如 `L01_node_left_end`。机制与路径节点之间只能通过 ID 引用，不能通过列表位置或坐标最近值隐式绑定。
 7. 以下值禁止作为稳定 ID 或 ID 决胜依据：UUID、对象地址、显示名、集合迭代序号、数组下标、`HashMap`/`HashSet` 的遍历顺序和 enum `ordinal()`。
 
@@ -187,11 +198,14 @@ compare(a, b):
 3. 持续停留不重复产生 `DOCK_ENTERED`。只有前一采样在区域外、当前 tick 的有效位置进入区域内，才产生一次进入事实。
 4. 非占用者调用释放不能改变状态，不能产生 `OCCUPANCY_RELEASED`，并返回明确的 `NOT_OCCUPANT` 诊断。
 5. 同一个 actor 不能以第二个占用记录覆盖现有占用；另一个 actor 进入已占用 dock 返回 `ALREADY_OCCUPIED`，不改变原占用者。
+6. **`Door` 计数口径（X-MOVE-COLLAPSE-01 v2 §B 明确，2026-09-11）**：`Door` 只读 `DockingPlateRegistry.isOccupied(plateId)`，
+   **不区分占用者身份**。因此残影占板与当前玩家占板在门条件上**等价** —— 一枚板不会因占用者是 `echo_<n>` 而少算。
+   若后续需要按身份区分（例如只允许玩家触发某类门），必须先修改本节契约并经 PM 确认，不得在实现里隐式区分。
 
 ### 5.2 进入、离开和 tick 归属
 
 - 位置转换以固定 tick 的采样结果为准。前一有效位置在外、tick `t` 的有效位置在内，进入事件归属于 tick `t`。
-- 前一有效位置在内、tick `t` 的有效位置在外，并且离开方向属于合法出口时，`DOCK_LEFT` 和释放都归属于 tick `t`；同一 tick 内先产生离开事实，再产生释放事实。
+- 占用者在 tick `t` 按下**合法出口方向**即产生 `DOCK_LEFT` 并**在同一逻辑刻释放占用**（`LEFT`），**不要求位置已出区域**；同一 tick 内先产生离开事实，再产生释放事实。位置不再参与释放判定（X-MOVE-COLLAPSE-01-DEV3 L-1，PM 2026-09-10 批准；依据 README §三 与 `R5-开工前裁决.md` 裁决 4）。
 - 非法方向离开不释放占用，返回 `INVALID_EXIT_DIRECTION`；不能通过瞬移到区域外绕过出口规则。
 - 同一 dock 在 tick `t` 发生合法离开后，设置 `reentryBlockedAtTick=t`。该 dock 在同一个 tick 再次进入一律返回 `SAME_TICK_REENTRY_BLOCKED`，即使排序上释放事件已经先发生。
 - 同 tick 离开 dock A、进入 dock B 只有在调用方提供了真实的合法移动结果时才允许；不能通过 autoDock 查询制造跨区域瞬移。对同一 dock 的离开/再进入禁止规则始终有效。
@@ -267,5 +281,6 @@ AutoDockOccupancyPort
 - [x] 普通轮末、残影淘汰、整局重开和场景退出的清理时机已明确；
 - [x] 只读返回字段和最小接口方向已经确认并落地；
 - [x] 本步骤不实施代码，不修改禁止路径。
+- [x] **（2026-09-10 追加，X-MOVE-COLLAPSE-01-DEV3 L-1 / `ENT-2a`）** 同刻释放：合法出口按下即 `LEFT` 并清占用，不要求位置出界；`NOT_OUTSIDE_REGION` 保留枚举但标 `@Deprecated`，不再由 `tryLeave` 产生。经 PM 批准，与开发一 `ENT-2b` **成对合并**（集成分支 `codex/ent2-paired`），不单独进入 `develop`。
 
 W1/W4 已在 `mechanism/**`、`level/**` 及开发三测试范围内按本规格落地；下一步 W2 负责修复第一关路径图并完成 `LevelGeometryImpl` 构造验收。

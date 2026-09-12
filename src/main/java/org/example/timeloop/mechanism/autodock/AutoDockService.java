@@ -152,6 +152,14 @@ public final class AutoDockService implements AutoDockReadPort,
         return result(state, AutoDockResult.Status.ENTERED, tick);
     }
 
+    /**
+     * 占用者在 tick {@code t} 按下合法出口方向即离开：同一逻辑刻清空占用并返回
+     * {@link AutoDockResult.Status#LEFT}，<b>不要求位置已出区域</b>
+     * （README §三：离开驻留型机关时角色立即按所选方向出发，对应占用同时释放；
+     * 依据 `R5-开工前裁决.md` 裁决 4 / PM 2026-09-10 批准）。
+     *
+     * <p>{@code worldPosition} 只用于参数校验与诊断，不参与释放判定。</p>
+     */
     @Override
     public synchronized AutoDockResult tryLeave(String mechanismId,
                                                  String actorId,
@@ -172,9 +180,6 @@ public final class AutoDockService implements AutoDockReadPort,
         }
         if (exitDirection == null || !state.definition.legalExitDirections().contains(exitDirection)) {
             return result(state, AutoDockResult.Status.INVALID_EXIT_DIRECTION, tick);
-        }
-        if (state.definition.region().contains(worldPosition)) {
-            return result(state, AutoDockResult.Status.NOT_OUTSIDE_REGION, tick);
         }
 
         clearOccupancy(state);

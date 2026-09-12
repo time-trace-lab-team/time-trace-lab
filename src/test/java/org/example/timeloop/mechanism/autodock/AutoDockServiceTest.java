@@ -109,19 +109,60 @@ class AutoDockServiceTest {
     }
 
     @Test
-    void invalidDirectionOrStillInsideDoesNotRelease() {
+    void invalidExitDirectionKeepsOccupancy() {
         AutoDockService service = new AutoDockService(Level01Footsteps.build());
         Vector2D center = new Vector2D(120.0, 264.0);
         service.tryEnter("L01_plate_left", "player", 1, 10, center);
 
         AutoDockResult invalidDirection = service.tryLeave(
                 "L01_plate_left", "player", 1, 11, PathNode.Dir.DOWN, new Vector2D(120.0, 239.0));
-        AutoDockResult stillInside = service.tryLeave(
-                "L01_plate_left", "player", 1, 12, PathNode.Dir.UP, center);
 
         assertEquals(AutoDockResult.Status.INVALID_EXIT_DIRECTION, invalidDirection.status());
-        assertEquals(AutoDockResult.Status.NOT_OUTSIDE_REGION, stillInside.status());
         assertTrue(service.findById("L01_plate_left").orElseThrow().occupancy().occupied());
+    }
+
+    @Test
+    void legalExitInsideRegionReleasesAtSameTick() {
+        AutoDockService service = new AutoDockService(Level01Footsteps.build());
+        Vector2D center = new Vector2D(120.0, 264.0);
+        service.tryEnter("L01_plate_left", "player", 1, 10, center);
+
+        AutoDockResult left = service.tryLeave(
+                "L01_plate_left", "player", 1, 11, PathNode.Dir.UP, center);
+
+        assertEquals(AutoDockResult.Status.LEFT, left.status(), "区域内按合法出口必须同刻释放");
+        assertFalse(left.view().occupancy().occupied());
+        AutoDockView view = service.findById("L01_plate_left").orElseThrow();
+        assertFalse(view.occupancy().occupied());
+        assertEquals(11, view.reentryBlockedAtTick());
+    }
+
+    @Test
+    void nonOwnerCannotLeaveInsideRegion() {
+        AutoDockService service = new AutoDockService(Level01Footsteps.build());
+        Vector2D center = new Vector2D(120.0, 264.0);
+        service.tryEnter("L01_plate_left", "echo_1", 1, 10, center);
+
+        AutoDockResult result = service.tryLeave(
+                "L01_plate_left", "player", 1, 11, PathNode.Dir.UP, center);
+
+        assertEquals(AutoDockResult.Status.NOT_OCCUPANT, result.status());
+        assertTrue(service.findById("L01_plate_left").orElseThrow().occupancy().occupied());
+    }
+
+    @Test
+    void sameTickReentryIsBlockedAfterInsideRelease() {
+        AutoDockService service = new AutoDockService(Level01Footsteps.build());
+        Vector2D center = new Vector2D(120.0, 264.0);
+        service.tryEnter("L01_plate_left", "player", 1, 10, center);
+        assertEquals(AutoDockResult.Status.LEFT, service.tryLeave(
+                "L01_plate_left", "player", 1, 11, PathNode.Dir.UP, center).status());
+
+        AutoDockResult sameTick = service.tryEnter("L01_plate_left", "echo_1", 1, 11, center);
+        AutoDockResult nextTick = service.tryEnter("L01_plate_left", "echo_1", 1, 12, center);
+
+        assertEquals(AutoDockResult.Status.SAME_TICK_REENTRY_BLOCKED, sameTick.status());
+        assertEquals(AutoDockResult.Status.ENTERED, nextTick.status());
     }
 
     @Test
