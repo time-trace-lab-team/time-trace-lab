@@ -26,7 +26,11 @@
   -> ENT-3
   -> CORE-3 + PM APP-1 配对接线
   -> ENT-2a + ENT-2b 成对实现与 PM 集成
-  -> 开发一最终交付与自由移动验收
+  -> v2-A CORE-2 速度补测
+  -> v2-B R-1 玩家状态可见
+  -> v2-C R-2 节点转向提示（开发一 render provider）
+  -> PM 静态节点数据投影与图层注册
+  -> JavaFX 可读性截图与最终验收
 ```
 
 开发二当前没有本任务链必须等待的接口或阻塞项。开发三实现 `ENT-2a`，开发一实现 `ENT-2b`，两者不得以任一半单独进入 `develop` 的方式验证或发布；PM 在集成分支 `codex/ent2-paired` 进行成对验证。
@@ -40,6 +44,31 @@
 3. `C3DockController` 必须以 `previousInsideMechanismIds`（按 stable mechanism ID）表达 `outside -> inside` 边沿。每个 `step()` 结束更新；只在 `reset(...)` 清空，**不得**在 `clearDockState()` 清空。
 4. 合法出口边沿刻立即调用现有 `tryLeave(...)`。返回 `LEFT` 时同刻发 `DOCK_LEFT`、清本地 dock 状态并返回 `CRUISE`；非 `LEFT` 时保持 `FREEZE` 并保留 dock 状态，且不再保留跨 tick 的 `departureDirection`。
 5. 开发一补五条实体层测试：同 tick 释放、区域内不二次进入、出界后再进入、`DOCK_LEFT.tick ==` 按键刻、离开后松键但仍在区域内不重入。
+
+### PM v2-C 裁决与执行状态（2026-09-12）
+
+PM 已确认 v2-A、v2-B 要以 `ed5bcac`（`CORE-3 + APP-1` 配对头）为基线重新交付，并为原先阻塞的 R-2 批准更小的渲染契约：
+
+| 子项 | 状态 | 开发一实现 / 验收 |
+| --- | --- | --- |
+| v2-A `CORE-2` 速度补测 | ✅ 完成 | `PatrolControllerSpeedModifierTest` 覆盖 0.5 倍速、恢复 1.0、节点转向、`resetTo` 后倍率保持、无输入 `IDLE`。 |
+| v2-B `R-1` 玩家状态可见 | ✅ 完成 | `PlayerVisualProjection` 把权威 `movementState` 映射成形状与反馈；`PlayerLayer` 只读绘制。 |
+| v2-C `R-2` 节点转向提示 | ✅ 开发一 provider 完成 | `RenderViews.PathNodeMarker` 只承载静态节点几何；`PathNodeHintLayer` 按中心距离显示 8 px 菱形：≤1 格亮、≤2 格暗、其余隐藏。 |
+| PM 接线与截图 | ⏳ PM / 最终验收 | PM 在 `app/**` 投影 `levelData.getPathNodes()` 并注册图层；完成后补 `IDLE` / `CRUISING` / `SLOWED` 三态 JavaFX 截图。 |
+
+R-2 不扩展 `RenderViews.Frame`。节点不是玩法状态：不能从地格或玩家状态反推，不能编码门、开关或占用状态，也不得写回任何玩法数据。开发一完成渲染 provider 后，PM 负责在 `Level01Assembly` 暴露不可变节点列表并在 `TimeTraceLabApplication` 注册图层。
+
+### PM v3 收口状态（2026-09-12）
+
+| 任务链位置 | 状态 | 结论 / 后续责任 |
+| --- | --- | --- |
+| v2-A / v2-B / v2-C 开发一实现 | ✅ | 以原配对头 `ed5bcac` 为起点的实现已完成，随后已合并最新 `origin/develop @ b76c14c`。 |
+| v3 §二 测试数自证 | ✅ | `ed5bcac clean test = 288`；历史 v2 提交 `1675c87 clean test = 300`，即 288 + 速度 5 + 视觉投影 4 + 节点提示 3。先前 303 是未执行 `clean` 时旧编译测试产物多计 3 条。 |
+| v3 §四 状态 × 相位矩阵 | ✅ | `PlayerVisualProjectionTest` 新增一条 4×2 矩阵用例：4 个状态、每个状态各验证 phased true / false，确认全枚举分支都有确定投影。 |
+| v3 §一 推送 | ✅ | `origin/codex/dev1-move-v2` 已推送；开发一代码交付提交为 `c9b11f4`，PM 现在可进行 `app/**` R-2 接线。 |
+| v3 §五 画面取证 | ⏳ | PM 接线后在目标机以 `./mvnw.cmd -o javafx:run` 启动；记录三态与节点远/中/近的四张图。 |
+
+当前干净基线的 `clean test` 为 331/0/0：最新 `origin/develop` 的 318 条，加开发一 13 条（速度 5、视觉投影 4 + 矩阵 1、节点提示 3）。
 
 ## 三、分步骤任务表
 

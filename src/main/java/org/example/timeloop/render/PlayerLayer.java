@@ -31,10 +31,12 @@ public final class PlayerLayer implements RenderLayer {
         double cx = transform.toCanvasX(player.x());
         double cy = transform.toCanvasY(player.y());
         double radius = transform.scaled(tileSize * BODY_RADIUS_FACTOR);
+        PlayerVisualProjection.Style visual = PlayerVisualProjection.forPlayer(
+                player.movementState(), player.phased());
 
         gc.setGlobalAlpha(1.0);
 
-        if (player.phased()) {
+        if (visual.showsPhaseRing()) {
             gc.setStroke(RenderPalette.PHASE);
             gc.setLineWidth(1.5);
             double ring = transform.scaled(tileSize * PHASE_RING_FACTOR);
@@ -42,20 +44,48 @@ public final class PlayerLayer implements RenderLayer {
         }
 
         gc.setFill(RenderPalette.PLAYER);
-        gc.fillOval(cx - radius, cy - radius, radius * 2.0, radius * 2.0);
-
-        // 朝向短刻痕：形状/方向提示，不只靠颜色
-        double tick = radius * 1.4;
-        double dx = 0.0;
-        double dy = 0.0;
-        switch (player.direction()) {
-            case UP -> dy = -tick;
-            case DOWN -> dy = tick;
-            case LEFT -> dx = -tick;
-            case RIGHT -> dx = tick;
+        switch (visual.bodyShape()) {
+            case CIRCLE -> gc.fillOval(cx - radius, cy - radius, radius * 2.0, radius * 2.0);
+            case ROUNDED_SQUARE -> gc.fillRoundRect(cx - radius, cy - radius,
+                    radius * 2.0, radius * 2.0, radius * 0.9, radius * 0.9);
         }
-        gc.setStroke(RenderPalette.BACKGROUND);
-        gc.setLineWidth(2.0);
-        gc.strokeLine(cx, cy, cx + dx, cy + dy);
+
+        double tick = radius * 1.4;
+        double dx = directionX(player.direction(), tick);
+        double dy = directionY(player.direction(), tick);
+        if (visual.showsSlowOutline()) {
+            double outlineRadius = radius * 1.22;
+            gc.setStroke(RenderPalette.INTERACTIVE);
+            gc.setLineWidth(1.5);
+            gc.strokeOval(cx - outlineRadius, cy - outlineRadius, outlineRadius * 2.0, outlineRadius * 2.0);
+        }
+        if (visual.showsSlowTrail()) {
+            gc.setStroke(RenderPalette.INTERACTIVE);
+            gc.setLineWidth(1.5);
+            gc.strokeLine(cx - dx * 0.45, cy - dy * 0.45, cx - dx * 1.15, cy - dy * 1.15);
+        }
+
+        if (visual.showsDirectionTick()) {
+            // 朝向短刻痕：形状/方向提示，不只靠颜色
+            gc.setStroke(RenderPalette.BACKGROUND);
+            gc.setLineWidth(2.0);
+            gc.strokeLine(cx, cy, cx + dx, cy + dy);
+        }
+    }
+
+    private static double directionX(org.example.timeloop.core.Direction direction, double length) {
+        return switch (direction) {
+            case LEFT -> -length;
+            case RIGHT -> length;
+            case UP, DOWN -> 0.0;
+        };
+    }
+
+    private static double directionY(org.example.timeloop.core.Direction direction, double length) {
+        return switch (direction) {
+            case UP -> -length;
+            case DOWN -> length;
+            case LEFT, RIGHT -> 0.0;
+        };
     }
 }
