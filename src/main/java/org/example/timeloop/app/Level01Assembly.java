@@ -62,6 +62,8 @@ public final class Level01Assembly {
     /** 第一关玩家出生节点与初始朝向（轮初复位用，与 PatrolController 构造参数一致）。 */
     private static final String PLAYER_SPAWN_NODE_ID = "L01_node_spawn";
     private static final Direction PLAYER_SPAWN_DIRECTION = Direction.DOWN;
+    /** 残影写入机关时的 actor 前缀：`echo_<sourceRound>`（机制侧冻结约定）。 */
+    private static final String ECHO_ACTOR_ID_PREFIX = "echo_";
 
     /** 判定“是否已走到驻留机关中心”的容差（世界单位）。 */
     private static final double DOCK_CENTER_EPSILON = 1e-6;
@@ -107,7 +109,8 @@ public final class Level01Assembly {
         this.leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos());
         this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos());
         this.door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds());
-        this.exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId());
+        this.exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId(),
+                ExitTerminal.interactRadiusForTileSize(levelData.getTileSize()));
     }
 
     /** 进入第一关会话：BOOT → … → READY → 复位玩家 → 开本轮缓冲 → PLAYING。 */
@@ -325,28 +328,47 @@ public final class Level01Assembly {
         }
     }
 
-    /** 回放活跃残影在本刻的机关事件（残影可占板，按记录复现）。 */
+    /**
+     * 回放活跃残影在本刻的机关事件（残影可占板，按记录复现）。
+     *
+     * <p>actor 归属：记录里写的是录制当时的活玩家（`player`），但**回放写入机关时必须改写为
+     * `echo_&lt;sourceRound&gt;`** —— `AutoDockService.requireActor` 与
+     * `DockingPlate.onEvent(ECHO_DISAPPEARED)` 都以该约定区分「活玩家 / 第 N 轮残影」；
+     * 若继续传 `player`，残影占用会与活玩家无法区分，且残影消失时驻留板不会被释放。
+     * 只改写写入机关的归属，**不改** `TimelineEvent` 记录内容，也不改 `replay/**` 类型。</p>
+     */
     private void replayEchoEvents(long tick) {
         for (EchoState echo : echoQueue.activeEchoes(clock.currentRound())) {
+            String echoActorId = ECHO_ACTOR_ID_PREFIX + echo.sourceRound();
             for (TimelineEvent event : echo.eventsAt(tick)) {
                 DockingPlate plate = plateById(event.mechanismId());
                 if (plate == null) {
                     continue;
                 }
                 if (event.eventType() == TimelineEvent.EventType.DOCK_ENTERED) {
-                    plate.tryEnter(event.actorId(), event.sourceRound(), event.tick());
+                    plate.tryEnter(echoActorId, echo.sourceRound(), event.tick());
                 } else {
-                    plate.tryExit(event.actorId(), event.sourceRound(), event.tick());
+                    plate.tryExit(echoActorId, echo.sourceRound(), event.tick());
                 }
             }
         }
     }
 
+    /**
+     * `E` 交互：需要宽容半径内 + 门已解锁 + 未触发。
+     *
+     * <p>半径来自机制侧（`ExitTerminal.interactRadiusForTileSize`，第一关 = 1.5 × 48 = 72），
+     * app 不硬编码数值；6–10 tick 输入缓冲仍由 `C3DockController` 负责。</p>
+     */
     private void interactIfRequested(long tick, InputIntent input) {
-        if (input.isPressed(LogicalKey.INTERACT) && exit.isDoorUnlocked() && !exit.isTriggered()) {
-            exit.interact(tick, PLAYER_SOURCE_ROUND);
-            recording.completeGoal();
+        if (!input.isPressed(LogicalKey.INTERACT) || exit.isTriggered() || !exit.isDoorUnlocked()) {
+            return;
         }
+        if (!exit.isInInteractRange(new Vector2D(patrol.position().x(), patrol.position().y()))) {
+            return;
+        }
+        exit.interact(tick, PLAYER_SOURCE_ROUND);
+        recording.completeGoal();
     }
 
     private void onRoundEnd() {
