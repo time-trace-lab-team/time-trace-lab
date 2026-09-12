@@ -3,6 +3,7 @@ package org.example.timeloop.app;
 import org.example.timeloop.core.input.InputIntent;
 import org.example.timeloop.mechanism.DockingPlateRegistry;
 import org.example.timeloop.mechanism.event.EventDispatcher;
+import org.example.timeloop.render.RenderViews;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -48,6 +49,36 @@ class Level01AssemblyTest {
         assertEquals(16 * 60, assembly.hudContext().durationTicks());
         assertEquals(3, assembly.hudContext().maxRounds());
         assertEquals(1, assembly.hudContext().currentRound());
+
+        assembly.cleanup();
+    }
+
+    /**
+     * R-2 数据源：装配层把关卡路径节点投影成只读 {@link RenderViews.PathNodeMarker}，
+     * 只含稳定 ID 与世界坐标（不含任何玩法状态），且与关卡数据逐个一致。
+     */
+    @Test
+    void projectsStaticPathNodeMarkersFromLevelData() {
+        Level01Assembly assembly = new Level01Assembly();
+
+        java.util.Map<String, org.example.timeloop.level.model.Vector2D> expected = new java.util.HashMap<>();
+        for (org.example.timeloop.level.model.PathNode node
+                : org.example.timeloop.level.Level01Footsteps.build().getPathNodes()) {
+            expected.put(node.getId(), node.getWorldPos());
+        }
+
+        java.util.List<RenderViews.PathNodeMarker> markers = assembly.pathNodeMarkers();
+        org.junit.jupiter.api.Assertions.assertEquals(expected.size(), markers.size(),
+                "路径节点数量应与关卡数据一致");
+        for (RenderViews.PathNodeMarker marker : markers) {
+            org.example.timeloop.level.model.Vector2D position = expected.get(marker.id());
+            org.junit.jupiter.api.Assertions.assertNotNull(position, marker.id());
+            org.junit.jupiter.api.Assertions.assertEquals(position.x(), marker.x(), 1e-9);
+            org.junit.jupiter.api.Assertions.assertEquals(position.y(), marker.y(), 1e-9);
+        }
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException.class,
+                () -> markers.add(new RenderViews.PathNodeMarker("L01_node_extra", 0.0, 0.0)),
+                "投影结果应为不可变列表");
 
         assembly.cleanup();
     }
