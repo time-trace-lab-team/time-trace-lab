@@ -56,6 +56,23 @@ class PatrolControllerStraightLineTest {
     }
 
     @Test
+    void speedModifierChangesDistanceAndMovementStateWithoutChangingAdvanceSignature() {
+        PatrolController slowed = new PatrolController(
+                graphFor(Direction.DOWN), "start", Direction.DOWN, PatrolConfig.c2Greybox(), () -> 0.5);
+        PlayerKinematics slowFrame = tick(slowed, 0, Direction.DOWN);
+
+        assertEquals(1.0, slowFrame.y(), 1e-7);
+        assertEquals(MovementState.SLOWED, slowFrame.movementState());
+
+        PatrolController normal = new PatrolController(
+                graphFor(Direction.DOWN), "start", Direction.DOWN, PatrolConfig.c2Greybox(), () -> 1.0);
+        PlayerKinematics normalFrame = tick(normal, 0, Direction.DOWN);
+
+        assertEquals(2.0, normalFrame.y(), 1e-7);
+        assertEquals(MovementState.CRUISING, normalFrame.movementState());
+    }
+
+    @Test
     void releaseDirection_stopsImmediately() {
         PatrolController c = controllerFor(Direction.DOWN);
         for (long t = 0; t < 10; t++) {

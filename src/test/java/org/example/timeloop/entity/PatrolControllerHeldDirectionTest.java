@@ -41,16 +41,54 @@ class PatrolControllerHeldDirectionTest {
     }
 
     @Test
-    void holdingDirectionAndSide_thenEdgeCommittedAtNode() {
+    void earlySideEdgeIsRetainedUntilTheNodeCenter() {
         PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
 
-        // 走到 jct 中心（start(-4) → jct(0)：距离 4，2 tick）
+        // 在段中间按 RIGHT；下一刻不再有边沿，但仍持续按住。
         c.advance(0, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
         c.advance(1, Set.of(Direction.DOWN, Direction.RIGHT), Optional.of(Direction.RIGHT), ExitPassability.allOpen());
 
-        // 在 jct 中心，newestEdge=RIGHT 且仍按住 → 转向
-        PlayerKinematics atJct = c.advance(2, Set.of(Direction.DOWN, Direction.RIGHT), Optional.of(Direction.RIGHT), ExitPassability.allOpen());
+        PlayerKinematics atJct = c.advance(2, Set.of(Direction.DOWN, Direction.RIGHT), Optional.empty(), ExitPassability.allOpen());
         assertEquals(Direction.RIGHT, atJct.direction(), "到节点中心提交 90° 转向");
+    }
+
+    @Test
+    void releasedSideIntentIsDiscardedBeforeTheNodeCenter() {
+        PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+
+        c.advance(0, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        c.advance(1, Set.of(Direction.DOWN, Direction.RIGHT), Optional.of(Direction.RIGHT), ExitPassability.allOpen());
+
+        PlayerKinematics atJct = c.advance(2, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        assertEquals(Direction.DOWN, atJct.direction(), "松开侧向键后不得在节点转向");
+    }
+
+    @Test
+    void currentAndOppositeEdgesDoNotPopulateTheTurnIntentSlot() {
+        PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+
+        c.advance(0, Set.of(Direction.DOWN), Optional.of(Direction.DOWN), ExitPassability.allOpen());
+        PlayerKinematics result = c.advance(1, Set.of(Direction.DOWN, Direction.UP), Optional.of(Direction.UP), ExitPassability.allOpen());
+
+        assertEquals(MovementState.IDLE, result.movementState());
+        assertEquals(Direction.DOWN, result.direction());
+    }
+
+    @Test
+    void resetRestoresStartStateClearsPendingTurnAndCanMoveImmediately() {
+        PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+
+        c.advance(0, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        c.advance(1, Set.of(Direction.DOWN, Direction.RIGHT), Optional.of(Direction.RIGHT), ExitPassability.allOpen());
+        c.resetTo("start", Direction.DOWN);
+
+        assertEquals(new PathPoint(0.0, -4.0), c.position());
+        assertEquals(Direction.DOWN, c.direction());
+
+        PlayerKinematics afterReset = c.advance(2, Set.of(Direction.DOWN), Optional.empty(), ExitPassability.allOpen());
+        assertEquals(0.0, afterReset.x());
+        assertEquals(-2.0, afterReset.y());
+        assertEquals(Direction.DOWN, afterReset.direction());
     }
 
     @Test

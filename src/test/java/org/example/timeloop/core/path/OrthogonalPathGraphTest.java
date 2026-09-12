@@ -4,7 +4,6 @@ import org.example.timeloop.core.Direction;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -19,8 +18,7 @@ class OrthogonalPathGraphTest {
                 new PathNode(
                         "center",
                         new PathPoint(48.0, 0.0),
-                        List.of(new PathExit(Direction.LEFT, "west"), new PathExit(Direction.DOWN, "south")),
-                        Optional.of(Direction.DOWN)),
+                        List.of(new PathExit(Direction.LEFT, "west"), new PathExit(Direction.DOWN, "south"))),
                 node("south", 48.0, 48.0, List.of(new PathExit(Direction.UP, "center")))));
 
         PathNode center = graph.node("center");

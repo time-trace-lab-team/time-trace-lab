@@ -41,14 +41,12 @@ final class PathGraphBridge {
                 throw new IllegalStateException(
                         "关卡节点没有 1-tile 相邻出口，无法构建运动图：" + levelNode.getId());
             }
-            Optional<Direction> defaultExit = levelNode.getDefaultExit() == null
-                    ? Optional.empty()
-                    : Optional.of(toCore(levelNode.getDefaultExit()));
+            // CORE-3 后 core 路径节点不再有「默认出口/自动选路」数据：本桥只做纯几何换算，
+            // 关卡数据里的 defaultExit（若仍存在）只用于编写/校验，绝不参与移动决策。
             nodes.add(new PathNode(
                     levelNode.getId(),
                     new PathPoint(levelNode.getWorldPos().x(), levelNode.getWorldPos().y()),
-                    exits,
-                    defaultExit));
+                    exits));
         }
         return new OrthogonalPathGraph(nodes);
     }

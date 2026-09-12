@@ -44,6 +44,30 @@ class InputIntentTest {
     }
 
     @Test
+    void logicalKeysExposeOnlyDirectionKeysAsDirections() {
+        assertEquals(Direction.UP, LogicalKey.DIR_UP.direction().orElseThrow());
+        assertEquals(Direction.DOWN, LogicalKey.DIR_DOWN.direction().orElseThrow());
+        assertEquals(Direction.LEFT, LogicalKey.DIR_LEFT.direction().orElseThrow());
+        assertEquals(Direction.RIGHT, LogicalKey.DIR_RIGHT.direction().orElseThrow());
+        assertTrue(LogicalKey.INTERACT.direction().isEmpty());
+        assertTrue(LogicalKey.PHASE.direction().isEmpty());
+    }
+
+    @Test
+    void heldDirectionsProjectsOnlyDirectionKeysToAnImmutableSet() {
+        InputIntent intent = new InputIntent(
+                3,
+                Set.of(),
+                Set.of(),
+                Set.of(LogicalKey.DIR_UP, LogicalKey.DIR_LEFT, LogicalKey.INTERACT),
+                List.of());
+
+        assertEquals(Set.of(Direction.UP, Direction.LEFT), intent.heldDirections());
+        assertThrows(UnsupportedOperationException.class,
+                () -> intent.heldDirections().add(Direction.DOWN));
+    }
+
+    @Test
     void lastDirectionEdgeWins() {
         InputIntent intent = new InputIntent(
                 1,

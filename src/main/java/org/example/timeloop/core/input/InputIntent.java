@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 一个逻辑刻的不可变输入意图（C3）。
@@ -53,6 +54,17 @@ public record InputIntent(
     /** 是否在本刻结束时仍按住。 */
     public boolean isHeld(LogicalKey key) {
         return held.contains(key);
+    }
+
+    /**
+     * 将本刻仍按住的方向键投影为不可变方向集合。
+     * 非方向键不参与移动语义。
+     */
+    public Set<Direction> heldDirections() {
+        return held.stream()
+                .map(LogicalKey::direction)
+                .flatMap(Optional::stream)
+                .collect(Collectors.toUnmodifiableSet());
     }
 
     /**
