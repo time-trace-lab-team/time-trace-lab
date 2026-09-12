@@ -158,4 +158,27 @@ class EventRoundTripTest {
         assertThrows(IllegalStateException.class, () -> s2.recordEvent(e),
                 "RESULT 阶段不得写事件");
     }
+
+    @Test
+    void eventsAt_doesNotRewriteActorId_callerMustRewriteToEchoSourceRound() {
+        // 录制时活玩家 actorId="player"、sourceRound=1
+        EchoState echo = recordRoundWithEvents(List.of(entered(ENTER_TICK)));
+
+        List<TimelineEvent> events = echo.eventsAt(ENTER_TICK);
+        assertEquals(1, events.size());
+        TimelineEvent replayed = events.get(0);
+
+        // 契约：replay 不改写 actorId，取出仍是录制值 "player"
+        assertEquals("player", replayed.actorId(),
+                "eventsAt 不负责改写 actorId，取出仍应是录制值");
+        assertEquals(1, replayed.sourceRound());
+
+        // 调用方（app）改写为 echo_<sourceRound> 后，与 sourceRound 一致，满足机关侧约定
+        String rewrittenActor = "echo_" + replayed.sourceRound();
+        assertEquals("echo_1", rewrittenActor,
+                "调用方改写后 actorId 应等于 echo_<sourceRound>");
+        assertEquals(replayed.sourceRound(),
+                Integer.parseInt(rewrittenActor.substring("echo_".length())),
+                "改写后的 echo_<N> 中 N 必须等于 sourceRound");
+    }
 }
