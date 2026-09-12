@@ -20,7 +20,8 @@ final class PlayerVisualProjection {
     record Style(BodyShape bodyShape,
                  boolean showsDirectionTick,
                  boolean showsSlowOutline,
-                 boolean showsSlowTrail) {
+                 boolean showsSlowTrail,
+                 boolean showsPhaseRing) {
         Style {
             Objects.requireNonNull(bodyShape, "bodyShape");
         }
@@ -30,12 +31,17 @@ final class PlayerVisualProjection {
     }
 
     static Style forMovementState(MovementState movementState) {
+        return forPlayer(movementState, false);
+    }
+
+    /** 把移动状态与相位状态一起投影为一组完整的玩家视觉语义。 */
+    static Style forPlayer(MovementState movementState, boolean phased) {
         Objects.requireNonNull(movementState, "movementState");
         return switch (movementState) {
-            case IDLE -> new Style(BodyShape.ROUNDED_SQUARE, false, false, false);
-            case CRUISING -> new Style(BodyShape.CIRCLE, true, false, false);
-            case SLOWED -> new Style(BodyShape.CIRCLE, true, true, true);
-            case DOCKED -> new Style(BodyShape.ROUNDED_SQUARE, true, false, false);
+            case IDLE -> new Style(BodyShape.ROUNDED_SQUARE, false, false, false, phased);
+            case CRUISING -> new Style(BodyShape.CIRCLE, true, false, false, phased);
+            case SLOWED -> new Style(BodyShape.CIRCLE, true, true, true, phased);
+            case DOCKED -> new Style(BodyShape.ROUNDED_SQUARE, true, false, false, phased);
         };
     }
 }

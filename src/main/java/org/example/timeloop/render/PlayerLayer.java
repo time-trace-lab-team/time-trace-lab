@@ -31,11 +31,12 @@ public final class PlayerLayer implements RenderLayer {
         double cx = transform.toCanvasX(player.x());
         double cy = transform.toCanvasY(player.y());
         double radius = transform.scaled(tileSize * BODY_RADIUS_FACTOR);
-        PlayerVisualProjection.Style visual = PlayerVisualProjection.forMovementState(player.movementState());
+        PlayerVisualProjection.Style visual = PlayerVisualProjection.forPlayer(
+                player.movementState(), player.phased());
 
         gc.setGlobalAlpha(1.0);
 
-        if (player.phased()) {
+        if (visual.showsPhaseRing()) {
             gc.setStroke(RenderPalette.PHASE);
             gc.setLineWidth(1.5);
             double ring = transform.scaled(tileSize * PHASE_RING_FACTOR);
