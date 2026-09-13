@@ -1,0 +1,46 @@
+package org.example.timeloop.entity;
+
+/**
+ * Immutable C2 movement parameters frozen for one patrol controller session.
+ *
+ * <p>The greybox factory is the approved C2 configuration. The constructor is
+ * intentionally explicit so a future level adapter cannot mutate speed or
+ * geometry constants midway through a recorded round.</p>
+ */
+public record PatrolConfig(
+        double tileSize,
+        double baseSpeed,
+        double epsilon
+) {
+
+    public static final double C2_TILE_SIZE = 48.0;
+    public static final double C2_BASE_SPEED = 2.0;
+    public static final double C2_EPSILON = 0.000048;
+    public static final double TURN_SNAP_DISTANCE_FACTOR = 0.15;
+
+    public PatrolConfig {
+        requirePositiveFinite("tileSize", tileSize);
+        requirePositiveFinite("baseSpeed", baseSpeed);
+        requirePositiveFinite("epsilon", epsilon);
+    }
+
+    /** Returns C2's approved 48-unit grid and 2-world-unit-per-tick speed. */
+    public static PatrolConfig c2Greybox() {
+        return new PatrolConfig(C2_TILE_SIZE, C2_BASE_SPEED, C2_EPSILON);
+    }
+
+    /**
+     * Returns the maximum distance from a nearby node at which an idle player
+     * may request a legal 90-degree turn. The value scales with level geometry
+     * and therefore remains 7.2 world units for the 48-unit greybox grid.
+     */
+    public double turnSnapDistance() {
+        return tileSize * TURN_SNAP_DISTANCE_FACTOR;
+    }
+
+    private static void requirePositiveFinite(String name, double value) {
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalArgumentException(name + " must be finite and > 0, actual " + value);
+        }
+    }
+}
