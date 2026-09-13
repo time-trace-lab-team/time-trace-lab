@@ -6,6 +6,9 @@ import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
 
+import java.util.Objects;
+import java.util.function.Supplier;
+
 /**
  * C5 出生点标记图层（新增）。
  *
@@ -18,17 +21,22 @@ public final class SpawnLayer implements RenderLayer {
     private final double worldX;
     private final double worldY;
     private final double tileSize;
-    private final WorldTransform transform;
+    private final Supplier<WorldTransform> transformSource;
 
     public SpawnLayer(double worldX, double worldY, double tileSize, WorldTransform transform) {
+        this(worldX, worldY, tileSize, fixedTransform(transform));
+    }
+
+    public SpawnLayer(double worldX, double worldY, double tileSize, Supplier<WorldTransform> transformSource) {
         this.worldX = worldX;
         this.worldY = worldY;
         this.tileSize = tileSize;
-        this.transform = transform;
+        this.transformSource = Objects.requireNonNull(transformSource, "transformSource");
     }
 
     @Override
     public void render(GraphicsContext gc, double worldW, double worldH, double alpha) {
+        WorldTransform transform = currentTransform();
         double cx = transform.toCanvasX(worldX);
         double cy = transform.toCanvasY(worldY);
         double t = transform.scaled(tileSize);
@@ -47,5 +55,14 @@ public final class SpawnLayer implements RenderLayer {
 
         gc.setFill(RenderPalette.SPAWN_CORE);
         gc.fillOval(cx - t * 0.17, cy - t * 0.17, t * 0.34, t * 0.34);
+    }
+
+    private WorldTransform currentTransform() {
+        return Objects.requireNonNull(transformSource.get(), "SpawnLayer transformSource 在 render 时返回 null");
+    }
+
+    private static Supplier<WorldTransform> fixedTransform(WorldTransform transform) {
+        WorldTransform fixed = Objects.requireNonNull(transform, "transform");
+        return () -> fixed;
     }
 }

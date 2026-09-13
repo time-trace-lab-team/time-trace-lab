@@ -2,18 +2,23 @@ package org.example.timeloop.app;
 
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
+import javafx.beans.property.ObjectProperty;
+import javafx.beans.property.SimpleObjectProperty;
+import javafx.geometry.Rectangle2D;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.input.KeyCode;
 import javafx.scene.layout.Pane;
+import javafx.scene.layout.Priority;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import org.example.timeloop.core.FixedStepLoop;
-import org.example.timeloop.core.GamePhase;
 import org.example.timeloop.core.input.LogicalKey;
 import org.example.timeloop.level.Level01Footsteps;
 import org.example.timeloop.level.model.LevelData;
+import org.example.timeloop.level.model.TileType;
 import org.example.timeloop.render.CanvasAdapter;
 import org.example.timeloop.render.EchoTrailLayer;
 import org.example.timeloop.render.GroundWallLayer;
@@ -37,14 +42,11 @@ import java.util.function.Supplier;
  */
 public final class TimeTraceLabApplication extends Application {
 
-    /** 第一关格子边长（世界单位），与关卡数据的 tileSize 一致。 */
-    private static final double TILE_SIZE = 48.0;
-    /** 第一关网格列数（28 列 × 16 行 = 1344 × 768 世界单位）。 */
-    private static final int GRID_COLS = 28;
-    /** 第一关网格行数。 */
-    private static final int GRID_ROWS = 16;
-    private static final double WORLD_WIDTH = GRID_COLS * TILE_SIZE;
-    private static final double WORLD_HEIGHT = GRID_ROWS * TILE_SIZE;
+    /** 默认窗口尺寸；实际窗口不会超过屏幕可用区的 {@value #SMALL_SCREEN_FIT} 比例。 */
+    private static final double DEFAULT_WINDOW_WIDTH = 1280.0;
+    private static final double DEFAULT_WINDOW_HEIGHT = 720.0;
+    /** 屏幕可用区不足默认窗口时按此比例收缩。 */
+    private static final double SMALL_SCREEN_FIT = 0.9;
     /** 顶部 HUD 占掉的高度，不预留会把画布挤扁。 */
     private static final double HUD_HEIGHT = 40.0;
 
@@ -76,32 +78,65 @@ public final class TimeTraceLabApplication extends Application {
         loop = new FixedStepLoop(() ->
                 assembly.tick(input.drain(assembly.hudContext().roundTick())));
 
-        Canvas canvas = new Canvas(WORLD_WIDTH, WORLD_HEIGHT);
+        // 世界尺寸从关卡数据推导：网格改版（28×16）后这里不需要跟着改常量
+        LevelData level = Level01Footsteps.build();
+        double tileSize = level.getTileSize();
+        TileType[][] grid = level.getTileGrid();
+        int rows = grid.length;
+        int cols = rows == 0 ? 0 : grid[0].length;
+        if (rows <= 0 || cols <= 0) {
+            throw new IllegalStateException("关卡网格为空，无法推导世界尺寸");
+        }
+        double worldWidth = cols * tileSize;
+        double worldHeight = rows * tileSize;
+
+        Canvas canvas = new Canvas(worldWidth, worldHeight);
         CanvasAdapter canvasAdapter = new CanvasAdapter(canvas);
 
-        WorldTransform transform = WorldTransform.identity();
+        // 布局完成前视口尺寸未知，先用恒等变换占位；下方监听器会在拿到真实视口后立即重算。
+        // 图层每帧只读一次该属性，因此窗口缩放与渲染之间不存在撕裂帧。
+        ObjectProperty<WorldTransform> transform =
+                new SimpleObjectProperty<>(WorldTransform.identity(), "worldTransform");
+        Supplier<WorldTransform> transformSource = transform::get;
         Supplier<RenderViews.Frame> frames = assembly::renderViews;
 
-        // 关卡只构建一次：图层和出生点标记共用同一份数据
-        LevelData level = Level01Footsteps.build();
-        canvasAdapter.addLayer(new GroundWallLayer(level.getTileGrid(), TILE_SIZE, transform));
+        canvasAdapter.addLayer(new GroundWallLayer(grid, tileSize, transformSource));
         // 原生 SPAWN_POINT 瓦片在画面上与普通地板毫无区别，靠这一层补一个金色标记
         canvasAdapter.addLayer(new SpawnLayer(
-                level.getSpawnPos().x(), level.getSpawnPos().y(), TILE_SIZE, transform));
+                level.getSpawnPos().x(), level.getSpawnPos().y(), tileSize, transformSource));
         // 路径节点菱形提示（项目方要求保留）：档位已收紧到「自己这格 + 上下左右紧邻格」，
         // 并放在机关与玩家之下，避免遮挡角色、机关与终点信号。
         canvasAdapter.addLayer(new PathNodeHintLayer(
-                frames, assembly.pathNodeMarkers(), TILE_SIZE, transform));
-        canvasAdapter.addLayer(new MechanismLayer(frames, TILE_SIZE, transform));
-        canvasAdapter.addLayer(new PlayerLayer(frames, TILE_SIZE, transform));
-        canvasAdapter.addLayer(new EchoTrailLayer(frames, transform));
+                frames, assembly.pathNodeMarkers(), tileSize, transformSource));
+        canvasAdapter.addLayer(new MechanismLayer(frames, tileSize, transformSource));
+        canvasAdapter.addLayer(new PlayerLayer(frames, tileSize, transformSource));
+        canvasAdapter.addLayer(new EchoTrailLayer(frames, transformSource));
 
         Pane canvasHolder = new Pane(canvas);
+        // 画布跟随容器尺寸；逻辑坐标仍是世界坐标，只有显示投影变化。
         canvas.widthProperty().bind(canvasHolder.widthProperty());
         canvas.heightProperty().bind(canvasHolder.heightProperty());
         VBox root = new VBox(hud, canvasHolder);
-        canvasHolder.setPrefSize(WORLD_WIDTH, WORLD_HEIGHT);
-        Scene scene = new Scene(new StackPane(root), WORLD_WIDTH, WORLD_HEIGHT + HUD_HEIGHT);
+        // HUD 固定高度、画布吃掉剩余空间（HUD 不参与世界投影）
+        VBox.setVgrow(canvasHolder, Priority.ALWAYS);
+
+        Rectangle2D visualBounds = Screen.getPrimary().getVisualBounds();
+        double sceneWidth = Math.min(DEFAULT_WINDOW_WIDTH, visualBounds.getWidth() * SMALL_SCREEN_FIT);
+        double sceneHeight = Math.min(DEFAULT_WINDOW_HEIGHT, visualBounds.getHeight() * SMALL_SCREEN_FIT);
+        canvasHolder.setPrefSize(sceneWidth, Math.max(1.0, sceneHeight - HUD_HEIGHT));
+        Scene scene = new Scene(new StackPane(root), sceneWidth, sceneHeight);
+
+        // 视口一变就等比重投影：世界完整可见、居中留边；两个尺寸都有效时才计算，
+        // 避免布局中间态（0 或负）触发 WorldTransform 的参数校验。
+        Runnable refit = () -> {
+            double viewWidth = canvas.getWidth();
+            double viewHeight = canvas.getHeight();
+            if (viewWidth > 0.0 && viewHeight > 0.0) {
+                transform.set(WorldTransform.fit(worldWidth, worldHeight, viewWidth, viewHeight));
+            }
+        };
+        canvas.widthProperty().addListener((obs, old, now) -> refit.run());
+        canvas.heightProperty().addListener((obs, old, now) -> refit.run());
 
         scene.setOnKeyPressed(event -> {
             // 终局阶段（挑战失败 / 通关完成）不再接受 gameplay 输入。
@@ -133,7 +168,7 @@ public final class TimeTraceLabApplication extends Application {
             @Override
             public void handle(long nanoTime) {
                 loop.onAnimationFrame(nanoTime, assembly.phase());
-                canvasAdapter.renderFrame(WORLD_WIDTH, WORLD_HEIGHT, loop.interpolationAlpha());
+                canvasAdapter.renderFrame(worldWidth, worldHeight, loop.interpolationAlpha());
                 hud.render(assembly.hudContext(), assembly.phase(), assembly.objectiveView());
             }
         };

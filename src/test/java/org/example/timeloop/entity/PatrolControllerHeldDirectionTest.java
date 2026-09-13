@@ -53,6 +53,27 @@ class PatrolControllerHeldDirectionTest {
     }
 
     @Test
+    void releasingForwardWhileHoldingLegalSideContinuesToNodeAndUsesRemainingBudgetAfterTurning() {
+        // 起点距路口 3 单位；每 tick 预算 2 单位，第二 tick 必须先沿 DOWN 走 1 单位到中心，
+        // 再在同 tick 沿 RIGHT 消耗余下 1 单位。
+        PatrolController c = new PatrolController(shortJunctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
+
+        PlayerKinematics midSegment = c.advance(0, Set.of(Direction.DOWN), Optional.of(Direction.DOWN),
+                ExitPassability.allOpen());
+        assertEquals(0.0, midSegment.x(), EPS);
+        assertEquals(-1.0, midSegment.y(), EPS);
+        assertEquals(Direction.DOWN, midSegment.direction());
+
+        PlayerKinematics turned = c.advance(1, Set.of(Direction.RIGHT), Optional.of(Direction.RIGHT),
+                ExitPassability.allOpen());
+
+        assertEquals(MovementState.CRUISING, turned.movementState());
+        assertEquals(Direction.RIGHT, turned.direction(), "松开前进键后，合法侧向键必须在节点中心提交");
+        assertEquals(1.0, turned.x(), EPS, "跨节点后剩余预算必须沿新方向消费");
+        assertEquals(0.0, turned.y(), EPS, "转向前必须先吸附到节点中心线");
+    }
+
+    @Test
     void releasedSideIntentIsDiscardedBeforeTheNodeCenter() {
         PatrolController c = new PatrolController(junctionGraph(), "start", Direction.DOWN, PatrolConfig.c2Greybox());
 
@@ -212,6 +233,15 @@ class PatrolControllerHeldDirectionTest {
                         new PathExit(Direction.RIGHT, "east"))),
                 node("south", 0.0, 20.0, List.of(new PathExit(Direction.UP, "jct"))),
                 node("east", 20.0, 0.0, List.of(new PathExit(Direction.LEFT, "jct")))));
+    }
+
+    private static OrthogonalPathGraph shortJunctionGraph() {
+        return new OrthogonalPathGraph(List.of(
+                node("start", 0.0, -3.0, List.of(new PathExit(Direction.DOWN, "jct"))),
+                node("jct", 0.0, 0.0, List.of(
+                        new PathExit(Direction.UP, "start"),
+                        new PathExit(Direction.RIGHT, "east"))),
+                node("east", 8.0, 0.0, List.of(new PathExit(Direction.LEFT, "jct")))));
     }
 
     private static OrthogonalPathGraph boundaryJunctionGraph() {

@@ -26,6 +26,34 @@ public record WorldTransform(double scale, double originX, double originY) {
         return new WorldTransform(1.0, 0.0, 0.0);
     }
 
+    /**
+     * 将完整世界等比、居中地投影到给定视口。
+     *
+     * <p>四个尺寸均以各自坐标系的单位表示；返回的 {@code scale} 为“视口像素 / 世界单位”。
+     * 本方法只计算显示投影，不会改变世界中的任何逻辑坐标。</p>
+     *
+     * @param worldWidth 世界宽度，必须为正有限数
+     * @param worldHeight 世界高度，必须为正有限数
+     * @param viewWidth 可绘制视口宽度，必须为正有限数
+     * @param viewHeight 可绘制视口高度，必须为正有限数
+     * @return 使整个世界位于视口内、未占用空间对称留边的不可变变换
+     */
+    public static WorldTransform fit(
+            double worldWidth,
+            double worldHeight,
+            double viewWidth,
+            double viewHeight) {
+        requirePositiveFinite("worldWidth", worldWidth);
+        requirePositiveFinite("worldHeight", worldHeight);
+        requirePositiveFinite("viewWidth", viewWidth);
+        requirePositiveFinite("viewHeight", viewHeight);
+
+        double scale = Math.min(viewWidth / worldWidth, viewHeight / worldHeight);
+        double originX = (viewWidth - worldWidth * scale) / 2.0;
+        double originY = (viewHeight - worldHeight * scale) / 2.0;
+        return new WorldTransform(scale, originX, originY);
+    }
+
     public double toCanvasX(double worldX) {
         return originX + worldX * scale;
     }
@@ -50,5 +78,11 @@ public record WorldTransform(double scale, double originX, double originY) {
     /** 返回应用了偏移/缩放的新变换（例如摄像机平移）。 */
     public WorldTransform translated(double deltaOriginX, double deltaOriginY) {
         return new WorldTransform(scale, originX + deltaOriginX, originY + deltaOriginY);
+    }
+
+    private static void requirePositiveFinite(String name, double value) {
+        if (!Double.isFinite(value) || value <= 0.0) {
+            throw new IllegalArgumentException(name + " 必须为正有限数，实际 " + value);
+        }
     }
 }
