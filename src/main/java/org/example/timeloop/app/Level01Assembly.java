@@ -32,6 +32,7 @@ import org.example.timeloop.mechanism.autodock.AutoDockResetReason;
 import org.example.timeloop.mechanism.autodock.AutoDockService;
 import org.example.timeloop.mechanism.autodock.AutoDockView;
 import org.example.timeloop.mechanism.event.EventDispatcher;
+import org.example.timeloop.mechanism.event.GameEvent;
 import org.example.timeloop.mechanism.event.GameEventBus;
 import org.example.timeloop.render.RenderViews;
 import org.example.timeloop.replay.EchoQueue;
@@ -49,6 +50,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * 第一关「留下的脚步」装配（集成层，纯 Java，不依赖 JavaFX）。
@@ -512,19 +514,50 @@ public final class Level01Assembly {
             recording.failFinalRound();
             return;
         }
+        // 边界刻 = 刚结束那轮的最后一刻；残影淘汰事件记在这一刻（与 TimelineEvent.tick 口径一致）
+        long boundaryTick = clock.roundTick();
+        Set<Integer> echoesBefore = activeEchoRounds();
+        // 轮末事务：封装满长记录、生成残影、淘汰超龄残影、清空 autoDock 占用（注入的 C3 reset）。
+        recording.completeNormalRound(
+                () -> dockController.reset(AutoDockResetReason.ROUND_END, boundaryTick));
+        // 残影淘汰派发（开发二 v4 卡 §七裁决）：replay 侧只暴露数据，派发在装配层做。
+        // 必须用本装配自己的 eventBus —— Phase 1 之后板/门/出口只注册在它的实例上；
+        // 顺序上放在机关重置之前，让残影占用经 DockingPlate.onEvent(ECHO_DISAPPEARED) 正规释放，
+        // 而不是被随后的一揽子 reset 覆盖。
+        for (int goneRound : evictedEchoRounds(echoesBefore)) {
+            eventBus.dispatch(GameEvent.echoDisappeared(
+                    ECHO_ACTOR_ID_PREFIX + goneRound, boundaryTick, goneRound));
+        }
         leftPlate.reset();
         rightPlate.reset();
         door.reset();
         exit.reset();
-        // 轮末事务：封装满长记录、生成残影、清空 autoDock 占用（走 C3 的 reset 以便同时清掉它的本地驻留状态），
-        // 事务结束时时钟停在 READY（见 docs/development 的开发二 R-3 契约）。
-        recording.completeNormalRound(
-                () -> dockController.reset(AutoDockResetReason.ROUND_END, clock.roundTick()));
         // READY -> PLAYING：不接回 PLAYING 的话 tick() 会直接 return，第 2 轮起角色完全无法移动。
         // README §三 要求的“短暂 READY 冻结”（玩家确认起始朝向）尚未实现，登记在 app 轮转待办里。
         clock.transition(GamePhase.PLAYING);
         // 轮初复位：恰好一次，把玩家放回出生节点中心与初始朝向（ENT-3 resetTo）
         resetPlayerForNewRound();
+    }
+
+    /** 当前轮仍活跃的残影来源轮次集合（轮末 diff 用）。 */
+    private Set<Integer> activeEchoRounds() {
+        Set<Integer> rounds = new TreeSet<>();
+        for (EchoState echo : echoQueue.activeEchoes(clock.currentRound())) {
+            rounds.add(echo.sourceRound());
+        }
+        return rounds;
+    }
+
+    /** 轮末事务前活跃、事务后不再活跃的残影来源轮次（即本轮被寿命淘汰的残影）。 */
+    private Set<Integer> evictedEchoRounds(Set<Integer> beforeRounds) {
+        Set<Integer> evicted = new TreeSet<>(beforeRounds);
+        evicted.removeAll(activeEchoRounds());
+        return evicted;
+    }
+
+    /** 本装配的事件总线（包内可见：集成测试用它捕获残影淘汰等事件）。 */
+    GameEventBus eventBus() {
+        return eventBus;
     }
 
     private DockingPlate plateById(String mechanismId) {
