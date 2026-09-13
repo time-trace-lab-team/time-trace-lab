@@ -6,6 +6,7 @@ import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
 
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -21,16 +22,23 @@ public final class MechanismLayer implements RenderLayer {
 
     private final Supplier<RenderViews.Frame> frameSource;
     private final double tileSize;
-    private final WorldTransform transform;
+    private final Supplier<WorldTransform> transformSource;
 
     public MechanismLayer(Supplier<RenderViews.Frame> frameSource, double tileSize, WorldTransform transform) {
+        this(frameSource, tileSize, fixedTransform(transform));
+    }
+
+    public MechanismLayer(Supplier<RenderViews.Frame> frameSource,
+                          double tileSize,
+                          Supplier<WorldTransform> transformSource) {
         this.frameSource = frameSource;
         this.tileSize = tileSize;
-        this.transform = transform;
+        this.transformSource = Objects.requireNonNull(transformSource, "transformSource");
     }
 
     @Override
     public void render(GraphicsContext gc, double worldW, double worldH, double alpha) {
+        WorldTransform transform = currentTransform();
         gc.setGlobalAlpha(1.0);
 
         double size = transform.scaled(tileSize * MARKER_SIZE_FACTOR);
@@ -44,6 +52,15 @@ public final class MechanismLayer implements RenderLayer {
                 case EXIT -> drawExit(gc, cx, cy, size, mechanism.active());
             }
         }
+    }
+
+    private WorldTransform currentTransform() {
+        return Objects.requireNonNull(transformSource.get(), "MechanismLayer transformSource 在 render 时返回 null");
+    }
+
+    private static Supplier<WorldTransform> fixedTransform(WorldTransform transform) {
+        WorldTransform fixed = Objects.requireNonNull(transform, "transform");
+        return () -> fixed;
     }
 
     /** 驻留板：圆角方 + 内框；激活时蓝色实心带光晕。 */
