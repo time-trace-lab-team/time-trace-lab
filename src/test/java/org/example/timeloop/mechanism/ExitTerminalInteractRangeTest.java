@@ -13,7 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * X-MOVE-COLLAPSE-01 L-3 · 出口终端宽容交互半径（PM 2026-09-10 批准方案 A、半径 1.5 格）。
  *
- * <p>第一关坐标：右驻留板中心 (8,5) = (408,264)、出口终端 (9,5) = (456,264)、分叉 (5,3) = (264,168)。
+ * <p>新第一关地图坐标：右驻留板中心 (18,8) = (888,408)、出口终端 (19,8) = (936,408)，
+ * 两者仍恰好相距 1 格；出生点 (10,2) = (504,120) 是三度路口，距终端约 519。
  * 硬下限是 1 格（48）——必须覆盖「右驻留板 → 出口终端」这 1 格距离，否则玩家须离开右板才能按 E，
  * 而离开即释放占用、`Door` 不闩锁会重新上锁 → 第一关无解。</p>
  *
@@ -22,9 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ExitTerminalInteractRangeTest {
 
     private static final double TILE = 48.0;
-    private static final Vector2D TERMINAL_CENTER = new Vector2D(456.0, 264.0);
-    private static final Vector2D RIGHT_PLATE_CENTER = new Vector2D(408.0, 264.0);
-    private static final Vector2D FORK = new Vector2D(264.0, 168.0);
+    private static final Vector2D TERMINAL_CENTER = new Vector2D(936.0, 408.0);
+    private static final Vector2D RIGHT_PLATE_CENTER = new Vector2D(888.0, 408.0);
+    /** 新地图的出生点路口 (10,2)：三度节点，距出口终端约 519 世界单位。 */
+    private static final Vector2D FORK = new Vector2D(504.0, 120.0);
 
     private EventDispatcher bus;
 
@@ -45,7 +47,7 @@ class ExitTerminalInteractRangeTest {
         ExitTerminal exit = exitWithRecommendedRadius();
 
         assertTrue(exit.isInInteractRange(RIGHT_PLATE_CENTER),
-                "从右驻留板中心 (408,264) 必须能按 E");
+                "从右驻留板中心 (888,408) 必须能按 E");
         assertTrue(exit.isInInteractRange(TERMINAL_CENTER),
                 "终端自身中心必须在范围内");
     }
@@ -54,7 +56,7 @@ class ExitTerminalInteractRangeTest {
     void forkIsOutOfRange() {
         ExitTerminal exit = exitWithRecommendedRadius();
 
-        assertFalse(exit.isInInteractRange(FORK), "分叉 (264,168) 距终端约 214，必须判定为超距");
+        assertFalse(exit.isInInteractRange(FORK), "出生点路口 (504,120) 距终端约 519，必须判定为超距");
     }
 
     @Test

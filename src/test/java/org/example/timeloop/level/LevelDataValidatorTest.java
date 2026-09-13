@@ -30,12 +30,13 @@ class LevelDataValidatorTest {
                 .map(PathNode::getId)
                 .collect(java.util.stream.Collectors.toSet());
         assertTrue(pathNodeIds.containsAll(Set.of(
-                "L01_node_fork", "L01_node_left_end", "L01_node_right_end",
-                "L01_node_exit_terminal")));
-        assertEquals(17, pathNodeIds.size());
+                "L01_node_spawn", "L01_node_plate_left", "L01_node_plate_right",
+                "L01_node_door", "L01_node_exit_terminal")));
+        // 新第一关地图：28 × 16 格，265 个可走格 = 265 个路径节点（每可走格恰好一个节点）。
+        assertEquals(265, pathNodeIds.size());
         assertEquals(Set.of("L01_plate_left", "L01_plate_right"),
                 data.getDoors().get(0).getRequiredPlateIds());
-        assertEquals("L01_node_left_end", data.getEntitySpawnList().get(0).getPathNodeId());
+        assertEquals("L01_node_plate_left", data.getEntitySpawnList().get(0).getPathNodeId());
     }
 
     @Test

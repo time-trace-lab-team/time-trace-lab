@@ -166,7 +166,7 @@ class Level01AssemblyMovementTest {
         a.tick(InputIntent.empty(0));
 
         long tick = 1;
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 30);
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 30);           // (10,3) → (10,4) 之间
         a.tick(press(tick++, LogicalKey.DIR_LEFT));
         for (int i = 0; i < 40; i++) {
             a.tick(hold(tick++, LogicalKey.DIR_LEFT));
@@ -174,26 +174,33 @@ class Level01AssemblyMovementTest {
 
         RenderViews.Player turned = player(a);
         assertEquals(Direction.LEFT, turned.direction());
-        assertTrue(turned.x() < 264.0, "应在分叉吸附后向左移动，实际 x=" + turned.x());
-        assertEquals(3.5 * TILE_SIZE, turned.y(), EPSILON, "转向必须发生在分叉节点中心行");
+        assertTrue(turned.x() < 10.5 * TILE_SIZE,
+                "应在 (10,4) 路口吸附后向左移动，实际 x=" + turned.x());
+        assertEquals(4.5 * TILE_SIZE, turned.y(), EPSILON, "转向必须发生在 (10,4) 节点中心行");
     }
 
-    /** P0-A：前方被关闭门挡住且没有 90° 出口时，允许原路返回。 */
+    /** P0-A：前方被关闭门挡住时，允许原路返回。 */
     @Test
     void closedDoorDeadEndAllowsReversal() {
         Level01Assembly a = started();
         a.tick(InputIntent.empty(0));
-        double spawnY = player(a).y();
 
+        // 新地图：门在 (18,13)。从下方走廊 (9,14) 绕到 (16,13) 再向右贴上门口节点 (17,13)。
         long tick = 1;
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 200);          // 停在门前的 (5,4)，面朝 DOWN
-        double lockedY = spawnY + 3 * TILE_SIZE;
-        assertEquals(lockedY, player(a).y(), EPSILON);
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 24);           // (10,2) 出生点 → (10,3)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 24);           // (10,3) → (9,3)
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 264);          // (9,3) → (9,14) 竖廊
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 168);         // (9,14) → (16,14)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 24);             // (16,14) → (16,13)
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 44);          // (16,13) → 停在门前 (17,13)
+        double lockedX = 17.5 * TILE_SIZE;
+        assertEquals(lockedX, player(a).x(), EPSILON, "关闭的门必须把玩家挡在 (17,13) 节点中心");
+        assertEquals(Direction.RIGHT, player(a).direction());
 
-        a.tick(press(tick, LogicalKey.DIR_UP));                   // 松 DOWN、按 UP → 真死路掉头
+        a.tick(press(tick, LogicalKey.DIR_LEFT));                 // 松 RIGHT、按 LEFT → 被门堵住时掉头
         RenderViews.Player reversed = player(a);
-        assertEquals(Direction.UP, reversed.direction());
-        assertEquals(lockedY - BASE_SPEED, reversed.y(), EPSILON);
+        assertEquals(Direction.LEFT, reversed.direction());
+        assertEquals(lockedX - BASE_SPEED, reversed.x(), EPSILON);
     }
 
     /** P0-A 的连锁修复：驻留板从区域边界走到机关中心再停驻，离开时能在节点中心提交转向并释放占用。 */
@@ -202,32 +209,38 @@ class Level01AssemblyMovementTest {
         Level01Assembly a = started();
         a.tick(InputIntent.empty(0));
 
+        // 新地图左驻留板在 (4,6) = (216,312)：出生点 ↓(10,3) ←(8,3) ↓(8,10) ←(5,10) ↑(5,8) ←(4,8) ↑(4,6)
         long tick = 1;
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);           // 出生点 → 分叉 (5,3)
-        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);           // 分叉 → 左端拐角 (2,3)
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);           // (2,3) → 驻留板区域 → 机关中心
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 24);           // (10,2) → (10,3)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 48);           // (10,3) → (8,3)
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 168);          // (8,3) → (8,10)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);           // (8,10) → (5,10)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 48);             // (5,10) → (5,8)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 24);           // (5,8) → (4,8)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 48);             // (4,8) → 驻留板区域 → 机关中心
         a.tick(InputIntent.empty(tick++));                        // 无输入 → 停驻
 
         RenderViews.Player docked = player(a);
         assertEquals(MovementState.DOCKED, docked.movementState());
-        assertEquals(5.5 * TILE_SIZE, docked.y(), EPSILON, "停驻位置应为机关中心 (2,5) = 264");
+        assertEquals(4.5 * TILE_SIZE, docked.x(), EPSILON, "停驻位置应为机关中心 (4,6) = (216,312)");
+        assertEquals(6.5 * TILE_SIZE, docked.y(), EPSILON, "停驻位置应为机关中心 (4,6) = (216,312)");
         assertTrue(a.isPlateOccupied("L01_plate_left"));
 
-        a.tick(press(tick++, LogicalKey.DIR_UP));                 // 唯一合法离开方向
+        a.tick(press(tick++, LogicalKey.DIR_DOWN));               // 合法离开方向（新左板的出口是 DOWN / RIGHT）
         for (int i = 0; i < 20; i++) {
-            a.tick(hold(tick++, LogicalKey.DIR_UP));
+            a.tick(hold(tick++, LogicalKey.DIR_DOWN));
         }
 
         RenderViews.Player left = player(a);
-        assertEquals(Direction.UP, left.direction());
-        assertTrue(left.y() < 5 * TILE_SIZE, "应沿中心线走出 autoDock 区域，实际 y=" + left.y());
+        assertEquals(Direction.DOWN, left.direction());
+        assertTrue(left.y() > 7 * TILE_SIZE, "应沿中心线走出 autoDock 区域，实际 y=" + left.y());
         assertTrue(!a.isPlateOccupied("L01_plate_left"),
                 "离开区域后占用应被释放");
     }
 
     /**
-     * P0-D 修复后的回归：出生点只有 DOWN 出口，按 UP（反方向）时豁免不成立
-     * （反方向在该节点没有出口）→ 既不崩也不掉头，保持静止。
+     * P0-D 修复后的回归：出生点 (10,2) 的出口是 UP/DOWN/LEFT，(11,2) 是墙 ——
+     * 按下一个该节点没有出口的方向时豁免不成立 → 既不崩也不掉头，保持静止。
      */
     @Test
     void reverseAtSpawnStaysIdleWithoutCrash() {
@@ -235,8 +248,8 @@ class Level01AssemblyMovementTest {
         a.tick(InputIntent.empty(0));
         double spawnY = player(a).y();
 
-        a.tick(press(1, LogicalKey.DIR_UP));
-        a.tick(hold(2, LogicalKey.DIR_UP));
+        a.tick(press(1, LogicalKey.DIR_RIGHT));
+        a.tick(hold(2, LogicalKey.DIR_RIGHT));
 
         RenderViews.Player idle = player(a);
         assertEquals(MovementState.IDLE, idle.movementState());

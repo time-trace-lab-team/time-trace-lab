@@ -28,8 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class Level01AssemblyRoundLoopTest {
 
-    private static final double PLATE_LEFT_REGION_TOP_Y = 5 * 48.0;      // autoDock 区域上边界 = 240
-    private static final double SPAWN_Y = 1.5 * 48.0;                    // 出生节点 (5,1) 中心 = 72
+    private static final double PLATE_LEFT_REGION_TOP_Y = 6 * 48.0;      // 新左驻留板 (4,6) 的 autoDock 区域上边界 = 288
+    private static final double SPAWN_Y = 2.5 * 48.0;                    // 出生节点 (10,2) 中心 = 120
     private Level01Assembly assembly;
 
     @AfterEach
@@ -55,7 +55,7 @@ class Level01AssemblyRoundLoopTest {
         assertEquals(SPAWN_Y, atSpawn.y(), 1e-9, "轮初应回到出生点，实际 y=" + atSpawn.y());
         assertEquals(Direction.DOWN, atSpawn.direction());
 
-        // 第 2 轮必须能立即移动（出生点唯一出口是 DOWN）
+        // 第 2 轮必须能立即移动（出生点 (10,2) 有 DOWN 出口）
         for (int i = 0; i < 10; i++) {
             a.tick(hold(tick++, LogicalKey.DIR_DOWN));
         }
@@ -69,9 +69,7 @@ class Level01AssemblyRoundLoopTest {
         Level01Assembly a = started();
         long tick = 0;
         a.tick(InputIntent.empty(tick++));
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
-        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
+        tick = driveLeftPlateRoute(a, tick);
         a.tick(InputIntent.empty(tick));
 
         assertTrue(a.currentRecording().isPresent(), "PLAYING 中应有本轮缓冲");
@@ -92,9 +90,9 @@ class Level01AssemblyRoundLoopTest {
         assertTrue(player(a).y() < PLATE_LEFT_REGION_TOP_Y,
                 "轮初复位后活玩家不应留在驻留板上，实际 y=" + player(a).y());
 
-        // 走到残影录到 DOCK_ENTERED 之后的刻：此时只可能是残影在占板
-        // （按轮内刻判断，不能用累计输入刻号）
-        while (a.hudContext().roundTick() < 200) {
+        // 走到残影录到 DOCK_ENTERED 之后的刻（新地图左板在 roundTick ≈ 420 被压住）；
+        // 按轮内刻判断，不能用累计输入刻号
+        while (a.hudContext().roundTick() < 500) {
             a.tick(InputIntent.empty(tick++));
         }
         assertTrue(a.isPlateOccupied("L01_plate_left"),
@@ -103,13 +101,27 @@ class Level01AssemblyRoundLoopTest {
 
     // ---------- 工具 ----------
 
-    /** 第 1 轮从首个移动输入开始跑到轮末，其中前 168 个有效逻辑刻走到左驻留板并停驻。 */
+    /**
+     * 第 1 轮的左驻留板路线（新地图 18 格 = 432 刻）：
+     * (10,2) ↓ (10,3) ← (9,3) ← (8,3) ↓ (8,10) ← (7,10) ← (6,10) ← (5,10) ↑ (5,9) ↑ (5,8) ← (4,8) ↑ (4,7) ↑ (4,6)。
+     * 返回推进到停驻后的下一个输入刻号。
+     */
+    private static long driveLeftPlateRoute(Level01Assembly a, long tick) {
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 24);   // (10,2) → (10,3)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 48);   // (10,3) → (8,3)
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 168);  // (8,3) → (8,10)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);   // (8,10) → (5,10)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 48);     // (5,10) → (5,8)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 24);   // (5,8) → (4,8)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 48);     // (4,8) → 左驻留板 (4,6) 中心
+        return tick;
+    }
+
+    /** 第 1 轮从首个移动输入开始跑到轮末，其中 432 个有效逻辑刻走到左驻留板并停驻。 */
     private static long runFirstRoundToEnd(Level01Assembly a) {
         long tick = 0;
         a.tick(InputIntent.empty(tick++));
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);   // 出生点 → 分叉 (5,3)
-        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);   // 分叉 → 左端拐角 (2,3)
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);   // (2,3) → 驻留板 (2,5)
+        tick = driveLeftPlateRoute(a, tick);
         a.tick(InputIntent.empty(tick++));                // 停驻
         while (a.hudContext().currentRound() == 1) {
             a.tick(InputIntent.empty(tick++));

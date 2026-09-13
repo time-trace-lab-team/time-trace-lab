@@ -18,8 +18,11 @@ public final class SharedHud extends HBox {
     private final Label countdownLabel = new Label();
     private final Label roundLabel = new Label();
     private final Label phaseLabel = new Label();
+    /** 常驻目标提示：哪块驻留板被谁压着、现在该做什么。 */
+    private final Label objectiveLabel = new Label();
 
     private HudViewModel viewModel;
+    private ObjectiveViewModel objectiveViewModel;
 
     public SharedHud() {
         getStyleClass().add("shared-hud");
@@ -27,8 +30,10 @@ public final class SharedHud extends HBox {
         roundLabel.getStyleClass().add("shared-hud-round");
         phaseLabel.getStyleClass().add("shared-hud-phase");
         phaseLabel.setStyle("-fx-font-weight: bold; -fx-text-fill: #d99b24;");
+        objectiveLabel.getStyleClass().add("shared-hud-objective");
+        objectiveLabel.setStyle("-fx-text-fill: #9fb4cc;");
         setSpacing(16.0);
-        getChildren().addAll(countdownLabel, roundLabel, phaseLabel);
+        getChildren().addAll(countdownLabel, roundLabel, phaseLabel, objectiveLabel);
     }
 
     /**
@@ -47,6 +52,18 @@ public final class SharedHud extends HBox {
         countdownLabel.setText(next.countdownText());
         roundLabel.setText(next.roundText());
         phaseLabel.setText(HudViewModel.phaseText(phase));
+    }
+
+    /**
+     * 带常驻目标提示的刷新。
+     *
+     * <p>两块驻留板画得一模一样，玩家无法从画面判断"残影压着哪块、我该去哪块"，
+     * 因此这里必须每次都把当前目标写成一句人话（见 {@link ObjectiveViewModel#text()}）。</p>
+     */
+    public void render(TickContext context, GamePhase phase, ObjectiveViewModel objective) {
+        render(context, phase);
+        objectiveViewModel = Objects.requireNonNull(objective, "objective");
+        objectiveLabel.setText(objective.text());
     }
 
     /** 最近一次渲染的不可变投影；尚未渲染时返回 {@code null}。 */

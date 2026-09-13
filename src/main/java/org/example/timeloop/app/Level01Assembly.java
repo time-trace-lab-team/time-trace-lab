@@ -149,8 +149,66 @@ public final class Level01Assembly {
         clock.transition(GamePhase.PLAYING);
     }
 
+    /**
+     * 是否处于终局阶段（{@link GamePhase#FAILED} / {@link GamePhase#RESULT}）。
+     *
+     * <p>这两个阶段没有 gameplay 输入：{@link #tick} 会直接返回。集成层必须据此显示
+     * "按 R 重开"提示并接受重开按键，否则玩家会停在"角色不能动、也没有下一步"的死画面里。</p>
+     */
+    public boolean isFinalPhase() {
+        GamePhase phase = clock.phase();
+        return phase == GamePhase.FAILED || phase == GamePhase.RESULT;
+    }
+
+    /**
+     * 整局重开：放弃本次会话（清空残影、恢复初始机关状态），回到第 1 轮并立即恢复操作。
+     *
+     * <p>存在的理由：FAILED / RESULT 是终局阶段，{@code tick()} 直接 return —— 若不给重开入口，
+     * 失败之后玩家就永远动不了。重开复用 replay 的会话重置契约
+     * （{@link RecordingSession#restartFromFirstRound}，收尾停在 READY），本方法补上
+     * READY → PLAYING 与轮初复位，语义与 {@link #start()} 的末段保持一致。</p>
+     */
+    public void restart() {
+        if (clock.phase() == GamePhase.RESULT) {
+            // RESULT 只允许转移去 MENU / LEVEL_SELECT，不能直接回 READY。
+            clock.transition(GamePhase.MENU);
+            clock.transition(GamePhase.LEVEL_SELECT);
+        }
+        recording.restartFromFirstRound(() -> {
+            leftPlate.reset();
+            rightPlate.reset();
+            door.reset();
+            exit.reset();
+            dockController.reset(AutoDockResetReason.FULL_RESTART, clock.roundTick());
+        });
+        clock.transition(GamePhase.PLAYING);
+        resetPlayerForNewRound();
+        firstMovementStarted = false;
+        events.clear();
+    }
+
     public boolean isPlaying() {
         return clock.isPlaying();
+    }
+
+    /**
+     * 屏幕目标提示的只读投影：谁压着哪块驻留板 + 门是否已解锁。
+     *
+     * <p>存在的理由：两块驻留板外观完全相同，玩家站在<b>被残影占用</b>的板上时既不会驻留、
+     * 也没有任何反馈，于是会以为"我明明站在板上却按不了 E"。把占用者身份投影出去，
+     * HUD 才能直接写出"残影压着左板，你去右板"。</p>
+     */
+    public org.example.timeloop.ui.ObjectiveViewModel objectiveView() {
+        String leftOccupant = leftPlate.isOccupied() ? leftPlate.getOccupantId() : null;
+        String rightOccupant = rightPlate.isOccupied() ? rightPlate.getOccupantId() : null;
+        return new org.example.timeloop.ui.ObjectiveViewModel(
+                clock.currentRound(),
+                clock.maxRounds(),
+                PLAYER_ACTOR_ID.equals(leftOccupant),
+                leftOccupant != null && leftOccupant.startsWith(ECHO_ACTOR_ID_PREFIX),
+                PLAYER_ACTOR_ID.equals(rightOccupant),
+                rightOccupant != null && rightOccupant.startsWith(ECHO_ACTOR_ID_PREFIX),
+                door.isUnlocked());
     }
 
     public GamePhase phase() {

@@ -55,32 +55,25 @@ class Level01AssemblyLifecycleTest {
         Level01Assembly b = new Level01Assembly();
         a.start();
         b.start();
+        drive(a, 0, LogicalKey.DIR_DOWN, 20);
+        drive(b, 0, LogicalKey.DIR_DOWN, 20);
 
-        // A 跑完第一轮：在左驻留板停驻过（因此会生成残影）
-        long tick = drive(a, 0, LogicalKey.DIR_DOWN, 48);
-        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
-        while (a.hudContext().currentRound() == 1) {
-            a.tick(InputIntent.empty(tick++));
-        }
-        assertEquals(2, a.hudContext().currentRound());
+        // 直接占用 A 的左驻留板（与地图几何无关，专测“注册表实例是否独立”）
+        assertTrue(a.dockingPlate("L01_plate_left").orElseThrow().tryEnter("echo_1", 1, 5));
 
-        // B 独立跑完第一轮（只按 DOWN），也能正常进入第 2 轮
-        drive(b, 0, LogicalKey.DIR_DOWN, 980);
-        assertEquals(2, b.hudContext().currentRound(), "B 的轮次独立推进");
-
-        // A 的第 2 轮由残影占住左板；B 的板不受影响
-        while (a.hudContext().roundTick() < 200) {
-            a.tick(InputIntent.empty(tick++));
-        }
-        assertTrue(a.isPlateOccupied("L01_plate_left"), "A 的左板应由 A 的残影占住");
+        assertTrue(a.isPlateOccupied("L01_plate_left"), "A 自己的左板应被占用");
         assertFalse(a.isPlateOccupied("L01_plate_right"));
         assertFalse(b.isPlateOccupied("L01_plate_left"), "B 不受 A 的占用影响");
         assertFalse(b.isPlateOccupied("L01_plate_right"));
 
-        // app 不应再写入全局注册表单例
+        // app 不应再写入全局注册表单例（两套装配都不写）
         assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"));
         assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_right"));
+
+        // B 独立推进：它的时钟自己在走，不被 A 影响
+        long bTickBefore = b.hudContext().roundTick();
+        drive(b, 0, LogicalKey.DIR_DOWN, 30);
+        assertTrue(b.hudContext().roundTick() > bTickBefore, "B 的时钟独立推进");
 
         a.cleanup();
         b.cleanup();
