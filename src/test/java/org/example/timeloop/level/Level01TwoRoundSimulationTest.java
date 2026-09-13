@@ -61,8 +61,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>路线全程只按显式方向输入推进，<b>不读取任何 {@code defaultExit}</b>；
  * 本分支基于 {@code develop}，因此不断言关卡数据的 defaultExit 现状（那是 L-4a 的范围）。</p>
  *
- * <p>第 1 轮：出生点 → 分叉 → 左驻留板（停留）→ 离开释放 → 回分叉 → 右驻留板（停留到轮末）；
- * 第 2 轮：E1 按第 1 轮记录占左板 + 当前玩家占右板 → 门解锁 → 玩家在右板按 E 结算。</p>
+ * <p>第 1 轮：出生点 → 左驻留板 (4,6)（停留）→ 离开释放 → 折返重新压住左板直到轮末；
+ * 第 2 轮：E1 按第 1 轮记录占左板 + 当前玩家占右板 (18,8) → 门解锁 → 玩家在右板按 E 结算。</p>
  */
 class Level01TwoRoundSimulationTest {
 
@@ -84,35 +84,47 @@ class Level01TwoRoundSimulationTest {
         Sim sim = new Sim(Level01Footsteps.build());
 
         // ---------- 第 1 轮：为第 2 轮铺一块板 ----------
-        sim.advanceUntil("fork", Direction.DOWN, () -> sim.py() >= 168.0 - EPS);
-        sim.advanceUntil("left_turn", Direction.LEFT, () -> sim.px() <= 120.0 + EPS);
-        sim.advanceUntil("left_plate_settled", Direction.DOWN, () -> sim.py() >= 264.0 - EPS);
+        // 左板最短路：出生点 (10,2) ↓(10,3) ←(9,3) ←(8,3) ↓(8,10) ←(7,10) ←(6,10) ←(5,10)
+        //            ↑(5,9) ↑(5,8) ←(4,8) ↑(4,7) ↑(4,6)；18 格 = 432 刻。
+        sim.advanceUntil("c10_r3", Direction.DOWN, () -> sim.py() >= 168.0 - EPS);
+        sim.advanceUntil("c8_r3", Direction.LEFT, () -> sim.px() <= 408.0 + EPS);
+        sim.advanceUntil("c8_r10", Direction.DOWN, () -> sim.py() >= 504.0 - EPS);
+        sim.advanceUntil("c5_r10", Direction.LEFT, () -> sim.px() <= 264.0 + EPS);
+        sim.advanceUntil("c5_r8", Direction.UP, () -> sim.py() <= 408.0 + EPS);
+        sim.advanceUntil("c4_r8", Direction.LEFT, () -> sim.px() <= 216.0 + EPS);
+        sim.advanceUntil("left_plate_settled", Direction.UP, () -> sim.py() <= 312.0 + EPS);
         assertTrue(sim.docked, "到达左驻留板后应处于驻留状态");
         assertTrue(sim.leftPlate.isOccupied(), "左驻留板应被当前玩家占用");
         assertFalse(sim.door.isUnlocked(), "只有一块板被占用时门必须仍关闭");
 
         sim.dwellUntilTick(sim.lastTick + LEFT_PLATE_DWELL_TICKS, "left_plate_dwell_end");
 
-        // 离开驻留板：按下合法出口（左端节点唯一合法出口为 UP）
-        sim.advanceUntil("left_plate_release", Direction.UP, () -> !sim.leftPlate.isOccupied());
+        // 离开驻留板：新左板 (4,6) 的合法出口是 DOWN / RIGHT
+        sim.advanceUntil("left_plate_release", Direction.DOWN, () -> !sim.leftPlate.isOccupied());
         assertFalse(sim.docked, "离开后不应仍处于驻留状态");
         assertFalse(sim.leftPlate.isOccupied(), "离开驻留板必须释放占用");
         assertFalse(sim.door.isUnlocked(), "释放后没有任何板被占用，门必须回到关闭");
 
-        sim.advanceUntil("left_turn_back", Direction.UP, () -> sim.py() <= 168.0 + EPS);
-        sim.advanceUntil("fork_back", Direction.RIGHT, () -> sim.px() >= 264.0 - EPS);
-        sim.advanceUntil("right_turn", Direction.RIGHT, () -> sim.px() >= 408.0 - EPS);
-        sim.advanceUntil("right_plate_settled", Direction.DOWN, () -> sim.py() >= 264.0 - EPS);
-        assertTrue(sim.rightPlate.isOccupied(), "第 1 轮结束时右驻留板应由当前玩家占用");
+        // 走离区域后折返，第 1 轮结束时重新压住左板 —— 残影才会在第 2 轮复现「占着左板」的状态
+        sim.advanceUntil("left_plate_exited", Direction.DOWN, () -> sim.py() >= 360.0 - EPS);
+        sim.advanceUntil("left_plate_reenter", Direction.UP, () -> sim.leftPlate.isOccupied());
+        sim.advanceUntil("left_plate_resettled", Direction.UP, () -> sim.py() <= 312.0 + EPS);
+        assertTrue(sim.docked, "折返后应重新处于驻留状态");
+        assertTrue(sim.leftPlate.isOccupied(), "第 1 轮结束时左驻留板应由当前玩家占用");
 
         long roundOneEnd = sim.runToRoundEnd("round1_end");
         assertEquals(959L, roundOneEnd, "第 1 轮应在 roundTick = D-1 = 959 结束");
         assertEquals(2, sim.clock.currentRound(), "普通轮末事务后应进入第 2 轮");
 
         // ---------- 第 2 轮：E1 占左板 + 当前玩家占右板 → 门开 → 出口结算 ----------
-        sim.advanceUntil("r2_fork", Direction.DOWN, () -> sim.py() >= 168.0 - EPS);
-        sim.advanceUntil("r2_right_turn", Direction.RIGHT, () -> sim.px() >= 408.0 - EPS);
-        sim.advanceUntil("r2_right_plate_settled", Direction.DOWN, () -> sim.py() >= 264.0 - EPS);
+        // 右板最短路：出生点 (10,2) ↓(10,4) →(11,4) →(12,4) ↓(12,5) →(22,5) ↓(22,8)
+        //            ←(21,8) ←(20,8) ←(19,8) ←(18,8)；22 格 = 528 刻。
+        sim.advanceUntil("r2_c10_r4", Direction.DOWN, () -> sim.py() >= 216.0 - EPS);
+        sim.advanceUntil("r2_c12_r4", Direction.RIGHT, () -> sim.px() >= 600.0 - EPS);
+        sim.advanceUntil("r2_c12_r5", Direction.DOWN, () -> sim.py() >= 264.0 - EPS);
+        sim.advanceUntil("r2_c22_r5", Direction.RIGHT, () -> sim.px() >= 1080.0 - EPS);
+        sim.advanceUntil("r2_c22_r8", Direction.DOWN, () -> sim.py() >= 408.0 - EPS);
+        sim.advanceUntil("r2_right_plate_settled", Direction.LEFT, () -> sim.px() <= 888.0 + EPS);
 
         assertTrue(sim.rightPlate.isOccupied(), "第 2 轮当前玩家应占用右驻留板");
         assertEquals(PLAYER, sim.rightPlate.getOccupantId(), "右板占用者必须是当前玩家");
