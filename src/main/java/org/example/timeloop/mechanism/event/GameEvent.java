@@ -1,5 +1,18 @@
 package org.example.timeloop.mechanism.event;
 
+/**
+ * 机关事件的不可变记录。事件只描述"发生了什么"，**不承载 actor 归属的改写**。
+ *
+ * <p><b>{@code sourceRound} 的不变量（R5-B 冻结，PM 2026-09-13 裁决 §五）</b>：</p>
+ * <ul>
+ *   <li>{@code 0} = 活玩家（本轮的当前玩家）——该值**不得被残影替换**；</li>
+ *   <li>{@code N >= 1} = 第 N 轮产生的残影，且**回放写入机关时**的 actor 归属必须与
+ *       {@code "echo_" + N} 一致（见 {@code AutoDockService.requireActor} 与
+ *       {@code DockingPlate.onEvent(ECHO_DISAPPEARED)}）。</li>
+ * </ul>
+ * <p>录制侧写入的事件记录的是录制当时的活玩家（恒为 {@code 0}）；只有**回放侧写机关**时
+ * 才把归属改写成 {@code echo_<N>}，且该改写不改变事件本身的内容。</p>
+ */
 public record GameEvent(
         String eventType,
         String sourceId,
