@@ -1,10 +1,7 @@
 package org.example.timeloop.app;
 
 import org.example.timeloop.core.input.InputIntent;
-import org.example.timeloop.mechanism.DockingPlateRegistry;
-import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.render.RenderViews;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -13,14 +10,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 装配无头测试（不初始化 JavaFX）：验证第一关装配可构造、可开始、可逐刻推进、可出渲染视图。
+ *
+ * <p>BUG-002-LIFECYCLE Phase 1 后装配自带注册表与事件总线实例，测试不再需要全局清理。</p>
  */
 class Level01AssemblyTest {
-
-    @AfterEach
-    void clearGlobalMechanismState() {
-        EventDispatcher.getInstance().clear();
-        DockingPlateRegistry.getInstance().clear();
-    }
 
     @Test
     void assemblyStartsStepsAndProducesRenderViews() {
@@ -38,7 +31,7 @@ class Level01AssemblyTest {
         assertTrue(assembly.hudContext().roundTick() >= 0);
 
         assembly.cleanup();
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"));
+        assertFalse(assembly.isPlateOccupied("L01_plate_left"));
     }
 
     @Test

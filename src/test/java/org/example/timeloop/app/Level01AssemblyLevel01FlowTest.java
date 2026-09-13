@@ -6,8 +6,6 @@ import org.example.timeloop.core.MovementState;
 import org.example.timeloop.core.input.InputIntent;
 import org.example.timeloop.core.input.LogicalKey;
 import org.example.timeloop.mechanism.DockingPlate;
-import org.example.timeloop.mechanism.DockingPlateRegistry;
-import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.render.RenderViews;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -43,13 +41,11 @@ class Level01AssemblyLevel01FlowTest {
     private Level01Assembly assembly;
 
     @AfterEach
-    void clearGlobalsAndCleanup() {
+    void cleanupAssembly() {
         if (assembly != null) {
             assembly.cleanup();
             assembly = null;
         }
-        EventDispatcher.getInstance().clear();
-        DockingPlateRegistry.getInstance().clear();
     }
 
     @Test
@@ -62,7 +58,7 @@ class Level01AssemblyLevel01FlowTest {
         while (a.hudContext().roundTick() < 500) {
             a.tick(InputIntent.empty(tick++));
         }
-        DockingPlate left = DockingPlateRegistry.getInstance().get("L01_plate_left");
+        DockingPlate left = a.dockingPlate("L01_plate_left").orElseThrow();
         assertNotNull(left);
         assertTrue(left.isOccupied(), "第 2 轮该由上一轮残影占住左驻留板");
         assertEquals("echo_1", left.getOccupantId(),
@@ -85,8 +81,8 @@ class Level01AssemblyLevel01FlowTest {
         assertEquals(MovementState.DOCKED, docked.movementState(), "应在右驻留板上停驻");
         assertEquals(RIGHT_PLATE_X, docked.x(), 1e-9);
         assertEquals(RIGHT_PLATE_Y, docked.y(), 1e-9);
-        assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_right"));
-        assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"),
+        assertTrue(a.isPlateOccupied("L01_plate_right"));
+        assertTrue(a.isPlateOccupied("L01_plate_left"),
                 "左板应仍由残影占住");
 
         // 在右驻留板中心（距出口终端恰好 1 格）按 E → 宽容半径内结算
@@ -119,9 +115,9 @@ class Level01AssemblyLevel01FlowTest {
             a.tick(InputIntent.empty(tick++));
         }
 
-        assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_right"),
+        assertTrue(a.isPlateOccupied("L01_plate_right"),
                 "右板应由第 2 轮残影占住");
-        assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"),
+        assertTrue(a.isPlateOccupied("L01_plate_left"),
                 "左板应由当前玩家占住");
         RenderViews.Player onLeftPlate = player(a);
         assertEquals(MovementState.DOCKED, onLeftPlate.movementState());

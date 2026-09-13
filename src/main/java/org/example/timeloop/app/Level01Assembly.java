@@ -24,6 +24,7 @@ import org.example.timeloop.level.model.EntitySpawnInfo;
 import org.example.timeloop.level.model.LevelData;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.DockingPlate;
+import org.example.timeloop.mechanism.DockingPlateOccupancyPort;
 import org.example.timeloop.mechanism.DockingPlateRegistry;
 import org.example.timeloop.mechanism.Door;
 import org.example.timeloop.mechanism.ExitTerminal;
@@ -31,6 +32,7 @@ import org.example.timeloop.mechanism.autodock.AutoDockResetReason;
 import org.example.timeloop.mechanism.autodock.AutoDockService;
 import org.example.timeloop.mechanism.autodock.AutoDockView;
 import org.example.timeloop.mechanism.event.EventDispatcher;
+import org.example.timeloop.mechanism.event.GameEventBus;
 import org.example.timeloop.render.RenderViews;
 import org.example.timeloop.replay.EchoQueue;
 import org.example.timeloop.replay.EchoState;
@@ -90,6 +92,14 @@ public final class Level01Assembly {
      */
     private final List<RenderViews.PathNodeMarker> pathNodeMarkers;
 
+    /**
+     * 本关装配自己持有的板占用注册表与事件总线（BUG-002-LIFECYCLE Phase 1 的注入形态）。
+     *
+     * <p>不再使用全局单例：同一 JVM 内可以有多个装配实例而互不干扰；场景切换/重开时随装配一起丢弃。</p>
+     */
+    private final DockingPlateOccupancyPort occupancy;
+    private final GameEventBus eventBus;
+
     private final List<TimelineEvent> events = new ArrayList<>();
     private PlayerFrame lastFrame;
     private long lastTick = -1;
@@ -116,11 +126,16 @@ public final class Level01Assembly {
         EntitySpawnInfo exitInfo = entity("L01_exit_00");
         DoorInfo doorInfo = levelData.getDoors().get(0);
 
-        this.leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos());
-        this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos());
-        this.door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds());
+        // BUG-002-LIFECYCLE Phase 1：板/门/出口全部通过窄端口注入本装配自己的实例，
+        // 不再读写 DockingPlateRegistry / EventDispatcher 的兼容单例。
+        this.occupancy = new DockingPlateRegistry();
+        this.eventBus = new EventDispatcher();
+        this.leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos(), occupancy, eventBus);
+        this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos(), occupancy, eventBus);
+        this.door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds(),
+                occupancy, eventBus);
         this.exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId(),
-                ExitTerminal.interactRadiusForTileSize(levelData.getTileSize()));
+                ExitTerminal.interactRadiusForTileSize(levelData.getTileSize()), eventBus);
     }
 
     /** 进入第一关会话：BOOT → … → READY → 复位玩家 → 开本轮缓冲 → PLAYING。 */
@@ -226,6 +241,24 @@ public final class Level01Assembly {
         return pathNodeMarkers;
     }
 
+    /** 本装配持有的驻留板（只读；供 HUD 与集成测试，不暴露注册表实现）。 */
+    public Optional<DockingPlate> dockingPlate(String plateId) {
+        Objects.requireNonNull(plateId, "plateId");
+        if (leftPlate.getId().equals(plateId)) {
+            return Optional.of(leftPlate);
+        }
+        if (rightPlate.getId().equals(plateId)) {
+            return Optional.of(rightPlate);
+        }
+        return Optional.empty();
+    }
+
+    /** 该驻留板当前是否被占用（只读；走本装配自己的占用端口，与全局单例无关）。 */
+    public boolean isPlateOccupied(String plateId) {
+        Objects.requireNonNull(plateId, "plateId");
+        return occupancy.isOccupied(plateId);
+    }
+
     /** 推进一个逻辑刻：输入 → autoDock 决策 → 巡行/驻留 → 记录帧 → 事件 → 时钟推进。 */
     public void tick(InputIntent input) {
         Objects.requireNonNull(input, "input");
@@ -325,14 +358,17 @@ public final class Level01Assembly {
         return new RenderViews.Frame(playerView, mechanisms, echoes);
     }
 
-    /** 关闭/退出清理：释放机关占用并清空全局注册表，避免旧会话泄漏。 */
+    /**
+     * 关闭/退出清理：释放本装配的机关并丢弃自己持有的注册表与事件总线实例。
+     *
+     * <p>BUG-002-LIFECYCLE Phase 1：不再触碰全局单例 —— 实例随装配一起被 GC，
+     * 因此同一 JVM 内可以有多个装配，互不干扰，测试也不需要再手工清理全局状态。</p>
+     */
     public void cleanup() {
         leftPlate.dispose();
         rightPlate.dispose();
         door.dispose();
         exit.dispose();
-        DockingPlateRegistry.getInstance().clear();
-        EventDispatcher.getInstance().clear();
     }
 
     // ---------- 内部 ----------

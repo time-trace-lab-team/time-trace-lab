@@ -4,8 +4,6 @@ import org.example.timeloop.core.Direction;
 import org.example.timeloop.core.GamePhase;
 import org.example.timeloop.core.input.InputIntent;
 import org.example.timeloop.core.input.LogicalKey;
-import org.example.timeloop.mechanism.DockingPlateRegistry;
-import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.render.RenderViews;
 import org.example.timeloop.replay.TimelineEvent;
 import org.junit.jupiter.api.AfterEach;
@@ -35,13 +33,11 @@ class Level01AssemblyRoundLoopTest {
     private Level01Assembly assembly;
 
     @AfterEach
-    void clearGlobalsAndCleanup() {
+    void cleanupAssembly() {
         if (assembly != null) {
             assembly.cleanup();
             assembly = null;
         }
-        EventDispatcher.getInstance().clear();
-        DockingPlateRegistry.getInstance().clear();
     }
 
     @Test
@@ -99,7 +95,7 @@ class Level01AssemblyRoundLoopTest {
         while (a.hudContext().roundTick() < 500) {
             a.tick(InputIntent.empty(tick++));
         }
-        assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"),
+        assertTrue(a.isPlateOccupied("L01_plate_left"),
                 "第 2 轮该由上一轮残影占住左驻留板（录制→回放闭环）");
     }
 
