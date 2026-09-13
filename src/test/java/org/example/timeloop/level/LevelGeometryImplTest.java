@@ -19,14 +19,16 @@ class LevelGeometryImplTest {
         LevelGeometry geometry = new LevelGeometryImpl(Level01Footsteps.build());
 
         assertEquals(48.0, geometry.getTileSize());
-        assertEquals(new Vector2D(264.0, 72.0), geometry.getSpawnPosition());
-        assertTrue(geometry.hasNode("L01_node_fork"));
-        assertTrue(geometry.isConnected("L01_node_fork", "L01_node_left_01"));
-        assertTrue(geometry.isConnected("L01_node_fork", "L01_node_right_01"));
-        assertTrue(geometry.isConnected("L01_node_right_approach", "L01_node_exit_approach"));
-        assertTrue(geometry.isConnected("L01_node_exit_approach", "L01_node_exit_terminal"));
-        assertEquals(java.util.Set.of(PathNode.Dir.UP),
-                geometry.getValidExits("L01_node_left_end"));
+        assertEquals(new Vector2D(504.0, 120.0), geometry.getSpawnPosition());
+        assertTrue(geometry.hasNode("L01_node_spawn"));
+        // 出生点 (10,2) 是三度路口：向左到 (9,2)、向下到 (10,3) 两条不同分支都必须连通。
+        assertTrue(geometry.isConnected("L01_node_spawn", "L01_node_c9_r2"));
+        assertTrue(geometry.isConnected("L01_node_spawn", "L01_node_c10_r3"));
+        // 右板前一个节点 → 右驻留板 → 出口终端，构成通关链路的最后一段。
+        assertTrue(geometry.isConnected("L01_node_c17_r8", "L01_node_plate_right"));
+        assertTrue(geometry.isConnected("L01_node_plate_right", "L01_node_exit_terminal"));
+        assertEquals(java.util.Set.of(PathNode.Dir.RIGHT),
+                geometry.getValidExits("L01_node_c3_r4"));
     }
 
     @Test
@@ -60,27 +62,26 @@ class LevelGeometryImplTest {
         LevelGeometry geometry = new LevelGeometryImpl(Level01Footsteps.build());
 
         assertThrows(UnsupportedOperationException.class,
-                () -> geometry.getValidExits("L01_node_fork").clear());
+                () -> geometry.getValidExits("L01_node_spawn").clear());
         assertThrows(UnsupportedOperationException.class,
-                () -> geometry.getNeighbors("L01_node_fork").clear());
+                () -> geometry.getNeighbors("L01_node_spawn").clear());
     }
 
     @Test
     void pathNodeViewsAreDeeplyReadOnly() {
         LevelGeometry geometry = new LevelGeometryImpl(Level01Footsteps.build());
-        PathNode fork = geometry.getPathNodes().stream()
-                .filter(node -> "L01_node_fork".equals(node.getId()))
+        PathNode spawn = geometry.getPathNodes().stream()
+                .filter(node -> "L01_node_spawn".equals(node.getId()))
                 .findFirst()
                 .orElseThrow();
 
         assertThrows(UnsupportedOperationException.class,
-                () -> fork.getAllowDirs().clear());
+                () -> spawn.getAllowDirs().clear());
         assertEquals(java.util.Set.of(
                         PathNode.Dir.UP,
                         PathNode.Dir.DOWN,
-                        PathNode.Dir.LEFT,
-                        PathNode.Dir.RIGHT),
-                geometry.getValidExits("L01_node_fork"));
+                        PathNode.Dir.LEFT),
+                geometry.getValidExits("L01_node_spawn"));
     }
 
     private static void assertCellCenter(Vector2D position, double tileSize, String label) {

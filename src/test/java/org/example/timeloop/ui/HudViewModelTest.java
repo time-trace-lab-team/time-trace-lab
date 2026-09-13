@@ -52,9 +52,10 @@ class HudViewModelTest {
     }
 
     @Test
-    void terminalPhaseHasVisibleFeedback() {
-        assertEquals("通关完成", HudViewModel.phaseText(GamePhase.RESULT));
-        assertEquals("挑战失败", HudViewModel.phaseText(GamePhase.FAILED));
+    void terminalPhaseHasVisibleFeedbackAndTellsThePlayerHowToContinue() {
+        // 终局阶段不再接受 gameplay 输入，提示必须包含重开方式，否则玩家会卡在死画面。
+        assertEquals("通关完成 · 按 R 再玩一次", HudViewModel.phaseText(GamePhase.RESULT));
+        assertEquals("挑战失败 · 按 R 重开", HudViewModel.phaseText(GamePhase.FAILED));
         assertEquals("", HudViewModel.phaseText(GamePhase.PLAYING));
     }
 }

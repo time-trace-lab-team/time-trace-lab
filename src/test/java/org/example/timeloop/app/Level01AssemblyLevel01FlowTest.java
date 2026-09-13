@@ -26,7 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li><b>ECHO-ACTOR E-1</b>：残影回放写入机关的 actor 必须是 {@code echo_<sourceRound>}，
  *       而不是记录里的活玩家 {@code player}（否则残影占用与活玩家无法区分、残影消失时驻留板不会释放）；</li>
  *   <li><b>APP-2</b>：出口终端必须在宽容半径内才结算 —— 右驻留板中心可按 {@code E} 通关，
- *       而「门已解锁但离出口 7 格」时按 {@code E} 不得结算。</li>
+ *       而「门已解锁但玩家在左驻留板（离出口约 15 格）」时按 {@code E} 不得结算。</li>
  * </ul>
  *
  * <p>两轮/三轮脚本同时充当「第一关在自由移动下可通关」的集成证据。</p>
@@ -34,8 +34,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class Level01AssemblyLevel01FlowTest {
 
     private static final double TILE_SIZE = 48.0;
-    /** 左驻留板节点 (2,5) 中心 y；到出口终端 (9,5) 相距 7 格，远超 1.5 格宽容半径。 */
-    private static final double LEFT_PLATE_Y = 5.5 * TILE_SIZE;
+    /** 新地图左驻留板 (4,6) 中心 y = 312；到出口终端 (19,8) = (936,408) 相距约 726，远超 1.5 格半径 72。 */
+    private static final double LEFT_PLATE_Y = 6.5 * TILE_SIZE;
+    /** 新地图右驻留板 (18,8) 中心；与出口终端 (19,8) 恰好相距 1 格。 */
+    private static final double RIGHT_PLATE_X = 18.5 * TILE_SIZE;
+    private static final double RIGHT_PLATE_Y = 8.5 * TILE_SIZE;
 
     private Level01Assembly assembly;
 
@@ -55,8 +58,8 @@ class Level01AssemblyLevel01FlowTest {
         long tick = runFirstRoundToEnd(a);
         assertEquals(2, a.hudContext().currentRound());
 
-        // 第 2 轮：残影复现第 1 轮记录里的左驻留板 DOCK_ENTERED
-        while (a.hudContext().roundTick() < 200) {
+        // 第 2 轮：残影在 roundTick ≈ 420 复现第 1 轮记录里的左驻留板 DOCK_ENTERED
+        while (a.hudContext().roundTick() < 500) {
             a.tick(InputIntent.empty(tick++));
         }
         DockingPlate left = DockingPlateRegistry.getInstance().get("L01_plate_left");
@@ -72,18 +75,16 @@ class Level01AssemblyLevel01FlowTest {
         Level01Assembly a = started();
         long tick = runFirstRoundToEnd(a);
 
-        // 第 2 轮：走到右驻留板 (8,5) → 与残影占住的左板共同解锁门
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);      // 出生点 → 分叉 (5,3)
-        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 72);     // 分叉 → (8,3)
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);      // (8,3) → 右驻留板 (8,5)
-        for (int i = 0; i < 20; i++) {
+        // 第 2 轮：走到右驻留板 (18,8) → 与残影占住的左板共同解锁门
+        tick = driveRightPlateRoute(a, tick);
+        for (int i = 0; i < 3; i++) {
             a.tick(InputIntent.empty(tick++));               // 走到机关中心并停驻
         }
 
         RenderViews.Player docked = player(a);
         assertEquals(MovementState.DOCKED, docked.movementState(), "应在右驻留板上停驻");
-        assertEquals(8.5 * TILE_SIZE, docked.x(), 1e-9);
-        assertEquals(LEFT_PLATE_Y, docked.y(), 1e-9);
+        assertEquals(RIGHT_PLATE_X, docked.x(), 1e-9);
+        assertEquals(RIGHT_PLATE_Y, docked.y(), 1e-9);
         assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_right"));
         assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"),
                 "左板应仍由残影占住");
@@ -99,19 +100,22 @@ class Level01AssemblyLevel01FlowTest {
         long tick = runFirstRoundToEnd(a);
 
         // 第 2 轮：占住右驻留板并停驻到轮末 → 第 2 轮残影将在第 3 轮占右板
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
-        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 72);
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
+        tick = driveRightPlateRoute(a, tick);
+        for (int i = 0; i < 3; i++) {
+            a.tick(InputIntent.empty(tick++));
+        }
         while (a.hudContext().currentRound() < 3) {
             a.tick(InputIntent.empty(tick++));
         }
         assertEquals(3, a.hudContext().currentRound());
 
-        // 第 3 轮：残影占右板，玩家去占左板 → 门解锁，但玩家离出口 7 格
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
-        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);
-        for (int i = 0; i < 20; i++) {
+        // 第 3 轮：残影在 roundTick ≈ 516 压住右板；玩家先去占左板（432 刻），
+        // 之后等残影到位 → 两板同时被占、门解锁，但玩家离出口约 726 世界单位。
+        tick = driveLeftPlateRoute(a, tick);
+        for (int i = 0; i < 3; i++) {
+            a.tick(InputIntent.empty(tick++));
+        }
+        while (a.hudContext().roundTick() < 600) {
             a.tick(InputIntent.empty(tick++));
         }
 
@@ -127,18 +131,39 @@ class Level01AssemblyLevel01FlowTest {
             a.tick(pressKey(tick++, LogicalKey.INTERACT));
         }
         assertEquals(GamePhase.PLAYING, a.phase(),
-                "门虽已解锁（两板皆占用），但玩家离出口 7 格 → 不得结算");
+                "门虽已解锁（两板皆占用），但玩家在左板 (4,6) 离出口 (19,8) 约 726 → 不得结算");
         assertEquals(3, a.hudContext().currentRound());
     }
 
     // ---------- 第一轮脚本：走到左驻留板并停驻，直到轮末 ----------
 
+    /** 新地图左驻留板路线（18 格 = 432 刻）：出生点 ↓(10,3) ←(8,3) ↓(8,10) ←(5,10) ↑(5,8) ←(4,8) ↑(4,6)。 */
+    private static long driveLeftPlateRoute(Level01Assembly a, long tick) {
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 24);      // (10,2) → (10,3)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 48);      // (10,3) → (8,3)
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 168);     // (8,3) → (8,10)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);      // (8,10) → (5,10)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 48);        // (5,10) → (5,8)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 24);      // (5,8) → (4,8)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 48);        // (4,8) → 左驻留板 (4,6)
+        return tick;
+    }
+
+    /** 新地图右驻留板路线（22 格 = 528 刻）：出生点 ↓(10,4) →(12,4) ↓(12,5) →(22,5) ↓(22,8) ←(18,8)。 */
+    private static long driveRightPlateRoute(Level01Assembly a, long tick) {
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);      // (10,2) → (10,4)
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 48);     // (10,4) → (12,4)
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 24);      // (12,4) → (12,5)
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 240);    // (12,5) → (22,5)
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 72);      // (22,5) → (22,8)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 96);      // (22,8) → 右驻留板 (18,8)
+        return tick;
+    }
+
     private static long runFirstRoundToEnd(Level01Assembly a) {
         long tick = 0;
         a.tick(InputIntent.empty(tick++));
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);      // 出生点 → 分叉 (5,3)
-        tick = drive(a, tick, LogicalKey.DIR_LEFT, 72);      // 分叉 → (2,3)
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 48);      // (2,3) → 左驻留板 (2,5)
+        tick = driveLeftPlateRoute(a, tick);
         a.tick(InputIntent.empty(tick++));                   // 停驻
         while (a.hudContext().currentRound() == 1) {
             a.tick(InputIntent.empty(tick++));

@@ -51,12 +51,18 @@ public record HudViewModel(int remainingSeconds,
         return "第 " + currentRound + " / " + maxRounds + " 轮";
     }
 
-    /** Returns the terminal phase feedback shown beside the shared timer. */
+    /**
+     * Returns the terminal phase feedback shown beside the shared timer.
+     *
+     * <p>终局阶段（通关 / 失败）必须同时给出<b>下一步怎么办</b>：这两个阶段不再接受 gameplay 输入，
+     * 若只显示结果文字，玩家会停在"角色不能动、也没有下一步"的死画面里。重开键见
+     * {@code TimeTraceLabApplication#isRestartKey}。</p>
+     */
     public static String phaseText(GamePhase phase) {
         Objects.requireNonNull(phase, "phase");
         return switch (phase) {
-            case RESULT -> "通关完成";
-            case FAILED -> "挑战失败";
+            case RESULT -> "通关完成 · 按 R 再玩一次";
+            case FAILED -> "挑战失败 · 按 R 重开";
             default -> "";
         };
     }

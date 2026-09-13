@@ -2,7 +2,9 @@ package org.example.timeloop.render;
 
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.paint.Color;
+import javafx.scene.paint.CycleMethod;
+import javafx.scene.paint.RadialGradient;
+import javafx.scene.paint.Stop;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,8 +40,14 @@ public final class CanvasAdapter {
 
     public void renderFrame(double worldW, double worldH, double alpha) {
         GraphicsContext gc = canvas.getGraphicsContext2D();
-        gc.setFill(Color.web("#0C1018"));
-        gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+        double w = canvas.getWidth(), h = canvas.getHeight();
+
+        // 径向渐变背景：中心略亮，四周压黑
+        gc.setFill(new RadialGradient(0, 0, w / 2.0, h / 2.0, Math.max(w, h) * 0.70,
+                false, CycleMethod.NO_CYCLE,
+                new Stop(0, RenderPalette.BACKGROUND_CENTER),
+                new Stop(1, RenderPalette.BACKGROUND)));
+        gc.fillRect(0, 0, w, h);
 
         for (RenderLayer layer : layers) {
             gc.save();
