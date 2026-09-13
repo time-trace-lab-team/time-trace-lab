@@ -4,8 +4,6 @@ import org.example.timeloop.core.Direction;
 import org.example.timeloop.core.MovementState;
 import org.example.timeloop.core.input.InputIntent;
 import org.example.timeloop.core.input.LogicalKey;
-import org.example.timeloop.mechanism.DockingPlateRegistry;
-import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.render.RenderViews;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -36,13 +34,11 @@ class Level01AssemblyMovementTest {
     private Level01Assembly assembly;
 
     @AfterEach
-    void clearGlobalsAndCleanup() {
+    void cleanupAssembly() {
         if (assembly != null) {
             assembly.cleanup();
             assembly = null;
         }
-        EventDispatcher.getInstance().clear();
-        DockingPlateRegistry.getInstance().clear();
     }
 
     @Test
@@ -215,7 +211,7 @@ class Level01AssemblyMovementTest {
         RenderViews.Player docked = player(a);
         assertEquals(MovementState.DOCKED, docked.movementState());
         assertEquals(5.5 * TILE_SIZE, docked.y(), EPSILON, "停驻位置应为机关中心 (2,5) = 264");
-        assertTrue(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"));
+        assertTrue(a.isPlateOccupied("L01_plate_left"));
 
         a.tick(press(tick++, LogicalKey.DIR_UP));                 // 唯一合法离开方向
         for (int i = 0; i < 20; i++) {
@@ -225,7 +221,7 @@ class Level01AssemblyMovementTest {
         RenderViews.Player left = player(a);
         assertEquals(Direction.UP, left.direction());
         assertTrue(left.y() < 5 * TILE_SIZE, "应沿中心线走出 autoDock 区域，实际 y=" + left.y());
-        assertTrue(!DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"),
+        assertTrue(!a.isPlateOccupied("L01_plate_left"),
                 "离开区域后占用应被释放");
     }
 
