@@ -13,134 +13,259 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 第二关「低姿穿行 + 门房」· L2-A 门房链（开发三，卡号 L02-A-DEV3）。
+ * 第二关「闸链」· 新地图（28×16）关卡数据。
  *
- * <p>依据 L02-门房与双残影-PM裁决.md §十一（官方解 R1 不进房）+ §十三.2（几何修正）：
- * R2 的进房路线不得经过门外板，否则 E1 与玩家在窗口起点同刻争抢门外板、写入顺序不可控。
- * 因此门外板留在第 6 列（R1 路线），R2 改走第 5 列从南侧进房门。</p>
+ * <p><b>唯一事实来源</b>：项目方桌面工具 {@code Level02Render.java} 的 {@code build()} / {@code MAP} /
+ * {@code entities()} / {@code doors()}。本类是该数据的忠实移植（同样的格、同样的 ID、同样的刻表常量），
+ * 不含任何本地发明。</p>
  *
- * <p>刻表（tileSize 48、baseSpeed 2 → 24 刻/格）：出生点→门外板 9 格=216；窗口 (216,396) 时长 180；
- * 出生点→房门南邻点 7 格=168（早于窗口 48 刻）；跨门刻 252；上内板刻 276；
- * 门外板→主驻留板 12 格=288（396 离开 → 684 到主板）；出生点→闸门 14 格=336；R3 解锁刻 684。</p>
+ * <p><b>地形</b>（{@link #MAP}，{@code #} 墙 / {@code .} 地板）：以「厅 + 1 格厚墙」为主，只有
+ * <b>一处</b>真正的单通道 —— 通道 A：第 5 列 r6~r8（3 格，两侧墙 c4/c6），把北厅接到南厅。
+ * 每个地板格都是路径节点，ID 为 {@code L02_node_c<col>_r<row>}，可走方向由四邻是否地板推得。
+ * 共 300 个节点；{@code GroundWallLayer} 不绘制的「黑洞格」7 个，全在边框上。</p>
+ *
+ * <p><b>机关</b>：5 块<b>普通驻留板</b>（{@code dock_plate} + {@code autoDock=true}，
+ * <b>没有</b> {@code role=switch}、<b>不锁存</b> —— 占即开、离即关）、3 扇门、1 个出口终端、
+ * 1 束射线。压板的人自己永远走不过自己开的门，这正是本关必须使用残影的原因。</p>
+ *
+ * <p><b>官方解（3 轮，每格 24 刻）</b>：</p>
+ * <ul>
+ *   <li><b>R1</b>：出生点走 10 格到 {@link #PLATE_GATE}（刻 {@link #GATE_WINDOW_START}）造 D1 窗口，
+ *       站在板上到刻 {@link #GATE_WINDOW_END}；再走 10 格到 {@link #PLATE_MAIN}
+ *       （刻 {@link #MAIN_ARRIVAL}）驻留到轮末 → 生成 E1；</li>
+ *   <li><b>R2</b>：借 E1 的窗口在刻 {@link #GATE_DOOR_CROSS} 跨过 {@link #DOOR_GATE} 进东翼，
+ *       走 19 格到 {@link #PLATE_RELAY}（刻 {@link #RELAY_WINDOW_START}）踩住到刻
+ *       {@link #RELAY_WINDOW_END} 造 D2 窗口，再走 9 格到 {@link #PLATE_INNER}
+ *       （刻 {@link #INNER_ARRIVAL}）驻留到轮末 → 生成 E2；</li>
+ *   <li><b>R3</b>：E1 复现「闸板窗口 + 主板」，E2 复现「中继窗口 + 内板」；玩家在窗口内
+ *       （刻 {@link #RELAY_DOOR_CROSS}）跨过 {@link #DOOR_RELAY} 进右上角内室，
+ *       在刻 {@link #CORE_ARRIVAL} 踩住 {@link #PLATE_CORE}；
+ *       刻 {@link #EXIT_UNLOCK_TICK} 内板 + 主板 + 终结板同刻被占 → {@link #DOOR_EXIT} 解锁 → 按 E 通关。</li>
+ * </ul>
  */
 public final class Level02Corridor {
 
     private Level02Corridor() {}
 
-    public static final double TILE_SIZE = 48.0;
-    public static final long DURATION_TICKS = 1200L;
-    public static final int MAX_ROUNDS = 4;
-    public static final int ECHO_LIFE_L = 2;
+    // ================= 网格与轮参数 =================
 
-    public static final int GRID_COLS = 24;
-    public static final int GRID_ROWS = 14;
+    public static final double TILE_SIZE = 48.0;
+    public static final int GRID_COLS = 28;
+    public static final int GRID_ROWS = 16;
 
     /** 每格走行刻数（baseSpeed 2 px/tick、tileSize 48）。 */
     public static final long TICKS_PER_TILE = 24L;
 
-    public static final String NODE_SPAWN = "L02_node_spawn";
-    public static final String NODE_PLATE_DOOR = "L02_node_plate_door";
-    public static final String NODE_DOOR_ROOM = "L02_node_door_room";
-    public static final String NODE_DOOR_SOUTH = "L02_node_door_south";
-    public static final String NODE_PLATE_INNER = "L02_node_plate_inner";
-    public static final String NODE_PLATE_MAIN = "L02_node_plate_main";
-    public static final String NODE_EXIT = "L02_node_exit_terminal";
+    public static final long DURATION_TICKS = 1200L;
+    public static final int MAX_ROUNDS = 4;
+    public static final int ECHO_LIFE_L = 2;
 
-    public static final String PLATE_DOOR = "L02_plate_door";
+    /**
+     * {@code #} 墙、{@code .} 地板（逐字移植自项目方桌面工具的 {@code Level02Render.MAP}）。
+     *
+     * <p>与桌面工具一致：栅格是 {@code [row][col]}，第 0 行在上。</p>
+     */
+    public static final String[] MAP = {
+            "############################",   // 0
+            "#...........#..............#",   // 1
+            "#.....#.....#..............#",   // 2
+            "#.....#.....#..............#",   // 3
+            "#...........#..............#",   // 4
+            "#.....#.....#########.######",   // 5  ← r5 墙，缺口 (21,5) = D2
+            "#...#.#.....#......#..#....#",   // 6  ┐  东翼隔断 c22（r6-8）
+            "#...#.#.....#..#...#..#....#",   // 7  ├ 通道 A：c5 单通道（两侧墙 c4 / c6）
+            "#.###.#######..#...#..#....#",   // 8  ┘
+            "#.......#...#..#...#.......#",   // 9
+            "#.......#...#......#....##.#",   // 10
+            "#.......#..................#",   // 11 ← c12 缺口 = D1
+            "#.......#...#...####.......#",   // 12
+            "#...........#......#.......#",   // 13
+            "#...........#..............#",   // 14
+            "############################",   // 15
+    };
+
+    // ================= 机制 ID（桌面工具 P1..P5 / D1..D3） =================
+
+    /** P1 外闸板：开 D1。 */
+    public static final String PLATE_GATE = "L02_plate_gate";
+    /** P2 中继板：普通驻留板（占即开、离即关），开 D2。 */
+    public static final String PLATE_RELAY = "L02_plate_relay";
+    /** P3 内板：右下角，终点闸三块之一。 */
     public static final String PLATE_INNER = "L02_plate_inner";
+    /** P4 主板：北厅东侧，终点闸三块之一。 */
     public static final String PLATE_MAIN = "L02_plate_main";
-    public static final String DOOR_ROOM = "L02_door_room";
+    /** P5 终结板：右上角内室，终点闸三块之一（距出口 48 ≤ 72）。 */
+    public static final String PLATE_CORE = "L02_plate_core";
+
+    /** D1 外闸：东翼唯一入口，需 {@link #PLATE_GATE}。 */
+    public static final String DOOR_GATE = "L02_door_gate";
+    /** D2 内室门：右上角内室唯一入口，需 {@link #PLATE_RELAY}。 */
+    public static final String DOOR_RELAY = "L02_door_relay";
+    /** D3 终点闸：需 {@link #PLATE_INNER} + {@link #PLATE_MAIN} + {@link #PLATE_CORE} 同时被占。 */
     public static final String DOOR_EXIT = "L02_door_exit";
+
     public static final String EXIT = "L02_exit_00";
-
-    /** 窗口起点：R1 踩住门外板的刻。 */
-    public static final long WINDOW_START = 216L;
-    /** 窗口终点：R1 离开门外板的刻（房门同刻回锁）。 */
-    public static final long WINDOW_END = 396L;
-    public static final long R2_SOUTH_ARRIVAL = 168L;
-    public static final long R2_DOOR_CROSS = 252L;
-    public static final long R2_INNER_ARRIVAL = 276L;
-    public static final long R1_MAIN_ARRIVAL = 684L;
-
-    // ---- L2-B：短射线走廊（裁决 §二「短射线走廊（保留）」；卡 §三）----
-    /** 射线机制 ID（`ray` 类型词，符合稳定 ID 规范）。 */
     public static final String RAY_CORRIDOR = "L02_ray_01";
-    /** 竖直判定线所在世界 x（第 8/9 格之间，玩家沿主走廊往返时必然穿过）。 */
-    public static final double RAY_X = 9.0 * TILE_SIZE;
-    /** 预警起点（共享 roundTick 内的偏移）。 */
-    public static final long RAY_WARNING_START_TICK = 0L;
-    /** 预警时长：72 刻 = 1.2 s（README §三：1.0–1.4 s）。 */
+
+    // ================= 机关所在格 {col, row} =================
+
+    public static final int[] SPAWN_CELL = {1, 13};
+    public static final int[] CELL_PLATE_GATE = {3, 5};
+    public static final int[] CELL_PLATE_MAIN = {9, 1};
+    public static final int[] CELL_PLATE_CORE = {24, 2};
+    public static final int[] CELL_PLATE_RELAY = {18, 11};
+    public static final int[] CELL_PLATE_INNER = {25, 13};
+    public static final int[] CELL_DOOR_GATE = {12, 11};
+    public static final int[] CELL_DOOR_RELAY = {21, 5};
+    /** 终点闸与出口终端同格。 */
+    public static final int[] CELL_DOOR_EXIT = {25, 2};
+
+    // ================= 路径节点 ID =================
+
+    public static final String NODE_SPAWN = nodeId(SPAWN_CELL[0], SPAWN_CELL[1]);
+    public static final String NODE_PLATE_GATE = nodeId(CELL_PLATE_GATE[0], CELL_PLATE_GATE[1]);
+    public static final String NODE_PLATE_MAIN = nodeId(CELL_PLATE_MAIN[0], CELL_PLATE_MAIN[1]);
+    public static final String NODE_PLATE_CORE = nodeId(CELL_PLATE_CORE[0], CELL_PLATE_CORE[1]);
+    public static final String NODE_PLATE_RELAY = nodeId(CELL_PLATE_RELAY[0], CELL_PLATE_RELAY[1]);
+    public static final String NODE_PLATE_INNER = nodeId(CELL_PLATE_INNER[0], CELL_PLATE_INNER[1]);
+    public static final String NODE_DOOR_GATE = nodeId(CELL_DOOR_GATE[0], CELL_DOOR_GATE[1]);
+    public static final String NODE_DOOR_RELAY = nodeId(CELL_DOOR_RELAY[0], CELL_DOOR_RELAY[1]);
+    /** 出口终端（与终点闸 D3 同格）所在节点。 */
+    public static final String NODE_EXIT = nodeId(CELL_DOOR_EXIT[0], CELL_DOOR_EXIT[1]);
+
+    // ================= 射线（x=288，竖直线段横穿南厅） =================
+
+    /** 竖直判定线所在世界 x（第 5/6 格之间）。 */
+    public static final double RAY_X = 6.0 * TILE_SIZE;
+    public static final double RAY_Y0 = 12.5 * TILE_SIZE;
+    public static final double RAY_Y1 = 14.5 * TILE_SIZE;
+
+    public static final long RAY_WARNING_START_TICK = 60L;
+    /** 预警时长：72 刻 = 1.2 s（README §三：60–84 刻）。 */
     public static final long RAY_WARNING_DURATION_TICKS = 72L;
     /** 激活起点 = 预警终点。 */
-    public static final long RAY_ACTIVE_START_TICK = 72L;
-    /** 激活时长：60 刻 = 1.0 s（README §三：0.8–1.2 s）。 */
+    public static final long RAY_ACTIVE_START_TICK = 132L;
+    /** 激活时长：60 刻 = 1.0 s（README §三：48–72 刻）。 */
     public static final long RAY_ACTIVE_DURATION_TICKS = 60L;
+    /** 周期 = 预警起点 + 预警时长 + 激活时长 = 192 刻。 */
+    public static final long RAY_CYCLE_TICKS = RAY_WARNING_START_TICK
+            + RAY_WARNING_DURATION_TICKS + RAY_ACTIVE_DURATION_TICKS;
     /** 判定宽度：0.20 × tileSize（README §三：0.18–0.25 × tileSize）。 */
     public static final double RAY_HIT_WIDTH = 0.20 * TILE_SIZE;
 
+    // ================= 官方解刻表（每格 24 刻） =================
+
+    /** R1 踩上外闸板 P1 的刻（出生点→P1 = 10 格）。 */
+    public static final long GATE_WINDOW_START = 240L;
+    /** R1 松开外闸板 P1 的刻（D1 窗口 [240, 384)，时长 144 刻）。 */
+    public static final long GATE_WINDOW_END = 384L;
+    /** R1 抵达主板 P4 的刻（P1→P4 = 10 格；384 + 240）。 */
+    public static final long MAIN_ARRIVAL = 624L;
+
+    /** 借 E1 窗口跨过 D1 的刻（出生点→D1 = 13 格）。 */
+    public static final long GATE_DOOR_CROSS = 312L;
+
+    /** R2 踩上中继板 P2 的刻（出生点→P2 = 19 格）。 */
+    public static final long RELAY_WINDOW_START = 456L;
+    /** R2 松开中继板 P2 的刻（D2 窗口 [456, 744)，时长 288 刻）。 */
+    public static final long RELAY_WINDOW_END = 744L;
+    /** R2 抵达内板 P3 的刻（P2→P3 = 9 格；744 + 216）。 */
+    public static final long INNER_ARRIVAL = 960L;
+
+    /** R3 玩家抵达 D2 的刻（出生点→D2 = 28 格）。 */
+    public static final long RELAY_DOOR_REACH = 672L;
+    /** R3 玩家跨过 D2 的刻（抵达后 1 格 = 24 刻，落 D2 窗口内且距终点 48 刻）。 */
+    public static final long RELAY_DOOR_CROSS = 696L;
+    /** R3 玩家踩上终结板 P5 的刻（D2→P5 = 6 格；696 + 144）。 */
+    public static final long CORE_ARRIVAL = 840L;
+    /** 三块板同刻被占、终点闸解锁的刻（= {@link #INNER_ARRIVAL}）。 */
+    public static final long EXIT_UNLOCK_TICK = 960L;
+
+    // ================= 构建 =================
+
     public static LevelData build() {
+        TileType[][] grid = new TileType[GRID_ROWS][GRID_COLS];
+        List<PathNode> nodes = new ArrayList<>();
+
+        for (int row = 0; row < GRID_ROWS; row++) {
+            String line = MAP[row];
+            if (line.length() != GRID_COLS) {
+                throw new IllegalStateException(
+                        "第 " + row + " 行宽度 " + line.length() + " ≠ " + GRID_COLS);
+            }
+            for (int col = 0; col < GRID_COLS; col++) {
+                if (line.charAt(col) == '#') {
+                    grid[row][col] = TileType.WALL;
+                    continue;
+                }
+                grid[row][col] = TileType.FLOOR;
+                EnumSet<PathNode.Dir> dirs = EnumSet.noneOf(PathNode.Dir.class);
+                if (isOpen(col, row - 1)) {
+                    dirs.add(PathNode.Dir.UP);
+                }
+                if (isOpen(col, row + 1)) {
+                    dirs.add(PathNode.Dir.DOWN);
+                }
+                if (isOpen(col - 1, row)) {
+                    dirs.add(PathNode.Dir.LEFT);
+                }
+                if (isOpen(col + 1, row)) {
+                    dirs.add(PathNode.Dir.RIGHT);
+                }
+                nodes.add(new PathNode(nodeId(col, row), cellCenter(col, row), dirs));
+            }
+        }
+
+        grid[SPAWN_CELL[1]][SPAWN_CELL[0]] = TileType.SPAWN_POINT;
+
         return new LevelData(
                 TILE_SIZE,
-                buildGrid(),
-                buildPathNodes(),
+                grid,
+                nodes,
                 buildEntities(),
                 buildDoors(),
-                cellCenter(2, 11),
+                cellCenter(SPAWN_CELL[0], SPAWN_CELL[1]),
                 DURATION_TICKS,
                 MAX_ROUNDS,
                 ECHO_LIFE_L);
     }
 
-    private static List<PathNode> buildPathNodes() {
-        List<PathNode> nodes = new ArrayList<>();
-
-        for (int col = 2; col <= 16; col++) {
-            nodes.add(node(nodeIdFor(col, 11), col, 11, corridorDirs(col)));
-        }
-        for (int row = 7; row <= 10; row++) {
-            nodes.add(node(nodeIdFor(6, row), 6, row, EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
-        }
-        nodes.add(node(NODE_PLATE_DOOR, 6, 6, EnumSet.of(PathNode.Dir.DOWN)));
-
-        for (int row = 7; row <= 10; row++) {
-            nodes.add(node(verticalId5(row), 5, row, EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
-        }
-        nodes.add(node(NODE_DOOR_ROOM, 5, 6, EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN)));
-        nodes.add(node(NODE_PLATE_INNER, 5, 5, EnumSet.of(PathNode.Dir.DOWN)));
-
-        return nodes;
+    /** 该格是否是可以走的地板（越界或墙 → false）。 */
+    public static boolean isOpen(int col, int row) {
+        return row >= 0 && row < GRID_ROWS
+                && col >= 0 && col < GRID_COLS
+                && MAP[row].charAt(col) != '#';
     }
 
-    private static EnumSet<PathNode.Dir> corridorDirs(int col) {
-        EnumSet<PathNode.Dir> dirs = EnumSet.noneOf(PathNode.Dir.class);
-        if (col > 2) {
-            dirs.add(PathNode.Dir.LEFT);
-        }
-        if (col < 16) {
-            dirs.add(PathNode.Dir.RIGHT);
-        }
-        if (col == 5 || col == 6) {
-            dirs.add(PathNode.Dir.UP);
-        }
-        return dirs;
+    /** 桌面工具的节点 ID 规则：{@code L02_node_c<col>_r<row>}。 */
+    public static String nodeId(int col, int row) {
+        return "L02_node_c" + col + "_r" + row;
+    }
+
+    public static String nodeIdOf(int[] cell) {
+        return nodeId(cell[0], cell[1]);
+    }
+
+    /** 格中心世界坐标。 */
+    public static Vector2D cellCenter(int col, int row) {
+        return new Vector2D((col + 0.5) * TILE_SIZE, (row + 0.5) * TILE_SIZE);
     }
 
     private static List<EntitySpawnInfo> buildEntities() {
         List<EntitySpawnInfo> entities = new ArrayList<>();
-        entities.add(new EntitySpawnInfo(PLATE_DOOR, "dock_plate", cellCenter(6, 6), NODE_PLATE_DOOR)
-                .putProp("autoDock", true));
-        entities.add(new EntitySpawnInfo(PLATE_INNER, "dock_plate", cellCenter(5, 5), NODE_PLATE_INNER)
-                .putProp("autoDock", true));
-        entities.add(new EntitySpawnInfo(PLATE_MAIN, "dock_plate", cellCenter(13, 11), NODE_PLATE_MAIN)
-                .putProp("autoDock", true));
-        entities.add(new EntitySpawnInfo(EXIT, "exit_terminal", cellCenter(16, 11), NODE_EXIT));
+        entities.add(plate(PLATE_GATE, CELL_PLATE_GATE));
+        entities.add(plate(PLATE_RELAY, CELL_PLATE_RELAY));
+        entities.add(plate(PLATE_INNER, CELL_PLATE_INNER));
+        entities.add(plate(PLATE_MAIN, CELL_PLATE_MAIN));
+        entities.add(plate(PLATE_CORE, CELL_PLATE_CORE));
 
-        // L2-B：一束低风险时滞射线，竖直跨在主走廊第 8/9 格之间（玩家去闸门必然穿过）。
-        // 端点只有机制语义；遮挡与绘制由 render（开发一）与 app 负责。
+        entities.add(new EntitySpawnInfo(EXIT, "exit_terminal",
+                cellCenter(CELL_DOOR_EXIT[0], CELL_DOOR_EXIT[1]), NODE_EXIT));
+
         entities.add(new EntitySpawnInfo(RAY_CORRIDOR, "ray",
-                new Vector2D(RAY_X, 10.5 * TILE_SIZE), "L02_node_c9_r11")
+                new Vector2D(RAY_X, RAY_Y0), nodeId(6, 13))
                 .putProp("endX", RAY_X)
-                .putProp("endY", 12.5 * TILE_SIZE)
+                .putProp("endY", RAY_Y1)
                 .putProp("warningStartTick", RAY_WARNING_START_TICK)
                 .putProp("warningDurationTicks", RAY_WARNING_DURATION_TICKS)
                 .putProp("activeStartTick", RAY_ACTIVE_START_TICK)
@@ -148,59 +273,22 @@ public final class Level02Corridor {
         return entities;
     }
 
+    /** 普通驻留板：{@code dock_plate} + {@code autoDock=true}，不含 {@code role=switch}（不锁存）。 */
+    private static EntitySpawnInfo plate(String id, int[] cell) {
+        return new EntitySpawnInfo(id, "dock_plate",
+                cellCenter(cell[0], cell[1]), nodeIdOf(cell))
+                .putProp("autoDock", true);
+    }
+
     private static List<DoorInfo> buildDoors() {
         List<DoorInfo> doors = new ArrayList<>();
-        doors.add(new DoorInfo(DOOR_ROOM, cellCenter(5, 6), false, Set.of(PLATE_DOOR)));
-        doors.add(new DoorInfo(DOOR_EXIT, cellCenter(16, 11), false, Set.of(PLATE_INNER, PLATE_MAIN)));
+        doors.add(door(DOOR_GATE, CELL_DOOR_GATE, Set.of(PLATE_GATE)));
+        doors.add(door(DOOR_RELAY, CELL_DOOR_RELAY, Set.of(PLATE_RELAY)));
+        doors.add(door(DOOR_EXIT, CELL_DOOR_EXIT, Set.of(PLATE_INNER, PLATE_MAIN, PLATE_CORE)));
         return doors;
     }
 
-    private static TileType[][] buildGrid() {
-        TileType[][] grid = new TileType[GRID_ROWS][GRID_COLS];
-        for (int row = 0; row < GRID_ROWS; row++) {
-            for (int col = 0; col < GRID_COLS; col++) {
-                grid[row][col] = TileType.FLOOR;
-            }
-        }
-        for (int col = 0; col < GRID_COLS; col++) {
-            grid[0][col] = TileType.WALL;
-            grid[GRID_ROWS - 1][col] = TileType.WALL;
-        }
-        for (int row = 0; row < GRID_ROWS; row++) {
-            grid[row][0] = TileType.WALL;
-            grid[row][GRID_COLS - 1] = TileType.WALL;
-        }
-        grid[4][5] = TileType.WALL;
-        grid[5][4] = TileType.WALL;
-        grid[6][4] = TileType.WALL;
-        grid[5][6] = TileType.WALL;
-
-        grid[11][2] = TileType.SPAWN_POINT;
-        return grid;
-    }
-
-    private static PathNode node(String id, int col, int row, EnumSet<PathNode.Dir> dirs) {
-        return new PathNode(id, cellCenter(col, row), dirs);
-    }
-
-    private static String verticalId5(int row) {
-        return row == 7 ? NODE_DOOR_SOUTH : "L02_node_c5_r" + row;
-    }
-
-    private static String nodeIdFor(int col, int row) {
-        if (col == 2 && row == 11) {
-            return NODE_SPAWN;
-        }
-        if (col == 13 && row == 11) {
-            return NODE_PLATE_MAIN;
-        }
-        if (col == 16 && row == 11) {
-            return NODE_EXIT;
-        }
-        return "L02_node_c" + col + "_r" + row;
-    }
-
-    private static Vector2D cellCenter(int col, int row) {
-        return new Vector2D((col + 0.5) * TILE_SIZE, (row + 0.5) * TILE_SIZE);
+    private static DoorInfo door(String id, int[] cell, Set<String> requiredPlateIds) {
+        return new DoorInfo(id, cellCenter(cell[0], cell[1]), false, requiredPlateIds);
     }
 }

@@ -66,6 +66,19 @@ public final class SharedHud extends HBox {
         objectiveLabel.setText(objective.text());
     }
 
+    /**
+     * 带常驻目标提示的刷新：目标文本由关卡侧给出。
+     *
+     * <p>第二关的目标提示是 {@link Level02ObjectiveViewModel}，与第一关的
+     * {@link ObjectiveViewModel} 形状不同，但两者写的是<b>同一块</b> {@code objectiveLabel}：
+     * 关卡切换时既不残留第一关文本，也不会在场景里留下第二块空 Label，
+     * 更不需要在 app 侧复制本组件的样式类与配色。</p>
+     */
+    public void render(TickContext context, GamePhase phase, String objectiveText) {
+        render(context, phase);
+        objectiveLabel.setText(Objects.requireNonNull(objectiveText, "objectiveText"));
+    }
+
     /** 最近一次渲染的不可变投影；尚未渲染时返回 {@code null}。 */
     public HudViewModel getViewModel() {
         return viewModel;
@@ -81,5 +94,10 @@ public final class SharedHud extends HBox {
 
     public String getPhaseText() {
         return phaseLabel.getText();
+    }
+
+    /** 最近一次渲染写入的目标提示文本（第一关或第二关的文案都在这里）。 */
+    public String getObjectiveText() {
+        return objectiveLabel.getText();
     }
 }

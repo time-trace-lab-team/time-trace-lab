@@ -15,34 +15,42 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * L2-A 三轮因果链与反例（卡 §二.2 + 裁决 §十一.3 官方解 + §十三.3 三条补充测试）。
+ * 第二关「闸链」三轮因果链与反例（设计说明 §二 / §四，通关流程 §二 / §三）。
  *
- * <p><b>官方解（R1 不进房）</b>：R1 玩家踩门外板造窗口 [216, 396) + 停在主驻留板到轮末；
- * R2 借 E1 的窗口从第 5 列南侧进房踩内板并驻留到轮末；R3 两残影同时压住内板与主驻留板 →
- * 终点闸门解锁 → 当前玩家到闸门按 E。</p>
+ * <p><b>官方解</b>：R1 踩外闸板造 D1 窗口 + 驻留主板；R2 借 E1 的窗口进东翼、踩中继板造 D2 窗口、
+ * 再去右下角驻留内板；R3 E1 压「闸板窗口 + 主板」、E2 压「中继窗口 + 内板」，
+ * 玩家在 D2 窗口内进右上角内室踩终结板 → 三块板同刻被占 → 终点闸解锁 → 按 E 通关。</p>
  *
- * <p><b>注意语义差异</b>：本关的门外板是<b>普通驻留板</b>（占即开、离即关，<b>不锁存</b>），
- * 与 L1 的锁存开关（`role=switch`）刚好相反，测试名已写清以免混淆。</p>
+ * <p><b>语义关键</b>：5 块板都是<b>普通驻留板</b>（占即开、离即关，<b>不锁存</b>）。
+ * P2 曾经是 {@code role=switch} 锁存开关，本设计已改回普通板，因此「压板的人永远走不过自己开的门」，
+ * D2 只能靠「窗口」借别人的身位过 —— 这正是本关必须 3 轮的原因。</p>
  */
 class Level02CorridorChainTest {
 
-    private static final long WINDOW_START = Level02Corridor.WINDOW_START;
-    private static final long WINDOW_END = Level02Corridor.WINDOW_END;
-    private static final long R2_CROSS = Level02Corridor.R2_DOOR_CROSS;
-    private static final long R2_INNER = Level02Corridor.R2_INNER_ARRIVAL;
-    private static final long R1_MAIN = Level02Corridor.R1_MAIN_ARRIVAL;
+    private static final long GATE_START = Level02Corridor.GATE_WINDOW_START;
+    private static final long GATE_END = Level02Corridor.GATE_WINDOW_END;
+    private static final long GATE_CROSS = Level02Corridor.GATE_DOOR_CROSS;
+    private static final long MAIN_ARRIVAL = Level02Corridor.MAIN_ARRIVAL;
+    private static final long RELAY_START = Level02Corridor.RELAY_WINDOW_START;
+    private static final long RELAY_END = Level02Corridor.RELAY_WINDOW_END;
+    private static final long INNER_ARRIVAL = Level02Corridor.INNER_ARRIVAL;
+    private static final long RELAY_CROSS = Level02Corridor.RELAY_DOOR_CROSS;
+    private static final long CORE_ARRIVAL = Level02Corridor.CORE_ARRIVAL;
+    private static final long UNLOCK = Level02Corridor.EXIT_UNLOCK_TICK;
 
     private LevelData level;
     private DockingPlateRegistry registry;
     private EventDispatcher bus;
-    private DockingPlate outerPlate;
+    private DockingPlate gatePlate;
+    private DockingPlate relayPlate;
     private DockingPlate innerPlate;
     private DockingPlate mainPlate;
-    private Door roomDoor;
+    private DockingPlate corePlate;
+    private Door gateDoor;
+    private Door relayDoor;
     private Door exitDoor;
     private ExitTerminal exit;
 
@@ -52,152 +60,232 @@ class Level02CorridorChainTest {
         registry = new DockingPlateRegistry();
         bus = new EventDispatcher();
 
-        outerPlate = plate(Level02Corridor.PLATE_DOOR);
+        gatePlate = plate(Level02Corridor.PLATE_GATE);
+        relayPlate = plate(Level02Corridor.PLATE_RELAY);
         innerPlate = plate(Level02Corridor.PLATE_INNER);
         mainPlate = plate(Level02Corridor.PLATE_MAIN);
-        roomDoor = door(Level02Corridor.DOOR_ROOM);
+        corePlate = plate(Level02Corridor.PLATE_CORE);
+        gateDoor = door(Level02Corridor.DOOR_GATE);
+        relayDoor = door(Level02Corridor.DOOR_RELAY);
         exitDoor = door(Level02Corridor.DOOR_EXIT);
         exit = new ExitTerminal(Level02Corridor.EXIT, position(Level02Corridor.EXIT),
-                exitDoor.getId(), 72.0, bus);
+                exitDoor.getId(), ExitTerminal.interactRadiusForTileSize(Level02Corridor.TILE_SIZE), bus);
     }
 
     // ================= 官方解：三轮成链 =================
 
     @Test
     void officialThreeRoundChainUnlocksTheGateAndFinishes() {
-        // ---- R1：玩家踩门外板造窗口（不进房）----
-        assertTrue(outerPlate.tryEnter("player", 0, WINDOW_START));
-        assertTrue(roomDoor.isUnlocked(), "门外板被占 → 房门开");
-        assertTrue(outerPlate.tryExit("player", 0, WINDOW_END), "R1 离开门外板");
-        assertFalse(roomDoor.isUnlocked(), "离开门外板必须同刻回锁");
+        // ---------- R1：踩外闸板造 D1 窗口（刻 240），站到 384，再走 10 格到主板（624）驻留 ----------
+        assertTrue(gatePlate.tryEnter("player", 0, GATE_START), "R1 在 240 踩上外闸板");
+        assertTrue(gateDoor.isUnlocked(), "外闸板被占 → D1 开");
 
-        // ---- 轮末：机关复位 ----
+        assertTrue(gatePlate.tryExit("player", 0, GATE_END), "R1 在 384 松开外闸板");
+        assertFalse(gateDoor.isUnlocked(), "普通板离即关：松手同刻 D1 回锁（无锁存）");
+
+        assertTrue(mainPlate.tryEnter("player", 0, MAIN_ARRIVAL), "R1 在 624 踩上主板并驻留到轮末");
+        assertFalse(exitDoor.isUnlocked(), "只有主板被占时终点闸不开");
+
+        // ---------- 轮末复位 ----------
         resetAll();
 
-        // ---- R2：E1 复现窗口；玩家从第 5 列南侧借窗口进房 ----
-        assertTrue(outerPlate.tryEnter("echo_1", 1, WINDOW_START), "E1 复现门外板窗口");
-        assertTrue(roomDoor.isUnlocked());
-        assertTrue(R2_CROSS > WINDOW_START && R2_CROSS < WINDOW_END, "跨门刻必须落在窗口内");
-        assertTrue(innerPlate.tryEnter("player", 0, R2_INNER), "玩家在窗口内进房踩内板");
+        // ---------- R2：E1 复现闸板窗口；玩家借窗跨 D1（312）；踩中继板造 D2 窗口（456→744）；去内板（960）----------
+        assertTrue(gatePlate.tryEnter("echo_1", 1, GATE_START), "E1 复现外闸板窗口起点");
+        assertTrue(GATE_CROSS > GATE_START && GATE_CROSS < GATE_END,
+                "跨 D1 刻 " + GATE_CROSS + " 必须落在窗口 [" + GATE_START + ", " + GATE_END + ") 内");
+        assertTrue(gateDoor.isUnlocked(), "刻 312 跨门时 D1 必须开着");
 
-        assertTrue(outerPlate.tryExit("echo_1", 1, WINDOW_END), "E1 离开门外板");
-        assertFalse(roomDoor.isUnlocked(), "房门同刻回锁");
-        assertTrue(innerPlate.isOccupied(), "进房即承诺：玩家仍在内板上");
+        assertTrue(gatePlate.tryExit("echo_1", 1, GATE_END), "E1 在 384 松开外闸板");
+        assertFalse(gateDoor.isUnlocked(), "D1 回锁 —— 玩家已经在东翼里");
 
-        // ---- 轮末复位后进入 R3 ----
+        assertTrue(relayPlate.tryEnter("player", 0, RELAY_START), "R2 在 456 踩上中继板造 D2 窗口");
+        assertTrue(relayDoor.isUnlocked(), "中继板被占 → D2 开");
+        assertTrue(relayPlate.tryExit("player", 0, RELAY_END), "R2 在 744 松手中继板");
+        assertFalse(relayDoor.isUnlocked(), "松手同刻 D2 回锁（普通板，不锁存）");
+
+        assertTrue(innerPlate.tryEnter("player", 0, INNER_ARRIVAL), "R2 在 960 踩上内板并驻留到轮末");
+
+        // ---------- 轮末复位 ----------
         resetAll();
 
-        // ---- R3：E1 复现主驻留板；E2 复现内板 ----
-        assertTrue(mainPlate.tryEnter("echo_1", 1, R1_MAIN));
-        assertFalse(exitDoor.isUnlocked(), "只有主驻留板被占时闸门不开");
-        assertFalse(exit.isDoorUnlocked());
+        // ---------- R3：E1 复现窗口+主板；E2 复现窗口+内板；玩家跨 D2（696）进内室踩终结板（840）----------
+        assertTrue(gatePlate.tryEnter("echo_1", 1, GATE_START));
+        assertTrue(gateDoor.isUnlocked());
+        assertTrue(gatePlate.tryExit("echo_1", 1, GATE_END));
+        assertFalse(gateDoor.isUnlocked());
+        assertTrue(mainPlate.tryEnter("echo_1", 1, MAIN_ARRIVAL), "E1 从 624 起压住主板");
 
-        assertTrue(innerPlate.tryEnter("echo_2", 2, R1_MAIN), "E2 复现内板占用");
-        assertTrue(exitDoor.isUnlocked(), "内板 + 主驻留板同刻被占 → 闸门解锁");
-        assertTrue(exit.isDoorUnlocked(), "出口终端被武装");
+        assertTrue(relayPlate.tryEnter("echo_2", 2, RELAY_START), "E2 从 456 起压住中继板");
+        assertTrue(relayDoor.isUnlocked(), "D2 窗口打开");
+        assertTrue(RELAY_CROSS > RELAY_START && RELAY_CROSS < RELAY_END,
+                "跨 D2 刻 " + RELAY_CROSS + " 必须落在窗口 [" + RELAY_START + ", " + RELAY_END + ") 内");
 
-        assertTrue(exit.interact(700, 0), "当前玩家应按 E 通关");
-        assertFalse(exit.interact(701, 0), "出口不得重复触发");
+        assertTrue(relayPlate.tryExit("echo_2", 2, RELAY_END), "E2 在 744 松手中继板");
+        assertFalse(relayDoor.isUnlocked(), "D2 回锁 —— 玩家已经在内室里");
+        assertFalse(relayPlate.isOccupied(), "解锁那一刻 P2 必须已经释放（终局只占 3 块板）");
+
+        assertTrue(corePlate.tryEnter("player", 0, CORE_ARRIVAL), "玩家在 840 踩上终结板 P5");
+        assertFalse(exitDoor.isUnlocked(), "此刻只有主板 + 终结板，终点闸仍锁");
+
+        assertTrue(innerPlate.tryEnter("echo_2", 2, UNLOCK), "E2 在 960 踩上内板 P3");
+        assertTrue(exitDoor.isUnlocked(), "内板 + 主板 + 终结板同刻被占 → 终点闸解锁");
+        assertTrue(exit.isDoorUnlocked(), "出口终端被武装（E 提示可见）");
+
+        assertTrue(exit.interact(UNLOCK, 0), "当前玩家在 " + UNLOCK + " 刻按 E 通关");
+        assertFalse(exit.interact(UNLOCK + 1, 0), "出口不得重复触发");
+
+        // 三块板同刻被占，且各自由不同 actor 压住（2 残影 + 1 玩家 = 上限）。
+        assertEquals("echo_1", mainPlate.getOccupantId());
+        assertEquals("echo_2", innerPlate.getOccupantId());
+        assertEquals("player", corePlate.getOccupantId());
+        assertTrue(innerPlate.isOccupied() && mainPlate.isOccupied() && corePlate.isOccupied());
     }
 
     // ================= 反例 =================
 
+    /** 反例 ①：1 块板、任意 2 块板的组合都不解锁终点闸（必须 3 块同刻）。 */
     @Test
-    void counterExampleOnePlateAloneCannotUnlockTheGate() {
-        assertTrue(innerPlate.tryEnter("player", 0, R2_INNER));
+    void counterExampleFewerThanThreePlatesNeverUnlockTheGate() {
+        assertTrue(innerPlate.tryEnter("player", 0, INNER_ARRIVAL));
         assertFalse(exitDoor.isUnlocked(), "只压内板不解锁");
 
         resetAll();
 
-        assertTrue(mainPlate.tryEnter("player", 0, R1_MAIN));
-        assertFalse(exitDoor.isUnlocked(), "只压主驻留板不解锁");
+        assertTrue(mainPlate.tryEnter("player", 0, MAIN_ARRIVAL));
+        assertFalse(exitDoor.isUnlocked(), "只压主板不解锁");
+
+        resetAll();
+
+        assertTrue(corePlate.tryEnter("player", 0, CORE_ARRIVAL));
+        assertFalse(exitDoor.isUnlocked(), "只压终结板不解锁");
+
+        resetAll();
+
+        assertTrue(innerPlate.tryEnter("echo_2", 2, INNER_ARRIVAL));
+        assertTrue(mainPlate.tryEnter("echo_1", 1, MAIN_ARRIVAL));
+        assertFalse(exitDoor.isUnlocked(), "内板 + 主板仍不解锁");
+
+        resetAll();
+
+        assertTrue(innerPlate.tryEnter("echo_2", 2, INNER_ARRIVAL));
+        assertTrue(corePlate.tryEnter("player", 0, CORE_ARRIVAL));
+        assertFalse(exitDoor.isUnlocked(), "内板 + 终结板仍不解锁");
+
+        resetAll();
+
+        assertTrue(mainPlate.tryEnter("echo_1", 1, MAIN_ARRIVAL));
+        assertTrue(corePlate.tryEnter("player", 0, CORE_ARRIVAL));
+        assertFalse(exitDoor.isUnlocked(), "主板 + 终结板仍不解锁");
+
+        // 补上第三块 → 才解锁。
+        assertTrue(innerPlate.tryEnter("echo_2", 2, UNLOCK));
+        assertTrue(exitDoor.isUnlocked(), "补齐第三块板才解锁");
     }
 
-    /** 反例 ②：单人踩门外板后离开 → 房门同刻回锁 → 单人穿不过（裁决 §十一.1 推论）。 */
+    /** 反例 ②：单人压板后离开 → 门同刻回锁 → 单人永远穿不过自己开的门。 */
     @Test
-    void counterExampleSoloPlayerCannotPassTheRoomDoor() {
-        assertTrue(outerPlate.tryEnter("player", 0, WINDOW_START));
-        assertTrue(roomDoor.isUnlocked(), "踩上时门是开的");
+    void counterExampleLoneActorCanNeverPassAPlateGatedDoor() {
+        // D1：单人踩外闸板，门开；他要走到门格就必须先离开板 → 门已回锁。
+        assertTrue(gatePlate.tryEnter("player", 0, GATE_START));
+        assertTrue(gateDoor.isUnlocked(), "踩上时 D1 是开的");
+        assertTrue(gatePlate.tryExit("player", 0, GATE_START + Level02Corridor.TICKS_PER_TILE));
+        assertFalse(gateDoor.isUnlocked(),
+                "外闸板同刻释放 → D1 同刻回锁 → 单人（没有第二个 actor 压板）穿不过 D1");
 
-        assertTrue(outerPlate.tryExit("player", 0, WINDOW_START + 24));
-
-        assertFalse(roomDoor.isUnlocked(),
-                "驻留板同刻释放 → 房门同刻回锁 → 单人（没有第二个 actor 按板）穿不过房门格");
+        // D2 同理：P2 不再是锁存开关，压板的人自己走不过自己开的 D2。
+        assertTrue(relayPlate.tryEnter("player", 0, RELAY_START));
+        assertTrue(relayDoor.isUnlocked(), "踩上时 D2 是开的");
+        assertTrue(relayPlate.tryExit("player", 0, RELAY_START + Level02Corridor.TICKS_PER_TILE));
+        assertFalse(relayDoor.isUnlocked(),
+                "中继板同刻释放 → D2 同刻回锁 → 单人无法自行绕过「窗口」进内室");
     }
 
-    /** 反例 ③：故意把窗口压短 → R2 跨门刻时门已回锁 → 进不了房（窗口不足即无解）。 */
+    /** 反例 ③：把窗口压短（只压 24 刻）→ 跨门刻时门早已回锁 → 该轮作废。 */
     @Test
-    void counterExampleTooShortWindowMakesR2Unsovable() {
-        assertTrue(outerPlate.tryEnter("echo_1", 1, WINDOW_START));
-        assertTrue(outerPlate.tryExit("echo_1", 1, WINDOW_START + 24), "窗口仅 24 刻");
+    void counterExampleTooShortWindowMissesTheCrossingTick() {
+        assertTrue(gatePlate.tryEnter("echo_1", 1, GATE_START));
+        assertTrue(gatePlate.tryExit("echo_1", 1, GATE_START + Level02Corridor.TICKS_PER_TILE),
+                "窗口仅 24 刻");
+        assertFalse(gateDoor.isUnlocked(),
+                "跨门刻 " + GATE_CROSS + " 远在窗口之后 → D1 已回锁 → R2 进不了东翼");
 
-        assertFalse(roomDoor.isUnlocked(),
-                "R2 跨门刻 " + R2_CROSS + " 早于/晚于该短窗口 → 门已回锁 → R2 进不了房");
+        assertTrue(relayPlate.tryEnter("echo_2", 2, RELAY_START));
+        assertTrue(relayPlate.tryExit("echo_2", 2, RELAY_START + Level02Corridor.TICKS_PER_TILE),
+                "D2 窗口仅 24 刻");
+        assertFalse(relayDoor.isUnlocked(),
+                "跨门刻 " + RELAY_CROSS + " 远在窗口之后 → D2 已回锁 → R3 进不了内室");
     }
 
-    // ================= 回锁与承诺 =================
+    // ================= 回锁 / 承诺 / 争抢 =================
 
-    /** 「离开门外板即回锁」专项：门外板是普通板，<b>不锁存</b>（与 L1 开关相反）。 */
+    /** 「离即关」专项：同一刻进入再离开，门立刻回锁，板上不残留占用。 */
     @Test
-    void leavingOuterPlateRelocksTheRoomDoorImmediately() {
-        assertTrue(outerPlate.tryEnter("echo_1", 1, 300));
-        assertTrue(roomDoor.isUnlocked());
+    void leavingAPlateRelocksItsDoorOnTheVerySameTick() {
+        assertTrue(gatePlate.tryEnter("echo_1", 1, 300));
+        assertTrue(gateDoor.isUnlocked());
 
-        assertTrue(outerPlate.tryExit("echo_1", 1, 300));
+        assertTrue(gatePlate.tryExit("echo_1", 1, 300));
 
-        assertFalse(roomDoor.isUnlocked(), "同一刻即回锁（非锁存语义）");
-        assertFalse(outerPlate.isOccupied());
+        assertFalse(gateDoor.isUnlocked(), "同一刻即回锁（非锁存语义）");
+        assertFalse(gatePlate.isOccupied());
+        assertFalse(gatePlate.isLatched(), "普通板不得有锁存位");
+
+        // P2 同样不得锁存 —— 它是本关唯一被改造过的板。
+        assertTrue(relayPlate.tryEnter("echo_2", 2, 300));
+        assertTrue(relayDoor.isUnlocked());
+        assertTrue(relayPlate.tryExit("echo_2", 2, 300));
+        assertFalse(relayPlate.isLatched(), "P2 必须是普通驻留板（role=switch 已去掉）");
+        assertFalse(relayDoor.isUnlocked());
     }
 
-    /** 约束 6「进房即承诺」：R2 玩家在 396 之后到轮末都无法离开（门已回锁）。 */
+    /** 「进内室即承诺」：744 之后 D2 一直回锁，玩家只能留在内室里等 E2 去压内板。 */
     @Test
-    void playerInsideTheRoomStaysUntilRoundEnd() {
-        assertTrue(outerPlate.tryEnter("echo_1", 1, WINDOW_START));
-        assertTrue(innerPlate.tryEnter("player", 0, R2_INNER));
-        assertTrue(outerPlate.tryExit("echo_1", 1, WINDOW_END));
+    void playerInsideTheInnerRoomStaysUntilRoundEnd() {
+        assertTrue(relayPlate.tryEnter("echo_2", 2, RELAY_START));
+        assertTrue(relayDoor.isUnlocked());
+        assertTrue(corePlate.tryEnter("player", 0, CORE_ARRIVAL));
+        assertTrue(relayPlate.tryExit("echo_2", 2, RELAY_END));
 
-        for (long tick : List.of(WINDOW_END, 500L, 900L, Level02Corridor.DURATION_TICKS)) {
-            assertFalse(roomDoor.isUnlocked(),
-                    "刻 " + tick + " 房门必须仍是锁的 → 玩家出不去（进房即承诺）");
+        for (long tick : List.of(RELAY_END, 800L, 900L, Level02Corridor.DURATION_TICKS)) {
+            assertFalse(relayDoor.isUnlocked(), "刻 " + tick + " D2 必须仍是锁的（玩家出不去）");
         }
-        assertTrue(innerPlate.isOccupied(), "玩家占用保持到轮末，不残留、不崩溃");
-        assertEquals("player", innerPlate.getOccupantId());
+        assertTrue(corePlate.isOccupied(), "玩家占用保持到轮末");
+        assertEquals("player", corePlate.getOccupantId());
     }
 
-    // ================= §十三.3 第三条：跨门刻与窗口余量 =================
-
-    @Test
-    void r2PassesDoorOnlyInsideWindow() {
-        long lower = WINDOW_START + 30;
-        long upper = WINDOW_END - 30;
-        assertTrue(R2_CROSS >= lower && R2_CROSS <= upper,
-                "跨门刻 " + R2_CROSS + " 必须落在 [" + lower + ", " + upper + "]");
-
-        // 「玩家经过门外板是否停驻」的确定结论：R2 路线不含门外板 ⇒ 不发生停驻。
-        assertNotEquals(Level02Corridor.NODE_PLATE_DOOR, Level02Corridor.NODE_DOOR_SOUTH);
-        assertFalse(outerPlate.isOccupied(), "R2 玩家全程不得占用门外板（几何已解耦）");
-    }
-
-    // ================= §十三.3 第二条：同刻争抢 =================
-
-    /**
-     * §十三.3 第 2 条：本几何下 R3 不存在门外板争抢（R2 录制从不占用门外板）；
-     * 另加构造性用例验证「同刻争抢 → 较旧者（sourceRound 小）胜」的引擎规则落点。
-     */
+    /** 同刻争抢：两个残影抢同一块板时，先写者（较旧残影，回放按 sourceRound 升序）占住。 */
     @Test
     void sameTickPlateContentionOlderEchoWins() {
-        // (a) 几何解耦：R2 的路线不含门外板 → R3 中 E1/E2 不会在门外板同刻相遇
-        assertFalse(outerPlate.isOccupied(), "R2 全程不占用门外板（几何已解耦，无争抢）");
-
-        // (b) 构造性：同刻两个残影争同一块板，先写者（较旧者，回放按 sourceRound 升序）占住
-        assertTrue(outerPlate.tryEnter("echo_1", 1, WINDOW_START));
-        assertFalse(outerPlate.tryEnter("echo_2", 2, WINDOW_START),
+        assertTrue(gatePlate.tryEnter("echo_1", 1, GATE_START));
+        assertFalse(gatePlate.tryEnter("echo_2", 2, GATE_START),
                 "同刻后写者必须被拒（单占用不变量）");
-        assertEquals("echo_1", outerPlate.getOccupantId(),
-                "较旧残影（sourceRound=1）胜；较新者的位置回放由 replay 层独立进行，不受占用拒绝影响");
+        assertEquals("echo_1", gatePlate.getOccupantId(), "较旧残影（sourceRound=1）胜");
+    }
+
+    /** 数据面复核：3 扇门引用正确的板，5 块板都是普通板。 */
+    @Test
+    void doorWiringMatchesTheDesignTable() {
+        assertEquals(3, level.getDoors().size());
+        assertEquals(Set.of(Level02Corridor.PLATE_GATE),
+                requiredPlates(Level02Corridor.DOOR_GATE));
+        assertEquals(Set.of(Level02Corridor.PLATE_RELAY),
+                requiredPlates(Level02Corridor.DOOR_RELAY));
+        assertEquals(Set.of(Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_CORE),
+                requiredPlates(Level02Corridor.DOOR_EXIT));
+        assertEquals(position(Level02Corridor.DOOR_GATE), gateDoor.getPosition());
+        assertEquals(position(Level02Corridor.DOOR_RELAY), relayDoor.getPosition());
+        assertEquals(position(Level02Corridor.DOOR_EXIT), exitDoor.getPosition());
     }
 
     // ---------- 工具 ----------
+
+    private Set<String> requiredPlates(String doorId) {
+        return level.getDoors().stream()
+                .filter(d -> doorId.equals(d.getId()))
+                .map(org.example.timeloop.level.model.DoorInfo::getRequiredPlateIds)
+                .findFirst()
+                .orElseThrow();
+    }
 
     private DockingPlate plate(String mechanismId) {
         return new DockingPlate(mechanismId, position(mechanismId), registry, bus);
@@ -225,10 +313,9 @@ class Level02CorridorChainTest {
     }
 
     private void resetAll() {
-        outerPlate.reset();
-        innerPlate.reset();
-        mainPlate.reset();
-        roomDoor.reset();
+        registry.resetAll();
+        gateDoor.reset();
+        relayDoor.reset();
         exitDoor.reset();
         exit.reset();
     }
