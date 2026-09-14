@@ -387,6 +387,11 @@ public final class Level01Assembly {
      * <p>BUG-002-LIFECYCLE Phase 1：不再触碰全局单例 —— 实例随装配一起被 GC，
      * 因此同一 JVM 内可以有多个装配，互不干扰，测试也不需要再手工清理全局状态。</p>
      */
+    /** 结算只读投影（通关或终局失败后可用；未结算时为空）。 */
+    public java.util.Optional<org.example.timeloop.replay.LevelResult> result() {
+        return recording.result();
+    }
+
     public void cleanup() {
         leftPlate.dispose();
         rightPlate.dispose();

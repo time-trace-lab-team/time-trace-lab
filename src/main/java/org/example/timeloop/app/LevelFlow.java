@@ -106,6 +106,11 @@ final class LevelFlow {
         return activeLevel == LevelId.LEVEL_01 ? level01.isPlaying() : level02.isPlaying();
     }
 
+    /** 当前关卡的结算只读投影：仅 RESULT/FAILED 之后有值，供终局弹窗读取。 */
+    java.util.Optional<org.example.timeloop.replay.LevelResult> activeResult() {
+        return activeLevel == LevelId.LEVEL_01 ? level01.result() : level02.result();
+    }
+
     boolean isFinalPhase() {
         return activeLevel == LevelId.LEVEL_01 ? level01.isFinalPhase() : level02.isFinalPhase();
     }
