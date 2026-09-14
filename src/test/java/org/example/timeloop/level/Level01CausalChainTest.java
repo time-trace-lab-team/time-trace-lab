@@ -3,6 +3,7 @@ package org.example.timeloop.level;
 import org.example.timeloop.level.model.DoorInfo;
 import org.example.timeloop.level.model.EntitySpawnInfo;
 import org.example.timeloop.level.model.LevelData;
+import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.DockingPlate;
 import org.example.timeloop.mechanism.DockingPlateRegistry;
 import org.example.timeloop.mechanism.Door;
@@ -12,8 +13,6 @@ import org.example.timeloop.mechanism.autodock.AutoDockService;
 import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
 import org.example.timeloop.mechanism.event.GameObserver;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -24,84 +23,157 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 第一关最小 headless 因果链：E1 占左板、当前玩家占右板，门解锁后当前玩家触发出口。
+ * 第一关最小 headless 因果链（L01-GATE-MERGE 后）：<b>锁存开关 + 左板 + 闸门终点</b>。
  *
- * <p>AutoDock 结果到机关事件的转换代表移动层向开发三机关层提交的已批准边沿，
- * 不依赖 JavaFX、app 场景或第二套计时器。</p>
+ * <p>新解法：第 1 轮玩家踩开关（锁存 ON）并停在左板 → 第 2 轮 {@code E₁} 复现这两段，
+ * 门解锁，当前玩家到闸门按 E。闸门与终点同格 (18,7)，开关在 (18,8) 正下方一格。</p>
  */
 class Level01CausalChainTest {
 
-    @BeforeEach
-    @AfterEach
-    void clearGlobalMechanismState() {
-        EventDispatcher.getInstance().clear();
-        DockingPlateRegistry.getInstance().clear();
-    }
+    private static final double TILE = 48.0;
+    private static final double INTERACT_RADIUS = 72.0;
 
+    /** §2.5-3 两轮通关：E1 开开关 + 压左板 → 当前玩家到闸门按 E 结算。 */
     @Test
-    void level01IsSolvableThroughEchoLeftPlayerRightDoorAndExit() {
+    void level01IsSolvableInTwoRoundsThroughLatchedSwitchAndLeftPlate() {
         LevelData level = Level01Footsteps.build();
         assertEquals(16 * 60L, level.getDurationTicks());
         assertEquals(3, level.getMaxRounds());
         assertEquals(1, level.getEchoLifeL());
 
-        EntitySpawnInfo leftInfo = entity(level, "L01_plate_left");
-        EntitySpawnInfo rightInfo = entity(level, "L01_plate_right");
-        EntitySpawnInfo exitInfo = entity(level, "L01_exit_00");
-        DoorInfo doorInfo = level.getDoors().stream()
-                .filter(door -> "L01_door_01".equals(door.getId()))
-                .findFirst()
-                .orElseThrow();
-        List<String> eventTrace = registerEventTrace();
+        DockingPlateRegistry registry = new DockingPlateRegistry();
+        EventDispatcher dispatcher = new EventDispatcher();
+        List<String> eventTrace = registerEventTrace(dispatcher);
 
-        DockingPlate leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos());
-        DockingPlate rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos());
-        Door door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds());
-        ExitTerminal exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId());
+        DockingPlate leftPlate = new DockingPlate(
+                "L01_plate_left", entity(level, "L01_plate_left").getPos(), registry, dispatcher);
+        DockingPlate switchPlate = new DockingPlate(
+                "L01_plate_right", entity(level, "L01_plate_right").getPos(), registry, dispatcher, true);
+        Door door = new Door("L01_door_01", doorPosition(level),
+                java.util.Set.of("L01_plate_left", "L01_plate_right"), registry, dispatcher);
+        ExitTerminal exit = new ExitTerminal("L01_exit_00", exitPosition(level), door.getId(),
+                ExitTerminal.interactRadiusForTileSize(level.getTileSize()), dispatcher);
         AutoDockService autoDock = new AutoDockService(level);
 
+        // ---- 第 1 轮：玩家踩开关（锁存 ON），再去压左板 ----
+        assertTrue(switchPlate.tryEnter("player", 0, 100));
+        assertTrue(switchPlate.isLatched(), "踩上即开启");
+        assertTrue(switchPlate.tryExit("player", 0, 140), "离开开关");
+        assertTrue(switchPlate.isLatched(), "离开后开关仍 ON");
+        assertTrue(leftPlate.tryEnter("player", 0, 600));
+        assertTrue(door.isUnlocked(), "开关 ON + 左板被占 → 门解锁");
+        assertFalse(exit.isInInteractRange(leftPlate.getPosition()),
+                "第 1 轮人在左板：闸门不在交互半径内，无法结算（app 侧按此判定）");
+
+        // ---- 轮末：机关复位（开关回到 OFF），第 2 轮开始 ----
+        switchPlate.reset();
+        leftPlate.reset();
+        assertFalse(switchPlate.isLatched(), "轮末必须回到 OFF");
+
+        // ---- 第 2 轮：E1 复现第 1 轮（先踩开关，再压左板）----
         AutoDockResult echoDocked = autoDock.tryEnter(
-                leftInfo.getId(), "echo_1", 1, 600, leftInfo.getPos());
+                "L01_plate_right", "echo_1", 1, 200,
+                entity(level, "L01_plate_right").getPos());
         assertEquals(AutoDockResult.Status.ENTERED, echoDocked.status());
-        assertTrue(leftPlate.tryEnter("echo_1", 1, 600));
-        assertFalse(door.isUnlocked(), "只有 E1 占左板时门仍应关闭");
-        assertFalse(exit.interact(601, 2), "门未开时当前玩家不能触发出口");
+        assertTrue(switchPlate.tryEnter("echo_1", 1, 200), "残影也能开开关");
+        assertTrue(switchPlate.isLatched());
+        assertTrue(switchPlate.tryExit("echo_1", 1, 230));
 
-        AutoDockResult playerDocked = autoDock.tryEnter(
-                rightInfo.getId(), "player", 2, 720, rightInfo.getPos());
-        assertEquals(AutoDockResult.Status.ENTERED, playerDocked.status());
-        assertTrue(rightPlate.tryEnter("player", 2, 720));
+        assertFalse(door.isUnlocked(), "只有开关 ON 时门仍应关闭");
+        assertTrue(leftPlate.tryEnter("echo_1", 1, 600), "E1 复现压左板");
 
-        assertTrue(door.isUnlocked());
+        assertTrue(door.isUnlocked(), "开关 ON + 左板被 E1 占用 → 门解锁");
         assertTrue(exit.isDoorUnlocked());
-        assertTrue(exit.interact(721, 2), "当前玩家在门解锁后应能成功触发出口");
-        assertFalse(exit.interact(722, 2), "出口触发后不得重复触发");
+        assertTrue(exit.isInInteractRange(switchPlate.getPosition()),
+                "站在开关上应正好在闸门交互半径内（相距 1 格）");
+        assertTrue(exit.interact(700, 0), "当前玩家到闸门后应能触发出口");
+        assertFalse(exit.interact(701, 0), "出口触发后不得重复触发");
 
         assertEquals(List.of(
-                        GameEvent.PLATE_ENTERED + ":L01_plate_left",
                         GameEvent.PLATE_ENTERED + ":L01_plate_right",
+                        GameEvent.PLATE_EXITED + ":L01_plate_right",
+                        GameEvent.PLATE_ENTERED + ":L01_plate_left",
+                        GameEvent.DOOR_UNLOCKED + ":L01_door_01",
+                        GameEvent.PLATE_ENTERED + ":L01_plate_right",
+                        GameEvent.PLATE_EXITED + ":L01_plate_right",
+                        GameEvent.PLATE_ENTERED + ":L01_plate_left",
                         GameEvent.DOOR_UNLOCKED + ":L01_door_01",
                         GameEvent.EXIT_TRIGGERED + ":L01_exit_00"),
                 eventTrace);
     }
 
+    /** §2.5-4 反例：只占左板时门不开；且站在左板上按 E 也无解（闸门不在交互半径内）。 */
     @Test
-    void oneOccupiedPlateCannotBypassFirstLevelDoor() {
+    void oneOccupiedPlateAndNoSwitchCannotBypassFirstLevelDoor() {
         LevelData level = Level01Footsteps.build();
-        EntitySpawnInfo leftInfo = entity(level, "L01_plate_left");
-        EntitySpawnInfo rightInfo = entity(level, "L01_plate_right");
-        EntitySpawnInfo exitInfo = entity(level, "L01_exit_00");
-        DoorInfo doorInfo = level.getDoors().get(0);
+        DockingPlateRegistry registry = new DockingPlateRegistry();
+        EventDispatcher dispatcher = new EventDispatcher();
 
-        DockingPlate leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos());
-        new DockingPlate(rightInfo.getId(), rightInfo.getPos());
-        Door door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds());
-        ExitTerminal exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId());
+        DockingPlate leftPlate = new DockingPlate(
+                "L01_plate_left", entity(level, "L01_plate_left").getPos(), registry, dispatcher);
+        DockingPlate switchPlate = new DockingPlate(
+                "L01_plate_right", entity(level, "L01_plate_right").getPos(), registry, dispatcher, true);
+        Door door = new Door("L01_door_01", doorPosition(level),
+                java.util.Set.of("L01_plate_left", "L01_plate_right"), registry, dispatcher);
+        ExitTerminal exit = new ExitTerminal("L01_exit_00", exitPosition(level), door.getId(),
+                ExitTerminal.interactRadiusForTileSize(level.getTileSize()), dispatcher);
 
-        assertTrue(leftPlate.tryEnter("echo_1", 1, 600));
-        assertFalse(door.isUnlocked());
+        assertTrue(leftPlate.tryEnter("player", 0, 600));
+
+        assertFalse(switchPlate.isLatched(), "开关未被踩，仍是 OFF");
+        assertFalse(door.isUnlocked(), "缺开关时门必须保持关闭");
         assertFalse(exit.isDoorUnlocked());
-        assertFalse(exit.interact(601, 2));
+        assertFalse(exit.isInInteractRange(leftPlate.getPosition()),
+                "闸门不在左板交互半径内 → 单轮通关不成立");
+
+        double leftToGate = Math.hypot(
+                exit.getPosition().x() - leftPlate.getPosition().x(),
+                exit.getPosition().y() - leftPlate.getPosition().y());
+        assertTrue(leftToGate > INTERACT_RADIUS,
+                "第 1 轮站在左板上必须够不到闸门终点（实测 " + leftToGate + "）");
+    }
+
+    /** 开关单独也不能开门（回归：门条件仍是两块板）。 */
+    @Test
+    void switchAloneCannotUnlockTheDoor() {
+        LevelData level = Level01Footsteps.build();
+        DockingPlateRegistry registry = new DockingPlateRegistry();
+        EventDispatcher dispatcher = new EventDispatcher();
+
+        DockingPlate switchPlate = new DockingPlate(
+                "L01_plate_right", entity(level, "L01_plate_right").getPos(), registry, dispatcher, true);
+        new DockingPlate("L01_plate_left", entity(level, "L01_plate_left").getPos(), registry, dispatcher);
+        Door door = new Door("L01_door_01", doorPosition(level),
+                java.util.Set.of("L01_plate_left", "L01_plate_right"), registry, dispatcher);
+
+        assertTrue(switchPlate.tryEnter("player", 0, 100));
+
+        assertTrue(switchPlate.isLatched());
+        assertFalse(door.isUnlocked(), "只有开关 ON 时门必须保持关闭");
+    }
+
+    /** 闸门节点与开关必须在 1 格内（可读性 + 站在开关上也能按 E）。 */
+    @Test
+    void gateTerminalStaysWithinReachOfTheSwitch() {
+        LevelData level = Level01Footsteps.build();
+        Vector2D gate = exitPosition(level);
+        Vector2D switchPos = entity(level, "L01_plate_right").getPos();
+
+        double distance = Math.hypot(gate.x() - switchPos.x(), gate.y() - switchPos.y());
+        assertEquals(TILE, distance, 1e-9);
+        assertTrue(distance <= INTERACT_RADIUS);
+    }
+
+    private static Vector2D doorPosition(LevelData level) {
+        return level.getDoors().stream()
+                .filter(d -> "L01_door_01".equals(d.getId()))
+                .map(DoorInfo::getPosition)
+                .findFirst()
+                .orElseThrow();
+    }
+
+    private static Vector2D exitPosition(LevelData level) {
+        return entity(level, "L01_exit_00").getPos();
     }
 
     private static EntitySpawnInfo entity(LevelData level, String id) {
@@ -111,10 +183,9 @@ class Level01CausalChainTest {
                 .orElseThrow(() -> new AssertionError("缺少第一关实体: " + id));
     }
 
-    private static List<String> registerEventTrace() {
+    private static List<String> registerEventTrace(EventDispatcher dispatcher) {
         List<String> trace = new ArrayList<>();
         GameObserver observer = event -> trace.add(event.eventType() + ":" + event.sourceId());
-        EventDispatcher dispatcher = EventDispatcher.getInstance();
         dispatcher.register(GameEvent.PLATE_ENTERED, observer);
         dispatcher.register(GameEvent.PLATE_EXITED, observer);
         dispatcher.register(GameEvent.DOOR_UNLOCKED, observer);
