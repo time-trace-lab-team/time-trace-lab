@@ -1,9 +1,12 @@
 # L03-DEV1 · R4（Δt）PM 对接卡
 
-> 发起方：开发一  
-> 分支：`codex/l03-dev1-r4`  
-> 代码提交：`502b6ab feat(render): render recorded L03 ray delay markers`  
-> 基线：`develop@cc1b174`  
+> 发起方：开发一
+>
+> 分支：`codex/l03-dev1-r4`
+>
+> 代码提交：`502b6ab feat(render): render recorded L03 ray delay markers`
+>
+> 基线：`develop@cc1b174`
 > 状态：render 侧完成，等待 PM/app 接线
 
 ## 一、已交付
