@@ -84,7 +84,30 @@ class ResultDialogTest {
 
             assertEquals("第一关：留下的脚步 · 通关完成", dialog.titleText());
             assertEquals("第 2 / 2 轮完成，用时 20.0 秒", dialog.detailText());
+            assertEquals("按 R 确认并进入下一关", dialog.hintText(),
+                    "默认文案不得写死关卡号（第三关已存在，接上 L2→L3 后这话会变）");
+        });
+    }
+
+    /** 集成层知道下一关是谁时，提示行必须能说出具体关卡名（否则接上 L3 后第二关的提示会说错）。 */
+    @Test
+    void nextLevelHintCanNameTheActualNextLevel() throws Exception {
+        onFxThread(() -> {
+            ResultDialog dialog = new ResultDialog();
+            LevelResult firstLevel = new LevelResult("第一关：留下的脚步", true, 2, 2, 1200L);
+
+            dialog.show(firstLevel, "第一关：留下的脚步",
+                    ResultDialog.NextAction.ENTER_NEXT_LEVEL, "第二关");
             assertEquals("按 R 确认并进入第二关", dialog.hintText());
+
+            dialog.show(firstLevel, "第一关：留下的脚步",
+                    ResultDialog.NextAction.ENTER_NEXT_LEVEL, "第三关：追赶过去");
+            assertEquals("按 R 确认并进入第三关：追赶过去", dialog.hintText());
+
+            // 重开语义与下一关名无关：给了名字也不该被用上。
+            dialog.show(new LevelResult("第二关：闸链", true, 3, 3, 2000L), "第二关：闸链",
+                    ResultDialog.NextAction.RESTART_LEVEL, "第三关：追赶过去");
+            assertEquals("按 R 从第一轮重开", dialog.hintText());
         });
     }
 

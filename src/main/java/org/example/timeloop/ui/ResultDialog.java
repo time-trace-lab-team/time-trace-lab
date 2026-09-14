@@ -23,10 +23,17 @@ import java.util.Objects;
  */
 public final class ResultDialog extends StackPane {
 
-    /** 确认后的动作：决定提示行文案（卡 §5.2 的 D1/D4；具体取值由集成层按关卡传入）。 */
+    /**
+     * 确认后的动作（卡 §5.2 的 D1/D4；具体取值由集成层按关卡传入）。
+     *
+     * <p><b>刻意不写死「进入第二关」</b>：第三关已经进 develop，等集成层接上 L2→L3 之后，
+     * 第二关通关时的提示就该说「进入第三关」。所以默认文案保持与关卡无关，
+     * 需要具体关卡名时由集成层调
+     * {@link #show(LevelResult, String, NextAction, String)} 传进来。</p>
+     */
     public enum NextAction {
-        /** 第一关：确认并进入下一关。 */
-        ENTER_NEXT_LEVEL("按 R 确认并进入第二关"),
+        /** 还有下一关：确认后进入下一关。 */
+        ENTER_NEXT_LEVEL("按 R 确认并进入下一关"),
         /** 最后一关（或失败）：从第一轮重开本关。 */
         RESTART_LEVEL("按 R 从第一轮重开");
 
@@ -36,7 +43,7 @@ public final class ResultDialog extends StackPane {
             this.hint = hint;
         }
 
-        /** 提示行文案。 */
+        /** 默认提示行文案（与具体关卡无关）。 */
         public String hint() {
             return hint;
         }
@@ -83,13 +90,25 @@ public final class ResultDialog extends StackPane {
      * @return 本次渲染的提示行文案（便于集成层与测试断言）
      */
     public String show(LevelResult result, String levelTitle, NextAction nextAction) {
+        return show(result, levelTitle, nextAction, null);
+    }
+
+    /**
+     * 带「下一关关卡名」的渲染：{@code nextAction == ENTER_NEXT_LEVEL} 且给出了关卡名时，
+     * 提示行会写成「按 R 确认并进入&lt;关卡名&gt;」；否则退回与关卡无关的默认文案。
+     *
+     * @param nextLevelTitle 下一关的显示名（如「第二关」或「第三关：追赶过去」——原样拼进提示行）；
+     *                       无下一关或未知时传 {@code null}
+     */
+    public String show(LevelResult result, String levelTitle, NextAction nextAction,
+                       String nextLevelTitle) {
         Objects.requireNonNull(result, "result");
         Objects.requireNonNull(nextAction, "nextAction");
 
         String name = resolveLevelTitle(result, levelTitle);
         titleLabel.setText(result.cleared() ? name + " · 通关完成" : "时间耗尽");
         detailLabel.setText(result.cleared() ? clearedDetail(result) : failedDetail(result));
-        hintLabel.setText(nextAction.hint());
+        hintLabel.setText(resolveHint(nextAction, nextLevelTitle));
         setVisible(true);
         return hintLabel.getText();
     }
@@ -150,5 +169,14 @@ public final class ResultDialog extends StackPane {
             return fromResult;
         }
         return "本关";
+    }
+
+    /** 提示行：能给出下一关名时写具体关卡名，否则用与关卡无关的默认文案。 */
+    private static String resolveHint(NextAction nextAction, String nextLevelTitle) {
+        if (nextAction == NextAction.ENTER_NEXT_LEVEL
+                && nextLevelTitle != null && !nextLevelTitle.isBlank()) {
+            return "按 R 确认并进入" + nextLevelTitle;
+        }
+        return nextAction.hint();
     }
 }
