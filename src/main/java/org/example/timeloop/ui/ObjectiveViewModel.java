@@ -38,9 +38,9 @@ public record ObjectiveViewModel(int currentRound,
             throw new IllegalArgumentException(
                     "currentRound 必须在 [1, " + maxRounds + "]");
         }
-        if (leftHeldByPlayer && leftHeldByEcho) {
-            throw new IllegalArgumentException("左驻留板不可能同时被玩家与残影占用");
-        }
+        // 注意：leftHeldByPlayer && leftHeldByEcho 是**合法**状态 —— 一块驻留板可以被多个 actor
+        // 同时占用（L03-DEV3 裁决）。旧版本在这里抛异常，等于把「模型做不到」当成了「规则不允许」，
+        // 而底层 DockingPlate 当时是静默丢弃第二人，两边一起把缺陷藏住了。
     }
 
     /**
