@@ -153,7 +153,7 @@ public final class Level02Assembly {
 
         this.clock = new RoundClock(Math.toIntExact(levelData.getDurationTicks()), levelData.getMaxRounds());
         this.echoQueue = new EchoQueue(levelData.getEchoLifeL());
-        this.recording = new RecordingSession(clock, echoQueue);
+        this.recording = new RecordingSession(clock, echoQueue, LevelFlow.LevelId.LEVEL_02.title());
         this.replayPort = new ReplayPort(clock, recording);
 
         // 与 L1 相同：板 / 门 / 出口 / 射线全部注入本装配自己的注册表与事件总线实例。

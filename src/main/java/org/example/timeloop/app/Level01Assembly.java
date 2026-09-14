@@ -122,7 +122,7 @@ public final class Level01Assembly {
 
         this.clock = new RoundClock(Math.toIntExact(levelData.getDurationTicks()), levelData.getMaxRounds());
         this.echoQueue = new EchoQueue(levelData.getEchoLifeL());
-        this.recording = new RecordingSession(clock, echoQueue);
+        this.recording = new RecordingSession(clock, echoQueue, LevelFlow.LevelId.LEVEL_01.title());
         this.replayPort = new ReplayPort(clock, recording);
 
         EntitySpawnInfo leftInfo = entity("L01_plate_left");
