@@ -8,6 +8,7 @@ import javafx.scene.image.WritableImage;
 import org.example.timeloop.core.Direction;
 import org.example.timeloop.core.MovementState;
 import org.example.timeloop.level.model.LevelData;
+import org.example.timeloop.level.model.PathNode;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.DockingPlate;
 import org.example.timeloop.mechanism.DockingPlateRegistry;
@@ -28,26 +29,31 @@ import org.junit.jupiter.api.Test;
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.File;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * L2-A 验收场景离屏出图（回应开发一《L02-A-开发1-render交付与PM开发三对接卡》**§4-⑤**）：
- * 提供「**同时看到三块驻留板、房门与终点闸门**」的可复核画面。
+ * 第二关「闸链」新地图的离屏出图（沿用仓库既有六个渲染图层，渲染代码零改动）。
  *
- * <p>本用例**不依赖 `app/**`**（L2 装配卡属 PM）：直接按 development 侧契约手构造
- * {@link RenderViews.Frame}（三板 + 两门 + 出口 + 两条残影轨迹），用与
- * {@code TimeTraceLabApplication} 相同的图层顺序离屏渲染，产出：</p>
+ * <p>本用例<b>不依赖 {@code app/**}</b>：直接按开发侧契约手构造 {@link RenderViews.Frame}
+ * （5 板 + 2 门 + 1 出口 + 2 条残影轨迹），用与 {@code TimeTraceLabApplication} 相同的图层顺序
+ * 离屏渲染，产出：</p>
  * <ul>
- *   <li>{@code target/observations/level02-map-render.png} —— 加载态（六件机关齐全）；</li>
- *   <li>{@code target/observations/level02-acceptance-solved.png} —— 官方解第 3 轮：内板(E2) + 主驻留板(E1)
- *       同刻被占 → 终点闸门打开（EXIT active），房门已回锁。</li>
+ *   <li>{@code target/observations/level02-map-render.png} —— 加载态（8 件机关齐全，无残影）；</li>
+ *   <li>{@code target/observations/level02-acceptance-solved.png} —— 官方解第 3 轮通关瞬间：
+ *       内板(E2) + 主板(E1) + 终结板(玩家) 同刻被占 → 终点闸 EXIT active，D2 已回锁。</li>
  * </ul>
  */
 class Level02MapRenderSnapshotTest {
@@ -56,46 +62,64 @@ class Level02MapRenderSnapshotTest {
     private static final String LOADED_PATH = "target/observations/level02-map-render.png";
     private static final String SOLVED_PATH = "target/observations/level02-acceptance-solved.png";
 
-    /** §4-⑤ 的硬要求：画面必须同时含三块板 + 房门 + 终点闸门（本用例按机制条数断言）。 */
+    /** 机关投影硬要求：5 块普通板 + 2 扇门 + 1 个出口，且不得出现 SWITCH。 */
     @Test
-    void acceptanceFrameContainsThreePlatesRoomDoorAndExitGate() {
+    void mechanismProjectionIsFivePlatesTwoDoorsAndOneExit() {
         Fixture fixture = new Fixture();
 
         List<RenderViews.Mechanism> mechanisms = fixture.mechanisms();
 
-        assertEquals(5, mechanisms.size(), "应为 三板 + 房门 + 终点闸门 = 5 件（门与出口同格，只投影一个 EXIT）");
-        assertEquals(3, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.PLATE).count(),
-                "三块驻留板必须都是普通 PLATE（开发一 §4-③：不得用 SWITCH/锁存）");
-        assertEquals(1, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.DOOR).count(),
-                "房门必须使用 DOOR（开发一 §3-③）");
+        assertEquals(8, mechanisms.size(),
+                "应为 5 板 + 2 门 + 1 出口 = 8 件（终点闸与出口同格，只投影一个 EXIT）");
+        assertEquals(5, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.PLATE).count(),
+                "五块驻留板必须都是普通 PLATE（P2 已从 role=switch 改回普通板）");
+        assertEquals(2, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.DOOR).count(),
+                "两扇门必须使用 DOOR（外闸 D1 / 内室门 D2）");
         assertEquals(1, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.EXIT).count(),
-                "终点闸门必须使用 EXIT，不得用 DOOR 替代（开发一 §3-④）");
+                "终点闸 + 出口必须使用 EXIT，不得用 DOOR 替代");
         assertEquals(0, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.SWITCH).count(),
-                "L2 不得出现 SWITCH（三块板都是普通驻留板）");
+                "L2 不得出现 SWITCH");
+
+        Set<String> ids = new HashSet<>();
+        for (RenderViews.Mechanism mechanism : mechanisms) {
+            assertTrue(ids.add(mechanism.id()), "机关 ID 不得重复: " + mechanism.id());
+        }
+        assertTrue(ids.containsAll(Set.of(Level02Corridor.PLATE_GATE, Level02Corridor.PLATE_RELAY,
+                Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_CORE,
+                Level02Corridor.DOOR_GATE, Level02Corridor.DOOR_RELAY, Level02Corridor.DOOR_EXIT)),
+                "机关投影必须覆盖设计说明 §三 的全部机关: " + ids);
     }
 
     @Test
-    void rendersLevel02MapWithoutExceptionAndWritesPng() throws Exception {
+    void rendersTheLoadedMapAndWritesPng() throws Exception {
         Fixture fixture = new Fixture();
-        snapshot(fixture, LOADED_PATH);
+        snapshot(fixture, fixture.frameLoaded(), LOADED_PATH);
         assertTrue(new File(LOADED_PATH).length() > 4096, "应生成非空 PNG");
     }
 
-    /** 官方解第 3 轮画面：内板 + 主驻留板同刻被占 → 闸门开；房门回锁。 */
+    /** 官方解第 3 轮画面：内板 + 主板 + 终结板同刻被占 → 终点闸解锁；D1/D2 均已回锁。 */
     @Test
     void rendersTheSolvedMomentWithThreePlatesAndOpenGate() throws Exception {
         Fixture fixture = new Fixture();
 
-        assertTrue(fixture.outerPlate.tryEnter("echo_1", 1, Level02Corridor.WINDOW_START));
-        assertTrue(fixture.outerPlate.tryExit("echo_1", 1, Level02Corridor.WINDOW_END));
-        assertTrue(fixture.innerPlate.tryEnter("echo_2", 2, Level02Corridor.R2_INNER_ARRIVAL));
-        assertTrue(fixture.mainPlate.tryEnter("echo_1", 1, Level02Corridor.R1_MAIN_ARRIVAL));
+        // R1 的残影 E1：闸板窗口 [240,384) + 主板自 624 起驻留。
+        assertTrue(fixture.gatePlate.tryEnter("echo_1", 1, Level02Corridor.GATE_WINDOW_START));
+        assertTrue(fixture.gatePlate.tryExit("echo_1", 1, Level02Corridor.GATE_WINDOW_END));
+        assertTrue(fixture.mainPlate.tryEnter("echo_1", 1, Level02Corridor.MAIN_ARRIVAL));
+        // R2 的残影 E2：中继窗口 [456,744) + 内板自 960 起驻留。
+        assertTrue(fixture.relayPlate.tryEnter("echo_2", 2, Level02Corridor.RELAY_WINDOW_START));
+        assertTrue(fixture.relayPlate.tryExit("echo_2", 2, Level02Corridor.RELAY_WINDOW_END));
+        assertTrue(fixture.innerPlate.tryEnter("echo_2", 2, Level02Corridor.INNER_ARRIVAL));
+        // 当前玩家：跨 D2 后踩住终结板。
+        assertTrue(fixture.corePlate.tryEnter("player", 0, Level02Corridor.CORE_ARRIVAL));
 
-        assertTrue(fixture.exitGate.isUnlocked(), "内板 + 主驻留板同刻被占 → 终点闸门解锁");
+        assertTrue(fixture.exitGate.isUnlocked(), "内板 + 主板 + 终结板同刻被占 → 终点闸解锁");
         assertTrue(fixture.exit.isDoorUnlocked(), "出口应被武装（E 提示可见）");
-        assertTrue(!fixture.roomDoor.isUnlocked(), "E1 已离开门外板 → 房门回锁");
+        assertFalse(fixture.gateDoor.isUnlocked(), "E1 已离开外闸板 → D1 回锁");
+        assertFalse(fixture.relayDoor.isUnlocked(), "E2 已离开中继板 → D2 回锁");
+        assertTrue(fixture.exit.interact(Level02Corridor.EXIT_UNLOCK_TICK, 0), "站在 P5 上按 E 通关");
 
-        snapshot(fixture, SOLVED_PATH);
+        snapshot(fixture, fixture.frameSolved(), SOLVED_PATH);
         assertTrue(new File(SOLVED_PATH).length() > 4096, "应生成非空 PNG");
     }
 
@@ -105,66 +129,120 @@ class Level02MapRenderSnapshotTest {
 
         final DockingPlateRegistry registry = new DockingPlateRegistry();
         final EventDispatcher bus = new EventDispatcher();
-        final DockingPlate outerPlate;
+        final LevelData level = Level02Corridor.build();
+        final LevelGeometry geometry = new LevelGeometryImpl(level);
+
+        final DockingPlate gatePlate;
+        final DockingPlate relayPlate;
         final DockingPlate innerPlate;
         final DockingPlate mainPlate;
-        final Door roomDoor;
+        final DockingPlate corePlate;
+        final Door gateDoor;
+        final Door relayDoor;
         final Door exitGate;
         final ExitTerminal exit;
-        final LevelData level = Level02Corridor.build();
 
         Fixture() {
-            outerPlate = plate(Level02Corridor.PLATE_DOOR);
+            gatePlate = plate(Level02Corridor.PLATE_GATE);
+            relayPlate = plate(Level02Corridor.PLATE_RELAY);
             innerPlate = plate(Level02Corridor.PLATE_INNER);
             mainPlate = plate(Level02Corridor.PLATE_MAIN);
-            roomDoor = door(Level02Corridor.DOOR_ROOM);
+            corePlate = plate(Level02Corridor.PLATE_CORE);
+            gateDoor = door(Level02Corridor.DOOR_GATE);
+            relayDoor = door(Level02Corridor.DOOR_RELAY);
             exitGate = door(Level02Corridor.DOOR_EXIT);
             exit = new ExitTerminal(Level02Corridor.EXIT, position(Level02Corridor.EXIT),
                     exitGate.getId(), ExitTerminal.interactRadiusForTileSize(TILE), bus);
         }
 
-        RenderViews.Frame frame() {
+        /** 加载态：出生点站立，8 件机关齐全且全部未激活，无残影。 */
+        RenderViews.Frame frameLoaded() {
             return new RenderViews.Frame(
-                    new RenderViews.Player(spawnX(), spawnY(), Direction.DOWN, MovementState.DOCKED, false),
+                    new RenderViews.Player(level.getSpawnPos().x(), level.getSpawnPos().y(),
+                            Direction.RIGHT, MovementState.IDLE, false),
+                    mechanisms(),
+                    List.of());
+        }
+
+        /** 通关瞬间：玩家站在终结板上（DOCKED），两条残影仍在压板路线上。 */
+        RenderViews.Frame frameSolved() {
+            Vector2D core = position(Level02Corridor.PLATE_CORE);
+            return new RenderViews.Frame(
+                    new RenderViews.Player(core.x(), core.y(), Direction.RIGHT, MovementState.DOCKED, false),
                     mechanisms(),
                     List.of(
-                            new RenderViews.EchoTrail(1, List.of(
-                                    new Vector2D(2.5 * TILE, 11.5 * TILE),
-                                    new Vector2D(6.5 * TILE, 11.5 * TILE),
-                                    new Vector2D(6.5 * TILE, 6.5 * TILE)), false),
-                            new RenderViews.EchoTrail(2, List.of(
-                                    new Vector2D(2.5 * TILE, 11.5 * TILE),
-                                    new Vector2D(5.5 * TILE, 11.5 * TILE),
-                                    new Vector2D(5.5 * TILE, 5.5 * TILE)), true)));
+                            new RenderViews.EchoTrail(1, trace(Level02Corridor.NODE_SPAWN,
+                                    Level02Corridor.NODE_PLATE_GATE, Level02Corridor.NODE_PLATE_MAIN), false),
+                            new RenderViews.EchoTrail(2, trace(Level02Corridor.NODE_SPAWN,
+                                    Level02Corridor.NODE_DOOR_GATE, Level02Corridor.NODE_PLATE_RELAY,
+                                    Level02Corridor.NODE_PLATE_INNER), true)));
         }
 
         List<RenderViews.Mechanism> mechanisms() {
             List<RenderViews.Mechanism> list = new ArrayList<>();
-            list.add(mechanism(outerPlate.getId(), outerPlate.getPosition(), RenderViews.MechanismKind.PLATE,
-                    outerPlate.isOccupied()));
-            list.add(mechanism(innerPlate.getId(), innerPlate.getPosition(), RenderViews.MechanismKind.PLATE,
-                    innerPlate.isOccupied()));
-            list.add(mechanism(mainPlate.getId(), mainPlate.getPosition(), RenderViews.MechanismKind.PLATE,
-                    mainPlate.isOccupied()));
-            list.add(mechanism(roomDoor.getId(), roomDoor.getPosition(), RenderViews.MechanismKind.DOOR,
-                    roomDoor.isUnlocked()));
-            // 终点闸门与出口终端同格：只投影一个 EXIT（与 L1 的做法一致，避免同格出现两个图标）
-            list.add(mechanism(exitGate.getId(), exitGate.getPosition(), RenderViews.MechanismKind.EXIT,
-                    exitGate.isUnlocked()));
+            list.add(mechanism(gatePlate.getId(), gatePlate.getPosition(),
+                    RenderViews.MechanismKind.PLATE, gatePlate.isOccupied()));
+            list.add(mechanism(relayPlate.getId(), relayPlate.getPosition(),
+                    RenderViews.MechanismKind.PLATE, relayPlate.isOccupied()));
+            list.add(mechanism(innerPlate.getId(), innerPlate.getPosition(),
+                    RenderViews.MechanismKind.PLATE, innerPlate.isOccupied()));
+            list.add(mechanism(mainPlate.getId(), mainPlate.getPosition(),
+                    RenderViews.MechanismKind.PLATE, mainPlate.isOccupied()));
+            list.add(mechanism(corePlate.getId(), corePlate.getPosition(),
+                    RenderViews.MechanismKind.PLATE, corePlate.isOccupied()));
+            list.add(mechanism(gateDoor.getId(), gateDoor.getPosition(),
+                    RenderViews.MechanismKind.DOOR, gateDoor.isUnlocked()));
+            list.add(mechanism(relayDoor.getId(), relayDoor.getPosition(),
+                    RenderViews.MechanismKind.DOOR, relayDoor.isUnlocked()));
+            // 终点闸与出口终端同格：只投影一个 EXIT（与 L1 的做法一致，避免同格出现两个图标）。
+            list.add(mechanism(exitGate.getId(), exitGate.getPosition(),
+                    RenderViews.MechanismKind.EXIT, exitGate.isUnlocked()));
             return list;
+        }
+
+        /** 用最短路串起若干停靠点的残影轨迹（节点中心序列）。 */
+        List<Vector2D> trace(String... stops) {
+            List<Vector2D> out = new ArrayList<>();
+            for (int i = 0; i + 1 < stops.length; i++) {
+                List<String> segment = shortestPath(stops[i], stops[i + 1]);
+                if (segment.isEmpty()) {
+                    throw new AssertionError("残影轨迹缺少路径: " + stops[i] + " → " + stops[i + 1]);
+                }
+                for (int k = (i == 0 ? 0 : 1); k < segment.size(); k++) {
+                    out.add(position(segment.get(k)));
+                }
+            }
+            return out;
+        }
+
+        private List<String> shortestPath(String from, String to) {
+            Deque<String> queue = new ArrayDeque<>();
+            Set<String> seen = new HashSet<>();
+            Map<String, String> parent = new HashMap<>();
+            queue.add(from);
+            seen.add(from);
+            while (!queue.isEmpty()) {
+                String current = queue.poll();
+                if (current.equals(to)) {
+                    List<String> path = new ArrayList<>();
+                    for (String node = to; node != null; node = parent.get(node)) {
+                        path.add(0, node);
+                    }
+                    return path;
+                }
+                for (String next : geometry.getNeighbors(current)) {
+                    if (seen.add(next)) {
+                        parent.put(next, current);
+                        queue.add(next);
+                    }
+                }
+            }
+            return List.of();
         }
 
         private RenderViews.Mechanism mechanism(String id, Vector2D pos,
                                                 RenderViews.MechanismKind kind, boolean active) {
             return new RenderViews.Mechanism(id, pos.x(), pos.y(), kind, active);
-        }
-
-        private double spawnX() {
-            return level.getSpawnPos() == null ? 2.5 * TILE : level.getSpawnPos().x();
-        }
-
-        private double spawnY() {
-            return level.getSpawnPos() == null ? 11.5 * TILE : level.getSpawnPos().y();
         }
 
         private DockingPlate plate(String id) {
@@ -185,17 +263,21 @@ class Level02MapRenderSnapshotTest {
                     .filter(e -> mechanismId.equals(e.getId()))
                     .map(e -> e.getPos())
                     .findFirst()
-                    .orElseGet(() -> level.getDoors().stream()
-                            .filter(d -> mechanismId.equals(d.getId()))
-                            .map(d -> d.getPosition())
+                    .orElseGet(() -> level.getPathNodes().stream()
+                            .filter(n -> mechanismId.equals(n.getId()))
+                            .map(PathNode::getWorldPos)
                             .findFirst()
-                            .orElseThrow(() -> new AssertionError("缺少机制: " + mechanismId)));
+                            .orElseGet(() -> level.getDoors().stream()
+                                    .filter(d -> mechanismId.equals(d.getId()))
+                                    .map(d -> d.getPosition())
+                                    .findFirst()
+                                    .orElseThrow(() -> new AssertionError("缺少机制: " + mechanismId))));
         }
     }
 
     // ---------- 离屏渲染（与 L1 出图同一套路，批量像素拷贝）----------
 
-    private static void snapshot(Fixture fixture, String outPath) throws Exception {
+    private static void snapshot(Fixture fixture, RenderViews.Frame frame, String outPath) throws Exception {
         LevelData level = fixture.level;
         int rows = level.getTileGrid().length;
         int cols = level.getTileGrid()[0].length;
@@ -215,10 +297,10 @@ class Level02MapRenderSnapshotTest {
                 adapter.addLayer(new GroundWallLayer(level.getTileGrid(), TILE, transform));
                 adapter.addLayer(new SpawnLayer(level.getSpawnPos().x(), level.getSpawnPos().y(), TILE, transform));
                 adapter.addLayer(new PathNodeHintLayer(
-                        fixture::frame, pathNodeMarkers(level), TILE, transform));
-                adapter.addLayer(new MechanismLayer(fixture::frame, TILE, transform));
-                adapter.addLayer(new PlayerLayer(fixture::frame, TILE, transform));
-                adapter.addLayer(new EchoTrailLayer(fixture::frame, transform));
+                        () -> frame, pathNodeMarkers(level), TILE, transform));
+                adapter.addLayer(new MechanismLayer(() -> frame, TILE, transform));
+                adapter.addLayer(new PlayerLayer(() -> frame, TILE, transform));
+                adapter.addLayer(new EchoTrailLayer(() -> frame, transform));
 
                 adapter.renderFrame(worldW, worldH, 0.0);
 
@@ -256,7 +338,7 @@ class Level02MapRenderSnapshotTest {
 
     private static List<RenderViews.PathNodeMarker> pathNodeMarkers(LevelData level) {
         List<RenderViews.PathNodeMarker> markers = new ArrayList<>();
-        for (var node : level.getPathNodes()) {
+        for (PathNode node : level.getPathNodes()) {
             markers.add(new RenderViews.PathNodeMarker(node.getId(),
                     node.getWorldPos().x(), node.getWorldPos().y()));
         }
@@ -264,7 +346,7 @@ class Level02MapRenderSnapshotTest {
     }
 
     private static int distinctSampledColors(int[] pixels, int width, int height, int step) {
-        java.util.HashSet<Integer> colors = new java.util.HashSet<>();
+        Set<Integer> colors = new HashSet<>();
         for (int y = 0; y < height; y += step) {
             for (int x = 0; x < width; x += step) {
                 colors.add(pixels[y * width + x]);
