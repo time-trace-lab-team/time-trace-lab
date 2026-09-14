@@ -103,12 +103,27 @@ class Level03ObjectiveViewModelTest {
         assertThrows(IllegalArgumentException.class, () -> view(4, false, false, false, false, false, false, false));
         // 「最后有效轮」只可能出现在最后一轮
         assertThrows(IllegalArgumentException.class, () -> view(2, true, false, false, false, false, false, false));
-        // 门 A 没开却已经在 B 支路里（doorAOpen=false, inBranchB=true）
-        assertThrows(IllegalArgumentException.class, () -> view(2, false, false, true, false, false, false, false));
         // 第一、二轮不可能出现「门 C 开着但门 B 没开」
         assertThrows(IllegalArgumentException.class, () -> view(2, false, false, false, false, false, true, false));
         // 第一轮不可能已供能
         assertThrows(IllegalArgumentException.class, () -> view(1, false, false, false, false, false, false, true));
+    }
+
+    /**
+     * 反例保护：{@code doorAOpen=false && inBranchB=true} 是<b>合法</b>状态，不得再抛异常。
+     *
+     * <p>真实玩法必然出现这一组合：E₁ 在刻 384 离开 A 板（门 A 回锁），而第二轮 / 第三轮的玩家
+     * 此刻正在 B 支路里跑到轮末。曾经的校验把「门此刻是否开着」当成「能不能已经在里面」，
+     * 会让这一格的 HUD 投影直接抛 {@link IllegalArgumentException}。</p>
+     */
+    @Test
+    void doorAClosedWhileAlreadyInBranchBIsLegalAndStillGuidesThePlayer() {
+        Level03ObjectiveViewModel vm = view(2, false, false, true, false, false, false, false);
+        assertFalse(vm.doorAOpen());
+        assertTrue(vm.inBranchB());
+        assertFalse(vm.rayActive());
+        assertTrue(vm.text().contains("沿 B 支路往上走"), vm.text());
+        assertTrue(vm.text().contains("Space"), vm.text());
     }
 
     private static Level03ObjectiveViewModel view(int round,
