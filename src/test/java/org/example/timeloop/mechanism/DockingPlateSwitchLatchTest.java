@@ -13,6 +13,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -134,6 +135,47 @@ class DockingPlateSwitchLatchTest {
         assertTrue(restored.isLatched(), "恢复后锁存仍在");
         assertTrue(restored.isOccupied());
         assertEquals(DockingPlate.State.UNOCCUPIED, restored.getState());
+    }
+
+    /**
+     * L01-GATE-MERGE-DEV2 请求（2026-09-14）：非开关板（{@code latching=false}）**不得**被恢复成
+     * {@code latched=true} —— 否则 {@code isOccupied()} 恒真、门被错误解锁。
+     *
+     * <p>同时锁住「校验在任何状态赋值之前」：抛异常后世界状态必须零变化。</p>
+     */
+    @Test
+    void restoreRejectsLatchedSnapshotForNonSwitchPlateWithoutChangingState() {
+        DockingPlate plain = new DockingPlate("L01_plate_left", LEFT_POS, registry, bus);
+        assertTrue(plain.tryEnter("player", 0, 10), "先让普通板处于已占用状态");
+
+        DockingPlate.Snapshot latchedSnapshot = new DockingPlate.StateSnapshot(
+                "L01_plate_left", DockingPlate.State.UNOCCUPIED, null, 0, true);
+
+        IllegalArgumentException thrown = assertThrows(IllegalArgumentException.class,
+                () -> plain.restore(latchedSnapshot));
+        assertTrue(thrown.getMessage().contains("非开关驻留板不能恢复锁存位"),
+                "异常信息应说明原因，实测: " + thrown.getMessage());
+
+        // 世界零变化：占用状态、占用者、锁存位全部保持原样
+        assertEquals(DockingPlate.State.OCCUPIED, plain.getState());
+        assertEquals("player", plain.getOccupantId());
+        assertEquals(0, plain.getOccupantSourceRound());
+        assertTrue(plain.isOccupied(), "失败的恢复不得改变占用");
+        assertFalse(plain.isLatched(), "非开关板永远不得被恢复成锁存 ON");
+    }
+
+    /** 对照：开关板恢复 {@code latched=true} 仍然合法（校验只拦非开关板）。 */
+    @Test
+    void restoreAcceptsLatchedSnapshotForSwitchPlate() {
+        DockingPlate switchPlate = switchPlate();
+        DockingPlate.Snapshot latchedSnapshot = new DockingPlate.StateSnapshot(
+                "L01_plate_right", DockingPlate.State.UNOCCUPIED, null, 0, true);
+
+        switchPlate.restore(latchedSnapshot);
+
+        assertTrue(switchPlate.isLatched());
+        assertTrue(switchPlate.isOccupied());
+        assertEquals(DockingPlate.State.UNOCCUPIED, switchPlate.getState());
     }
 
     /** 旧的四参快照（无锁存位）仍可用，语义等价于 OFF —— 保证 snapshot/** 不被本卡打断。 */
