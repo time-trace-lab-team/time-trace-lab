@@ -493,6 +493,9 @@ public final class Level02Assembly {
      * </ol>
      */
     public void stop() {
+        // 退出/卸载场景：相位与减速必须成对复位（SCENE_EXIT）。
+        phaseState.reset(PlayerEffectResetReason.SCENE_EXIT);
+        slowdown.reset(PlayerEffectResetReason.SCENE_EXIT);
         stopped = true;
         cleanup();
     }
