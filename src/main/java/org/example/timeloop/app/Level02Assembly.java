@@ -647,9 +647,24 @@ public final class Level02Assembly {
                 continue;
             }
             if (ray.containsPoint(position, Level02Corridor.RAY_HIT_WIDTH)) {
-                slowdown.noteHit(ray.getId(), activeCycle);
+                if (slowdown.noteHit(ray.getId(), activeCycle)) {
+                    recordRayDelay(ray.getId(), tick, PlayerSlowdownController.DEFAULT_SLOW_DURATION_TICKS);
+                }
             }
         }
+    }
+
+    /**
+     * 把一次射线命中写进本轮记录（Δt 事件）。
+     *
+     * <p>存在的理由：残影**不重新结算射线**，所以第三轮 `E₂` 轨迹上要显示 Δt，
+     * 只能靠第二轮把命中写进录制、再由回放按刻取出（开发一 R4 的只读投影据此绘制）。</p>
+     *
+     * <p>{@code reason} 携带 {@code delay=<迟到刻>}，不新增记录字段（避免契约变更）。</p>
+     */
+    void recordRayDelay(String rayId, long tick, int delayTicks) {
+        recording.recordEvent(new TimelineEvent(tick, PLAYER_ACTOR_ID, PLAYER_SOURCE_ROUND,
+                rayId, TimelineEvent.EventType.RAY_DELAY, null, "delay=" + delayTicks));
     }
 
     /** 把当前玩家的 autoDock 边沿镜像到机关侧（驱动门）。 */
