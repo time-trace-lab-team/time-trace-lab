@@ -63,7 +63,8 @@ public class MechanismSnapshot {
                     mechanismId,
                     snapshot.getState(),
                     snapshot.getOccupantId(),
-                    snapshot.getOccupantSourceRound()
+                    snapshot.getOccupantSourceRound(),
+                    snapshot.isLatched()
             ));
         }
 
