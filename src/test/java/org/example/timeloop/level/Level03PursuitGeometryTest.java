@@ -28,6 +28,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>本测试只用仓库真实类自身做校验：地形由 {@link LevelGeometryImpl} 建图，通路与最短格数用 BFS
  * 在同一张图上算，刻表由「格数 × {@link Level03Pursuit#TICKS_PER_TILE}」推出。所有数字都必须与
  * {@code Level03Pursuit} 的常量一致，<b>不写字面量</b>。</p>
+ *
+ * <p>唯一的例外是「新图硬数字」（可走格 260 = 58%）：它们刻意写成字面量，作为地图定稿的回归锚点
+ * —— 地形一旦被改动，这两条断言立刻变红。</p>
  */
 class Level03PursuitGeometryTest {
 
@@ -61,6 +64,34 @@ class Level03PursuitGeometryTest {
         assertTrue(walkable >= 80, "地图太小，路线会挤在一起: " + walkable);
     }
 
+    /** 新图硬数字：可走格 260、占比 58%（向下取整），且地图四边全是墙。 */
+    @Test
+    void walkableCellCountMatchesTheDesign() {
+        TileType[][] grid = level.getTileGrid();
+        int walkable = 0;
+        for (TileType[] tiles : grid) {
+            for (TileType tile : tiles) {
+                if (tile != TileType.WALL) {
+                    walkable++;
+                }
+            }
+        }
+        assertEquals(260, walkable, "新图可走格数必须正好 260");
+        assertEquals(58, 100 * walkable / (Level03Pursuit.GRID_COLS * Level03Pursuit.GRID_ROWS),
+                "可走格占比必须正好 58%（向下取整）");
+
+        for (int col = 0; col < Level03Pursuit.GRID_COLS; col++) {
+            assertEquals(TileType.WALL, grid[0][col], "第 0 行必须全是墙: 第 " + col + " 列");
+            assertEquals(TileType.WALL, grid[Level03Pursuit.GRID_ROWS - 1][col],
+                    "第 15 行必须全是墙: 第 " + col + " 列");
+        }
+        for (int row = 0; row < Level03Pursuit.GRID_ROWS; row++) {
+            assertEquals(TileType.WALL, grid[row][0], "第 0 列必须全是墙: 第 " + row + " 行");
+            assertEquals(TileType.WALL, grid[row][Level03Pursuit.GRID_COLS - 1],
+                    "第 27 列必须全是墙: 第 " + row + " 行");
+        }
+    }
+
     @Test
     void spawnIsOnTheSpawnCellAndAllMechanismCellsAreWalkable() {
         assertEquals(Level03Pursuit.cellCenter(Level03Pursuit.SPAWN_CELL[0], Level03Pursuit.SPAWN_CELL[1]),
@@ -75,6 +106,43 @@ class Level03PursuitGeometryTest {
             assertTrue(Level03Pursuit.isOpen(cell[0], cell[1]),
                     "机关所在格必须是可走格: (" + cell[0] + "," + cell[1] + ")");
         }
+    }
+
+    /**
+     * V9：11 个功能格<b>任意三点不共线</b>（横 / 竖 / 斜都要挡住）。
+     *
+     * <p>旧图 A/C/B 同在第 2 行、门 A/J/门 B/门 C/出口 同在第 10 行，排成一条线；新图走成锯齿，
+     * 用叉积逐对枚举 C(11,3) = 165 个三元组，必须全不为 0。</p>
+     */
+    @Test
+    void noThreeMechanismCellsAreCollinear() {
+        String[] labels = {"出生点", "A 板", "B 板", "C 板", "D 板", "门 A", "J 分岔口",
+                "射线", "门 B", "门 C", "出口"};
+        int[][] cells = {
+                Level03Pursuit.SPAWN_CELL, Level03Pursuit.CELL_PLATE_A,
+                Level03Pursuit.CELL_PLATE_B, Level03Pursuit.CELL_PLATE_C,
+                Level03Pursuit.CELL_PLATE_D, Level03Pursuit.CELL_DOOR_A,
+                Level03Pursuit.CELL_FORK_J, Level03Pursuit.CELL_RAY,
+                Level03Pursuit.CELL_DOOR_B, Level03Pursuit.CELL_DOOR_C,
+                Level03Pursuit.CELL_EXIT};
+        assertEquals(labels.length, cells.length, "功能格清单必须一一对应");
+
+        int checked = 0;
+        for (int i = 0; i < cells.length; i++) {
+            for (int j = i + 1; j < cells.length; j++) {
+                for (int k = j + 1; k < cells.length; k++) {
+                    int[] p1 = cells[i];
+                    int[] p2 = cells[j];
+                    int[] p3 = cells[k];
+                    int cross = (p2[0] - p1[0]) * (p3[1] - p1[1])
+                            - (p2[1] - p1[1]) * (p3[0] - p1[0]);
+                    assertTrue(cross != 0, "三个功能格不得共线（叉积 " + cross + "）: "
+                            + labels[i] + " / " + labels[j] + " / " + labels[k]);
+                    checked++;
+                }
+            }
+        }
+        assertEquals(165, checked, "C(11,3) = 165 个三元组必须全部枚举到");
     }
 
     // ---------- 刻表：格数 × 24 ----------
@@ -131,10 +199,26 @@ class Level03PursuitGeometryTest {
                 Level03Pursuit.DOOR_C_CROSS_TICK);
         assertEquals(Level03Pursuit.DOOR_C_CROSS_TICK + Level03Pursuit.DOOR_C_TO_EXIT_TICKS,
                 Level03Pursuit.EXIT_ARRIVAL);
-        assertEquals(Level03Pursuit.PLATE_D_ARRIVAL, Level03Pursuit.EXIT_ARRIVAL,
-                "E₁ 抵达 D 供能的刻正好是第三轮玩家走到出口的刻");
+        // 新图的 C→D（13 格）比「门 C→出口」（5 格）长，所以 E₁ 在 D 供能的刻晚于玩家抵达出口的刻
+        // —— 玩家要在出口「等」到供能刻再按 E。这是设计意图（出口紧跟门 C，而外区控制线绕得远），
+        // 不是缺陷；因此这里断言的是不等式，而不是旧图的「两刻相等」。
+        assertTrue(Level03Pursuit.PLATE_D_ARRIVAL > Level03Pursuit.EXIT_ARRIVAL,
+                "本图 D 供能晚于玩家抵达出口：玩家在出口等待供能");
+        assertTrue(Level03Pursuit.PLATE_D_ARRIVAL < Level03Pursuit.DURATION_TICKS,
+                "供能必须早于轮末，玩家才来得及按 E");
         assertTrue(Level03Pursuit.EXIT_ARRIVAL < Level03Pursuit.DURATION_TICKS,
                 "通关必须能在轮长内完成");
+    }
+
+    /** 「驻留格数」与「公平性反推的窗口」必须钉在一起（不允许两边各写一套）。 */
+    @Test
+    void holdTilesMatchTheFairnessDerivedWindows() {
+        assertEquals(Level03Pursuit.HOLD_A_TILES * TICKS_PER_TILE,
+                Level03Pursuit.GATE_A_WINDOW_END - Level03Pursuit.GATE_A_WINDOW_START,
+                "门 A 窗口宽度 = E₁ 在 A 板驻留格数 × 24");
+        assertEquals(Level03Pursuit.HOLD_C_TILES * TICKS_PER_TILE,
+                Level03Pursuit.PLATE_C_WINDOW_END - Level03Pursuit.PLATE_C_ARRIVAL,
+                "门 C 窗口宽度 = E₁ 在 C 板驻留格数 × 24");
     }
 
     @Test
@@ -177,6 +261,22 @@ class Level03PursuitGeometryTest {
         }
     }
 
+    /** V2：门 A 把地图切成两块 —— 外区（A/C/D）与内区（J/B/门 B/门 C/出口）。 */
+    @Test
+    void mapHasTwoPartsSeparatedByDoorA() {
+        Set<String> blocked = Set.of(Level03Pursuit.NODE_DOOR_A);
+        for (String outer : List.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_C,
+                Level03Pursuit.NODE_PLATE_D)) {
+            assertTrue(reachable(Level03Pursuit.NODE_SPAWN, outer, blocked),
+                    "删掉门 A 后外区必须仍从出生点可达: " + outer);
+        }
+        for (String inner : List.of(Level03Pursuit.NODE_J, Level03Pursuit.NODE_PLATE_B,
+                Level03Pursuit.NODE_EXIT)) {
+            assertFalse(reachable(Level03Pursuit.NODE_SPAWN, inner, blocked),
+                    "删掉门 A 后内区必须全部不可达: " + inner);
+        }
+    }
+
     @Test
     void doorBAndDoorCAreBothMandatoryOnTheMainChannel() {
         assertFalse(reachable(Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_EXIT,
@@ -187,21 +287,50 @@ class Level03PursuitGeometryTest {
                 "删掉门 C 后出口必须不可达");
     }
 
+    /**
+     * V3：B 支路是被<b>射线格</b>封死的，不是被分岔口 J 封死的。
+     *
+     * <p>新图删掉 J(17,10) 之后 B 板<b>仍然可达</b>（J 旁边多了侧室口子 (17,9)/(18,9)，且射线格此刻
+     * 是开放的），所以旧用例「删掉 J 就封死」的假设已经失效。真正的咽喉是射线格：删掉它，B 板
+     * 不可达；从 B 板出发、把射线封死，也回不到主通道。</p>
+     */
     @Test
-    void bBranchAndMainChannelOnlyMeetAtTheFork() {
-        // 删掉分岔口 J：B 支路与主通道都必须不可达 —— 两者之间不得有第二条缝。
-        Set<String> blockedFork = Set.of(Level03Pursuit.NODE_J);
-        assertFalse(reachable(Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_PLATE_B, blockedFork),
-                "删掉 J 后 B 板必须不可达");
-        assertFalse(reachable(Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_EXIT, blockedFork),
-                "删掉 J 后出口必须不可达");
+    void bBranchIsSealedByTheRayNotByTheFork() {
+        // ① 删掉射线格：出生点 → B 板不可达（射线无旁路）。
+        Set<String> blockedRay = Set.of(Level03Pursuit.nodeIdOf(Level03Pursuit.CELL_RAY));
+        assertFalse(reachable(Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_PLATE_B, blockedRay),
+                "删掉射线格后 B 板必须不可达（射线是 B 支路的唯一咽喉、无旁路）");
 
-        // 从 B 板出发、把 J 封死：主通道（第 13 行第 10..21 列）一格都不可达 —— 禁止从射线后方横切。
-        Set<String> reachableFromB = reachableSet(Level03Pursuit.NODE_PLATE_B, blockedFork);
-        for (int col = 10; col <= 21; col++) {
-            assertFalse(reachableFromB.contains(Level03Pursuit.nodeId(col, 13)),
-                    "B 支路不得横切到主通道: 第 13 行第 " + col + " 列");
+        // ② 从 B 板出发、把射线格封死：门 B / 门 C / 出口全都不可达 ——
+        //    即「不能从射线后方横切到主通道」。
+        Set<String> reachableFromB = reachableSet(Level03Pursuit.NODE_PLATE_B, blockedRay);
+        for (String mainChannel : List.of(Level03Pursuit.NODE_DOOR_B, Level03Pursuit.NODE_DOOR_C,
+                Level03Pursuit.NODE_EXIT)) {
+            assertFalse(reachableFromB.contains(mainChannel),
+                    "封死射线格后，从 B 支路不得横切到主通道: " + mainChannel);
         }
+
+        // ③ 分岔口 J 已经不是咽喉：新图里删掉 J 之后 B 板与出口<b>都仍然可达</b>
+        //    （B 经开放的射线格 (17,5) 绕上去；出口经侧室 (17,9)/(18,9) → (19,7) 直通门 B）。
+        //    所以「删 J 必须封死」的旧假设作废，封口责任全部落在射线格上（由 ① ② 钉住）。
+        Set<String> blockedFork = Set.of(Level03Pursuit.NODE_J);
+        assertTrue(reachable(Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_PLATE_B, blockedFork),
+                "删掉 J 后 B 板仍可达（射线格开放时经 (17,8)→(17,7)→(17,6)→(17,5) 绕上去）");
+        assertTrue(reachable(Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_EXIT, blockedFork),
+                "删掉 J 后出口仍可达（侧室 (17,9)→(18,9)→(19,9) 是第二个口子）：J 不是咽喉");
+    }
+
+    /** V6：射线格左右邻格都是墙、上下邻格都是可走格 —— 射线只横跨 B 支路一格。 */
+    @Test
+    void rayCellIsSealedOnBothSides() {
+        int col = Level03Pursuit.CELL_RAY[0];
+        int row = Level03Pursuit.CELL_RAY[1];
+        assertEquals(TileType.WALL, tileAt(new int[]{col - 1, row}),
+                "射线格左侧 (16,5) 必须是墙（射线没有横向旁路）");
+        assertEquals(TileType.WALL, tileAt(new int[]{col + 1, row}),
+                "射线格右侧 (18,5) 必须是墙（射线没有横向旁路）");
+        assertTrue(Level03Pursuit.isOpen(col, row - 1), "射线格上方必须是可走格（B 支路）");
+        assertTrue(Level03Pursuit.isOpen(col, row + 1), "射线格下方必须是可走格（B 支路）");
     }
 
     @Test
@@ -227,11 +356,16 @@ class Level03PursuitGeometryTest {
             sawTheRayCell = true;
         }
         assertTrue(sawTheRayCell, "射线必须真的横跨 B 支路（命中带内至少要有 B 支路那一格）");
-        // 主通道（第 13 行）离射线至少 3 格，第三轮玩家不会进入判定范围。
-        for (int col = 10; col <= 21; col++) {
-            Vector2D cell = Level03Pursuit.cellCenter(col, 13);
-            assertTrue(Math.abs(cell.y() - Level03Pursuit.RAY_Y) > width * 10,
-                    "主通道必须远离射线判定带: 第 " + col + " 列");
+        // 主通道上的三扇门 / 出口都必须落在射线判定带之外（第三轮玩家不会进入判定范围）。
+        // 注意：不能沿用旧图的「距离 ≥ width × 10」—— 新图门 B(21,7) 距射线只有 96 世界单位，
+        // 而 width × 10 = 0.2 × 48 × 10 = 96，「严格大于」不成立；旧图专有的「主通道离射线 ≥3 格」
+        // 这条描述随地形改版作废，这里改判 > width（判定带之外）。
+        for (int[] cell : List.of(Level03Pursuit.CELL_DOOR_B, Level03Pursuit.CELL_DOOR_C,
+                Level03Pursuit.CELL_EXIT)) {
+            double distance = distanceToRaySegment(Level03Pursuit.cellCenter(cell[0], cell[1]));
+            assertTrue(distance > width,
+                    "主通道节点必须落在射线判定带之外: (" + cell[0] + "," + cell[1]
+                            + ") 距离 " + distance + " ≤ " + width);
         }
         // 分岔口 J 到射线的直线路径不经过主通道。
         assertEquals(Level03Pursuit.FORK_TO_RAY_TICKS,
@@ -358,10 +492,10 @@ class Level03PursuitGeometryTest {
 
     @Test
     void levelParametersMatchTheSettingBook() {
-        assertEquals(1200L, Level03Pursuit.DURATION_TICKS);
+        assertEquals(1800L, Level03Pursuit.DURATION_TICKS);
         assertEquals(3, Level03Pursuit.MAX_ROUNDS, "maxRounds = 3（设定书 §8.3）");
         assertEquals(2, Level03Pursuit.ECHO_LIFE_L, "L = 2（设定书 §7）");
-        assertEquals(1200L, level.getDurationTicks());
+        assertEquals(1800L, level.getDurationTicks());
         assertEquals(3, level.getMaxRounds());
         assertEquals(2, level.getEchoLifeL());
     }

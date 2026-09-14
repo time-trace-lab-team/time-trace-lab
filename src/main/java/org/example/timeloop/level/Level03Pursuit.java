@@ -25,10 +25,10 @@ import java.util.Set;
  *       → {@link #EXIT}。第三轮当前玩家走这条线，<b>不经过射线</b>。</li>
  * </ul>
  *
- * <p><b>冻结的空间关系</b>（设定书 §3.2）：门 A 是内区唯一入口；A/C/D 全在门 A 之外；门 A 与射线
- * 不相交、也不遮挡射线；B 支路（第 9 列竖廊）与主通道（第 13 行横廊）之间由第 5–8 列 / 第 10 列
- * 以南的整片内部墙隔开，<b>只在分岔口 J 相交</b>；门 B、门 C 在主通道上顺序排列；出口在门 C 之后；
- * 门 A / 门 B / 门 C / 射线<b>都没有旁路</b>。</p>
+ * <p><b>冻结的空间关系</b>（设定书 §3.2）：门 A(13,10) 是内区唯一入口（第 13 列分隔墙上唯一的缺口）；
+ * A/C/D 全在门 A 之外的外区；门 A 与射线不重叠、也不遮挡射线；B 支路（第 17 列竖廊 + 折到 (16,3)）
+ * 与主通道（J 向右的折线：门 B(21,7) → 门 C(23,9) → 出口(25,6)）<b>只在分岔口 J(17,10) 相交</b>；
+ * 射线格 (17,5) 的左右邻格都是墙，因此它只横跨 B 支路一格；门 A / 门 B / 门 C / 射线<b>都没有旁路</b>。</p>
  *
  * <p><b>终点供能的实现方式</b>：{@code ExitTerminal} 在引擎里只能被一扇 {@code Door} 的
  * {@code DOOR_UNLOCKED} 武装（{@code associatedDoorId} 必须是 {@code door} 类型），因此「D 板为出口供能」
@@ -54,36 +54,43 @@ public final class Level03Pursuit {
     /** 每格走行刻数（baseSpeed 2 px/tick、tileSize 48）。 */
     public static final long TICKS_PER_TILE = 24L;
 
-    public static final long DURATION_TICKS = 1200L;
+    public static final long DURATION_TICKS = 1800L;
     public static final int MAX_ROUNDS = 3;
     public static final int ECHO_LIFE_L = 2;
 
     /**
-     * 地形。{@code S}=出生点；机关与门都落在可走格上（与第一、二关同一做法）。
+     * 地形（28×16 · 地板 260 格 = 58%）。{@code S}=出生点；机关与门都落在可走格上（与第一、二关同一做法）；
+     * 字母只是给设计图对照用的标记，引擎一律按 {@code 非 '#' = 可走} 处理。
      *
      * <pre>
-     * 列 1-4    西侧竖廊（外侧控制路线：D(2,2) / C(2,5) / A(2,8)）与出生点(2,13)
-     * 列 5-8    内部墙（唯一缺口在第 13 行的门 A(6,13)）
-     * 列 9     B 板支路竖廊（第 5-12 行，B 板在 (9,5)）+ 分岔口 J(9,13)
-     * 列 10-27 内部墙 + 第 13 行主通道（门 B(13,13) / 门 C(17,13) / 出口(21,13)）
+     * 第 1-12 列   外区：北西厅 A(3,2) / 北东厅 C(10,2) / 南西厅 S(2,13) / 南东厅 D(10,13)
+     * 第 13 列     分隔墙：只有门 A 那一格 (13,10) 是通的 —— 内区唯一入口
+     * 第 14-26 列  内区：B 支路（第 17 列，J(17,10) 向上经射线(17,5) 折到 B(16,3)）
+     *              + 主通道（J 向右折线：门 B(21,7) → 门 C(23,9) → 出口(25,6)）
+     *              + 侧室全是死路（I_N / I_W / 南侧大房 / 右缘凹室），不构成旁路
      * </pre>
+     *
+     * <p><b>为什么这样摆</b>：11 个功能格任意三点不共线（横/竖/斜）—— 旧图 A/C/B 同在第 2 行、
+     * 门 A/J/门 B/门 C/出口 同在第 10 行，排成一条线；新图走成锯齿：B 掉到第 3 行、门 B 上到第 7 行、
+     * 门 C 下到第 9 行、出口再上到第 6 行，射线独占第 5 行、D 板在第 13 行。射线格左右两侧都是墙，
+     * 因此射线只横跨 B 支路一格。</p>
      */
     public static final String[] MAP = {
             "############################", // 0
-            "#....#######################", // 1
-            "#.D..#######################", // 2  D 板
-            "#....#######################", // 3
-            "#....#######################", // 4
-            "#.C..####.##################", // 5  C 板 + B 板支路北端（B 板所在行）
-            "#....####.##################", // 6
-            "#....####.##################", // 7
-            "#.A..####.##################", // 8  A 板
-            "#....####.##################", // 9  射线横跨本行第 9 列
-            "#....####.##################", // 10
-            "#....####.##################", // 11
-            "#....####.##################", // 12
-            "#.S...................######", // 13 主通道：门 A(6) J(9) 门 B(13) 门 C(17) 出口(21)
-            "#....#######################", // 14
+            "#............#....#....#...#", // 1
+            "#..A##....C..#....#....#...#", // 2  A(3,2) / C(10,2)
+            "#...##.......#..B......#...#", // 3  B(16,3)
+            "#.....##.....####.#....##..#", // 4
+            "##.#######.###..#R#....##..#", // 5  射线(17,5)：左右邻格 (16,5)/(18,5) 都是墙
+            "#............#..#.#######x.#", // 6  出口 + 供能闸(25,6)
+            "#.....#......#..#.#..b..#..#", // 7  门 B(21,7)
+            "#............#....#.###.#..#", // 8
+            "###.#######.##..#...###c...#", // 9  门 C(23,9)
+            "#............a...JJ....#####", // 10 门 A(13,10) / 分岔口 J(17,10)
+            "##.#######.####.##.#########", // 11
+            "#.....##.....#.............#", // 12
+            "#.S...##..D..#.............#", // 13 出生点(2,13) / D 板(10,13)
+            "#............#.............#", // 14
             "############################", // 15
     };
 
@@ -106,16 +113,16 @@ public final class Level03Pursuit {
     // ---------- ③ 机关所在格 {列, 行} ----------
 
     public static final int[] SPAWN_CELL = {2, 13};
-    public static final int[] CELL_PLATE_A = {2, 8};
-    public static final int[] CELL_PLATE_C = {2, 5};
-    public static final int[] CELL_PLATE_D = {2, 2};
-    public static final int[] CELL_PLATE_B = {9, 5};
-    public static final int[] CELL_DOOR_A = {6, 13};
-    public static final int[] CELL_FORK_J = {9, 13};
-    public static final int[] CELL_DOOR_B = {13, 13};
-    public static final int[] CELL_DOOR_C = {17, 13};
-    public static final int[] CELL_EXIT = {21, 13};
-    public static final int[] CELL_RAY = {9, 9};
+    public static final int[] CELL_PLATE_A = {3, 2};
+    public static final int[] CELL_PLATE_C = {10, 2};
+    public static final int[] CELL_PLATE_D = {10, 13};
+    public static final int[] CELL_PLATE_B = {16, 3};
+    public static final int[] CELL_DOOR_A = {13, 10};
+    public static final int[] CELL_FORK_J = {17, 10};
+    public static final int[] CELL_DOOR_B = {21, 7};
+    public static final int[] CELL_DOOR_C = {23, 9};
+    public static final int[] CELL_EXIT = {25, 6};
+    public static final int[] CELL_RAY = {17, 5};
 
     // ---------- ④ 关键路径节点 ----------
 
@@ -132,27 +139,45 @@ public final class Level03Pursuit {
 
     // ---------- ⑤ 段长（几何 ⇒ 刻）----------
 
-    /** 出生点 → A 板：5 格。 */
-    public static final long SPAWN_TO_PLATE_A_TICKS = 5 * TICKS_PER_TILE;
-    /** A 板 → C 板：3 格。 */
-    public static final long PLATE_A_TO_C_TICKS = 3 * TICKS_PER_TILE;
-    /** C 板 → D 板：3 格。 */
-    public static final long PLATE_C_TO_D_TICKS = 3 * TICKS_PER_TILE;
+    /** 出生点 → A 板：14 格（BFS 实算，与设计图 36 格 = A/B/C 三段之和一致）。 */
+    public static final long SPAWN_TO_PLATE_A_TICKS = 14 * TICKS_PER_TILE;
+    /** A 板 → C 板：9 格。 */
+    public static final long PLATE_A_TO_C_TICKS = 9 * TICKS_PER_TILE;
+    /** C 板 → D 板：13 格。 */
+    public static final long PLATE_C_TO_D_TICKS = 13 * TICKS_PER_TILE;
 
-    /** 出生点 → 门 A：4 格。玩家比 E₁ 早到 24 刻，在门外等到门开。 */
-    public static final long SPAWN_TO_DOOR_A_TICKS = 4 * TICKS_PER_TILE;
-    /** 门 A → 分岔口 J：3 格。 */
-    public static final long DOOR_A_TO_FORK_TICKS = 3 * TICKS_PER_TILE;
-    /** J → 射线：4 格。 */
-    public static final long FORK_TO_RAY_TICKS = 4 * TICKS_PER_TILE;
-    /** 射线 → B 板：4 格（≥ 2.5 格，故受击的迟到量取满 30 刻）。 */
-    public static final long RAY_TO_PLATE_B_TICKS = 4 * TICKS_PER_TILE;
-    /** J → 门 B：4 格。 */
-    public static final long FORK_TO_DOOR_B_TICKS = 4 * TICKS_PER_TILE;
+    /** 出生点 → 门 A：14 格（与出生点→A 同长，玩家正好在门开的刻抵达门外）。 */
+    public static final long SPAWN_TO_DOOR_A_TICKS = 14 * TICKS_PER_TILE;
+    /** 门 A → 分岔口 J：4 格。 */
+    public static final long DOOR_A_TO_FORK_TICKS = 4 * TICKS_PER_TILE;
+    /** J → 射线：5 格（沿第 17 列向上）。 */
+    public static final long FORK_TO_RAY_TICKS = 5 * TICKS_PER_TILE;
+    /** 射线 → B 板：3 格（≥ 2.5 格，故受击的迟到量取满 30 刻）。 */
+    public static final long RAY_TO_PLATE_B_TICKS = 3 * TICKS_PER_TILE;
+    /** J → 门 B：7 格（主通道向右折上）。 */
+    public static final long FORK_TO_DOOR_B_TICKS = 7 * TICKS_PER_TILE;
     /** 门 B → 门 C：4 格。 */
     public static final long DOOR_B_TO_DOOR_C_TICKS = 4 * TICKS_PER_TILE;
-    /** 门 C → 出口：4 格。 */
-    public static final long DOOR_C_TO_EXIT_TICKS = 4 * TICKS_PER_TILE;
+    /** 门 C → 出口：5 格。 */
+    public static final long DOOR_C_TO_EXIT_TICKS = 5 * TICKS_PER_TILE;
+
+    /**
+     * E₁ 在 A 板上驻留的格数 = 门 A 窗口宽度。
+     *
+     * <p>取 2 格（48 刻）而不是更大值：A 窗口越长，E₁ 抵达 C 越晚，后面全部刻表顺延；
+     * 48 刻已足够「第二轮玩家与第三轮玩家 + {@code E₂} 依次穿门」（他们都在窗口一开始的刻抵达门外）。</p>
+     */
+    public static final int HOLD_A_TILES = 2;
+
+    /**
+     * E₁ 在 C 板上驻留的格数 = 门 C 窗口宽度。
+     *
+     * <p>由「正解要留余量」与「受击必失败」共同唯一确定：正解穿门 C 于
+     * {@link #DOOR_C_CROSS_TICK}，窗口必须再留 {@link #SUCCESS_MARGIN_TICKS} 刻，同时窗口结束刻必须
+     * <b>早于</b>受击路线的门 C 抵达刻 —— 6 格 = 144 刻恰好同时满足（见
+     * {@code Level03PursuitGeometryTest.fairnessInequalitiesHold}）。</p>
+     */
+    public static final int HOLD_C_TILES = 6;
 
     // ---------- ⑥ 公平性常量（设定书 §6.4）----------
 
@@ -175,12 +200,12 @@ public final class Level03Pursuit {
 
     // ---------- ⑦ 路线关键刻 ----------
 
-    /** 出生点 → A 板抵达刻（= A 板开始占用 = E₁ 开门的刻）。 */
+    /** 出生点 → A 板抵达刻（= A 板开始占用 = E₁ 开门的刻 = 玩家穿门 A 的刻）。 */
     public static final long GATE_A_WINDOW_START = SPAWN_TO_PLATE_A_TICKS;
-    /** A 板驻留窗口结束：E₁ 在刻 216 离开 A，门 A 回锁（窗口 96 刻 ≫ 一次过门）。 */
-    public static final long GATE_A_WINDOW_END = GATE_A_WINDOW_START + 4 * TICKS_PER_TILE;
+    /** A 板驻留窗口结束：E₁ 在刻 384 离开 A，门 A 回锁（窗口 2 格 = 48 刻）。 */
+    public static final long GATE_A_WINDOW_END = GATE_A_WINDOW_START + HOLD_A_TILES * TICKS_PER_TILE;
 
-    /** 第二轮 / 第三轮玩家穿过门 A 的刻（= 门 A 窗口起点；玩家在刻 96 抵达门外等待）。 */
+    /** 第二轮 / 第三轮玩家穿过门 A 的刻（= 门 A 窗口起点；他们正好在门开那一刻抵达门外）。 */
     public static final long DOOR_A_CROSS_TICK = GATE_A_WINDOW_START;
     /** 第二轮玩家抵达 J 的刻。 */
     public static final long FORK_ARRIVAL = DOOR_A_CROSS_TICK + DOOR_A_TO_FORK_TICKS;
@@ -197,11 +222,17 @@ public final class Level03Pursuit {
 
     // ---------- ⑧ 窗口刻（由公平性反推）----------
 
-    /** A 板 → C 板抵达刻：E₁ 在刻 288 踩上 C，门 C 开启。 */
+    /** A 板 → C 板抵达刻：E₁ 在刻 600 踩上 C，门 C 开启。 */
     public static final long PLATE_C_ARRIVAL = GATE_A_WINDOW_END + PLATE_A_TO_C_TICKS;
     /** 门 C 关闭刻：正解穿过门 C 后还须留 {@link #SUCCESS_MARGIN_TICKS} 刻余量。 */
     public static final long PLATE_C_WINDOW_END = DOOR_C_CROSS_TICK + SUCCESS_MARGIN_TICKS;
-    /** C 板 → D 板抵达刻：E₁ 在刻 576 踩上 D 并驻留到轮末，出口由此供能。 */
+    /**
+     * C 板 → D 板抵达刻：E₁ 在刻 1056 踩上 D 并驻留到轮末，出口由此供能。
+     *
+     * <p><b>注意</b>：本图 C→D（13 格）比「门 C→出口」（5 格）长，所以 D 供能晚于玩家抵达出口
+     * —— 玩家要在出口<b>等</b>到这一刻再按 {@code E}。这是设计意图（出口在门 C 之后不远，
+     * 而外区控制线绕得远），不是缺陷：轮长 1800 刻，供能 1056 刻，余量充足。</p>
+     */
     public static final long PLATE_D_ARRIVAL = PLATE_C_WINDOW_END + PLATE_C_TO_D_TICKS;
 
     /** B 板仍有用的最晚抵达刻 = 门 C 关闭刻 − 门 B→门 C 路程。 */

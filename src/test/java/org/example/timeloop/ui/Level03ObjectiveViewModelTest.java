@@ -71,8 +71,8 @@ class Level03ObjectiveViewModelTest {
         Level03ObjectiveViewModel vm = view(2, false, false, false, false, false, false, false);
         assertEquals("出口需要 D 板供能；两道中间门由过去开启。", vm.tierOne());
         assertEquals("第二轮到达 B 的时刻，会决定第三轮门 B 何时打开。", vm.tierTwo());
-        assertTrue(vm.tierThreeRoute().contains("A(120) → C(288) → D(576)"), vm.tierThreeRoute());
-        assertTrue(vm.tierThreeRoute().contains("门A(120) → J(192) → 射线(288) → B(384)"),
+        assertTrue(vm.tierThreeRoute().contains("A(336) → C(600) → D(1056)"), vm.tierThreeRoute());
+        assertTrue(vm.tierThreeRoute().contains("门A(336) → J(432) → 射线(552) → B(624)"),
                 vm.tierThreeRoute());
         assertTrue(vm.forkHint().contains("上方通向 B 板"), vm.forkHint());
         assertTrue(vm.forkHint().contains("右侧是主通道"), vm.forkHint());
