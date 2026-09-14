@@ -102,6 +102,48 @@ class Level01CausalChainTest {
                 eventTrace);
     }
 
+    /**
+     * PM 裁决 §八.3 的官方验收链路：第二轮 <b>残影压左板 + 当前玩家踩开关</b> → 开门 → 到闸门按 E。
+     *
+     * <p>本用例额外锁住锁存的核心价值：<b>玩家离开开关后门不得重新上锁</b>。</p>
+     */
+    @Test
+    void secondRoundPlayerPressesTheSwitchWhileEchoHoldsTheLeftPlate() {
+        LevelData level = Level01Footsteps.build();
+        DockingPlateRegistry registry = new DockingPlateRegistry();
+        EventDispatcher dispatcher = new EventDispatcher();
+
+        DockingPlate leftPlate = new DockingPlate(
+                "L01_plate_left", entity(level, "L01_plate_left").getPos(), registry, dispatcher);
+        DockingPlate switchPlate = new DockingPlate(
+                "L01_plate_right", entity(level, "L01_plate_right").getPos(), registry, dispatcher, true);
+        Door door = new Door("L01_door_01", doorPosition(level),
+                java.util.Set.of("L01_plate_left", "L01_plate_right"), registry, dispatcher);
+        ExitTerminal exit = new ExitTerminal("L01_exit_00", exitPosition(level), door.getId(),
+                ExitTerminal.interactRadiusForTileSize(level.getTileSize()), dispatcher);
+
+        // 第二轮开局：开关是 OFF 的（轮末 reset 过），残影已占左板
+        assertFalse(switchPlate.isLatched());
+        assertTrue(leftPlate.tryEnter("echo_1", 1, 300));
+        assertFalse(door.isUnlocked(), "只有残影压着左板时门仍关闭");
+
+        // 当前玩家踩开关：踩上即开启
+        assertTrue(switchPlate.tryEnter("player", 0, 500));
+        assertTrue(switchPlate.isLatched());
+        assertTrue(door.isUnlocked(), "开关 ON + 左板被残影压住 → 门解锁");
+
+        // 离开开关：锁存使门保持解锁 —— 这正是「不必站在开关上按 E」的依据
+        assertTrue(switchPlate.tryExit("player", 0, 540));
+        assertEquals(DockingPlate.State.UNOCCUPIED, switchPlate.getState());
+        assertTrue(switchPlate.isLatched());
+        assertTrue(door.isUnlocked(), "离开开关后门不得重新上锁");
+
+        // 玩家走到闸门（与开关相距 1 格）按 E 结算
+        assertTrue(exit.isInInteractRange(switchPlate.getPosition()));
+        assertTrue(exit.interact(560, 0), "门解锁后当前玩家应能结算");
+        assertFalse(exit.interact(561, 0), "出口不得重复触发");
+    }
+
     /** §2.5-4 反例：只占左板时门不开；且站在左板上按 E 也无解（闸门不在交互半径内）。 */
     @Test
     void oneOccupiedPlateAndNoSwitchCannotBypassFirstLevelDoor() {
