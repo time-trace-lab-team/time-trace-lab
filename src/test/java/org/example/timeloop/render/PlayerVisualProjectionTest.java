@@ -62,6 +62,10 @@ class PlayerVisualProjectionTest {
 
                 assertNotNull(style, () -> movementState + "/phased=" + phased);
                 assertEquals(phased, style.showsPhaseRing(), () -> movementState + "/phased=" + phased);
+                assertEquals(phased ? 0.62 : 1.0, style.bodyHeightScale(), 0.0001,
+                        () -> movementState + "/phased=" + phased);
+                assertEquals(phased ? 0.58 : 1.0, style.bodyAlpha(), 0.0001,
+                        () -> movementState + "/phased=" + phased);
                 switch (movementState) {
                     case IDLE -> {
                         assertEquals(PlayerVisualProjection.BodyShape.ROUNDED_SQUARE, style.bodyShape());

@@ -45,6 +45,7 @@ class DynamicWorldTransformLayerTest {
         assertDoesNotThrow(() -> new MechanismLayer(FRAME_SOURCE, 48.0, FIRST));
         assertDoesNotThrow(() -> new PlayerLayer(FRAME_SOURCE, 48.0, FIRST));
         assertDoesNotThrow(() -> new EchoTrailLayer(FRAME_SOURCE, FIRST));
+        assertDoesNotThrow(() -> new RayLayer(FRAME_SOURCE, FIRST));
     }
 
     @Test
@@ -61,6 +62,8 @@ class DynamicWorldTransformLayerTest {
                 () -> new PlayerLayer(FRAME_SOURCE, 48.0, (Supplier<WorldTransform>) null));
         assertThrows(NullPointerException.class,
                 () -> new EchoTrailLayer(FRAME_SOURCE, (Supplier<WorldTransform>) null));
+        assertThrows(NullPointerException.class,
+                () -> new RayLayer(FRAME_SOURCE, (Supplier<WorldTransform>) null));
     }
 
     @Test
@@ -100,7 +103,8 @@ class DynamicWorldTransformLayerTest {
                         List.of(new RenderViews.PathNodeMarker("node", 48.0, 48.0)), 48.0, source)),
                 new LayerFactory("MechanismLayer", source -> new MechanismLayer(FRAME_SOURCE, 48.0, source)),
                 new LayerFactory("PlayerLayer", source -> new PlayerLayer(FRAME_SOURCE, 48.0, source)),
-                new LayerFactory("EchoTrailLayer", source -> new EchoTrailLayer(FRAME_SOURCE, source)));
+                new LayerFactory("EchoTrailLayer", source -> new EchoTrailLayer(FRAME_SOURCE, source)),
+                new LayerFactory("RayLayer", source -> new RayLayer(FRAME_SOURCE, source)));
     }
 
     private static void onFxThread(FxAssertion assertion) throws Exception {
