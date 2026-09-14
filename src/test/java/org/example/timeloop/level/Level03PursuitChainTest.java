@@ -185,6 +185,42 @@ class Level03PursuitChainTest {
                 Level03Pursuit.RAY_HIT_WIDTH), "B 板驻留点不得落在射线判定带里");
     }
 
+    @Test
+    void twoStaticActorsParkedFromTheStartCannotReplaceTheTwoEchoes() {
+        // 设定书 §11.2 第 3 条：把两个残影换成「开局就站在板上、全程不动」的常驻角色，原解不成立。
+        // 通关需要四个条件同时成立：门 A 进得去、门 B 开、门 C 开、D 供能。
+        // 常驻角色没有任何时序，两个身体最多点亮其中两个条件 —— 因此任意一对都不成立。
+        List<String> plates = List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_B,
+                Level03Pursuit.PLATE_C, Level03Pursuit.PLATE_D);
+        int pairsChecked = 0;
+        for (int i = 0; i < plates.size(); i++) {
+            for (int j = i + 1; j < plates.size(); j++) {
+                Simulation sim = new Simulation();
+                sim.parkStatically(plates.get(i), plates.get(j));
+                Run run = sim.runThirdRoundWithStaticOccupancy();
+
+                assertFalse(run.cleared,
+                        "两个常驻角色压在 " + plates.get(i) + " + " + plates.get(j)
+                                + " 上不得通关（常驻没有时序，拿不到四个条件）");
+                int satisfied = (run.crossedDoorA ? 1 : 0) + (run.doorBOpened ? 1 : 0)
+                        + (run.crossedDoorC ? 1 : 0) + (run.exitArmed ? 1 : 0);
+                assertTrue(satisfied <= 2,
+                        "常驻角色最多点亮 2 个条件，实测 " + satisfied);
+                pairsChecked++;
+            }
+        }
+        assertEquals(6, pairsChecked, "四块板两两组合共 6 对");
+    }
+
+    @Test
+    void removingE1OrE2BreaksTheChainButTwoEchoesAreExactlyEnough() {
+        // 对照：删任一残影都不行（§11.2 第 1、2 条），而两个残影按刻表接力恰好够。
+        Simulation ok = new Simulation();
+        ok.runFirstRound();
+        ok.runSecondRound(Strategy.PHASE);
+        assertTrue(ok.runThirdRound(true, true).cleared, "两个残影按刻表接力必须能通关");
+    }
+
     // ---------- 逐刻模拟 ----------
 
     /** 一轮的结论（失败原因可判定，对应设定书 §11.2 第 7 条）。 */
@@ -360,6 +396,42 @@ class Level03PursuitChainTest {
                     return run;
                 }
             }
+            return run;
+        }
+
+        /** 两个「开局常驻角色」：从刻 0 起一直压着两块板，全程不动、没有任何时序（§11.2 第 3 条）。 */
+        void parkStatically(String firstPlateId, String secondPlateId) {
+            plate(firstPlateId).tryEnter("static_1", 0, 0);
+            plate(secondPlateId).tryEnter("static_2", 0, 0);
+        }
+
+        /**
+         * 只靠常驻占用的第三轮：玩家按刻表走到各扇门，门开就过、门关就失败。
+         *
+         * <p>与 {@link #runThirdRound} 的区别是不回放任何残影 —— 场上的占用全部来自
+         * {@link #parkStatically} 的常驻角色。</p>
+         */
+        Run runThirdRoundWithStaticOccupancy() {
+            Run run = new Run();
+            run.doorAOpenedByEcho = doorA.isUnlocked();
+            run.crossedDoorA = run.doorAOpenedByEcho;
+            if (!run.crossedDoorA) {
+                return run;
+            }
+            run.doorBOpened = doorB.isUnlocked();
+            if (!run.doorBOpened) {
+                return run;
+            }
+            run.crossedDoorB = true;
+            run.doorCCrossTick = Level03Pursuit.DOOR_C_CROSS_TICK;
+            run.doorCClosedAtArrival = !doorC.isUnlocked();
+            if (run.doorCClosedAtArrival) {
+                return run;
+            }
+            run.crossedDoorC = true;
+            run.exitArrivalTick = Level03Pursuit.EXIT_ARRIVAL;
+            run.exitArmed = exit.isDoorUnlocked();
+            run.cleared = run.exitArmed && exit.interact(run.exitArrivalTick, 0);
             return run;
         }
 
