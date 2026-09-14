@@ -277,13 +277,33 @@ class Level02CorridorChainTest {
         assertTrue(switchPlate.isOccupied(), "锁存满足终局三条件之一，且不占任何 actor");
     }
 
-    /** 同刻争抢：两个残影抢同一块板时，先写者（较旧残影，回放按 sourceRound 升序）占住。 */
+    /**
+     * 同刻争抢：两个残影同时到达同一块板。
+     *
+     * <p><b>L03-DEV3 后语义变更</b>：驻留板支持多占用，所以第二个残影不再被"拒收"——
+     * 两人都在板上（板保持占用、门不受影响），而「较旧者胜」的确定性现在体现在
+     * <b>主占用者仍是较旧的那个</b>（{@link DockingPlate#getOccupantId()} 不变），
+     * 因此后续 HUD / 快照仍拿到与改动前一致的归属。</p>
+     */
     @Test
     void sameTickPlateContentionOlderEchoWins() {
         assertTrue(gatePlate.tryEnter("echo_1", 1, GATE_START));
-        assertFalse(gatePlate.tryEnter("echo_2", 2, GATE_START),
-                "同刻后写者必须被拒（单占用不变量）");
-        assertEquals("echo_1", gatePlate.getOccupantId(), "较旧残影（sourceRound=1）胜");
+        assertTrue(gatePlate.tryEnter("echo_2", 2, GATE_START),
+                "多占用模型：第二个残影照样登记，不再被静默丢弃");
+        assertEquals("echo_1", gatePlate.getOccupantId(), "较旧残影（sourceRound=1）仍是主占用者");
+        assertEquals(List.of("echo_1", "echo_2"), gatePlate.getOccupantIds());
+        assertTrue(gatePlate.isOccupied(), "两人同踩时板当然占用");
+        assertTrue(gateDoor.isUnlocked(), "同刻争抢不得把门关回去");
+
+        // 较旧者离开后板仍被较新者压住 —— 这正是旧模型漏掉的场景。
+        assertTrue(gatePlate.tryExit("echo_1", 1, GATE_START + 24));
+        assertTrue(gatePlate.isOccupied(), "较旧者离开后板仍被较新者压住（旧模型会在这里错误释放）");
+        assertEquals("echo_2", gatePlate.getOccupantId(), "主占用者交给剩下最早进入的 echo_2");
+        assertTrue(gateDoor.isUnlocked(), "还有人压着板，门不得回锁");
+
+        assertTrue(gatePlate.tryExit("echo_2", 2, GATE_START + 48));
+        assertFalse(gatePlate.isOccupied(), "两人都离开后才释放");
+        assertFalse(gateDoor.isUnlocked(), "最后一人离开后门才回锁");
     }
 
     /** 数据面复核：3 扇门引用正确的板，终点闸 = {内板, 主板, 锁存开关}。 */

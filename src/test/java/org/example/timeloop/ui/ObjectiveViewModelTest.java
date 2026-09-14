@@ -55,15 +55,26 @@ class ObjectiveViewModelTest {
     }
 
     /**
-     * 开关是锁存的，因此"玩家和残影都开过同一个开关"是<b>合法</b>状态（两人先后踩上），
-     * 两个标志可以同时为真；左板仍不可能被两人同时占用。
+     * 一块驻留板可以<b>同时</b>被玩家与残影占用（L03-DEV3 裁决）：
+     * 开关锁存的两个标志可以同时为真；左板的两个标志<b>同样</b>可以同时为真。
+     *
+     * <p>旧版本在这里断言 {@code leftPlayer && leftEcho} 必须抛异常，把「底层模型只有一个占用槽位」
+     * 错当成了「玩法规则不允许」—— 底层当时是静默丢弃第二人，两边一起把缺陷藏住了。
+     * 该"不变量"已按工作令删除，改为断言它在两种情形下都合法且文案正确。</p>
      */
     @Test
-    void switchMayBeOpenedByBothActorsButLeftPlateMayNot() {
+    void bothActorsMayHoldEitherPlateAtTheSameTime() {
+        // 开关：两人先后踩上 → 两个标志同时为真
         assertEquals("开关已开启、左板已被残影压住：去闸门按 E",
                 view(2, false, true, true, true, false).text());
-        assertThrows(IllegalArgumentException.class,
-                () -> view(2, true, true, false, false, false));
+
+        // 左板：玩家与残影同踩 → 合法，且提示仍然是「去踩开关」（残影会继续压着左板）
+        assertEquals("残影已压住左板：你去踩一下开关（踩上即开启，离开也不会关）",
+                view(2, true, true, false, false, false).text());
+
+        // 左板两人同踩 + 开关已开 → 门条件已满足，提示去按 E
+        assertEquals("开关已开启、左板已被残影压住：去闸门按 E",
+                view(2, true, true, true, false, false).text());
     }
 
     @Test
