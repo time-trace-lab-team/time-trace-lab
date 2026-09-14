@@ -109,7 +109,7 @@ class Level03AssemblyTest {
         assertEquals(RenderViews.MechanismKind.EXIT, kindById.get(Level03Pursuit.EXIT));
         assertFalse(kindById.containsKey(Level03Pursuit.DOOR_EXIT),
                 "终点供能闸与出口同格，不得再投影一个 DOOR（同格叠画）");
-        assertNullTagAndGateGroup(mechanisms);
+        assertPairedTagsAndGroups(mechanisms);
 
         // 终点格：只有一个 EXIT，且坐标就是出口格中心；该格没有任何 DOOR。
         Vector2D exitCell = Level03Pursuit.cellCenter(
@@ -134,14 +134,32 @@ class Level03AssemblyTest {
         assertFalse(doorA.active(), "开局没人压 A 板 → 门 A 锁着");
     }
 
-    private static void assertNullTagAndGateGroup(List<RenderViews.Mechanism> mechanisms) {
-        for (RenderViews.Mechanism m : mechanisms) {
-            if (m.tag() != null) {
-                throw new AssertionError("第三关没有角标需求，tag 必须是 null: " + m.id());
-            }
-            if (m.gateGroup()) {
-                throw new AssertionError("第三关没有组色需求，gateGroup 必须是 false: " + m.id());
-            }
+    /**
+     * 板与门共用同一个序号，且<b>自开局起就在</b>（静态投影，不看任何玩法状态）。
+     *
+     * <p>与第二关同一套视觉语言：开门组（A/B/C → 蓝）板心写数字、门带同号角标；
+     * 终点组（D → 出口供能闸）琥珀同色，板与出口同号 4。</p>
+     */
+    private static void assertPairedTagsAndGroups(List<RenderViews.Mechanism> mechanisms) {
+        assertEquals("1", mechanismOf(mechanisms, Level03Pursuit.PLATE_A).tag());
+        assertEquals("1", mechanismOf(mechanisms, Level03Pursuit.DOOR_A).tag(), "A 板与门 A 同号");
+        assertEquals("2", mechanismOf(mechanisms, Level03Pursuit.PLATE_B).tag());
+        assertEquals("2", mechanismOf(mechanisms, Level03Pursuit.DOOR_B).tag(), "B 板与门 B 同号");
+        assertEquals("3", mechanismOf(mechanisms, Level03Pursuit.PLATE_C).tag());
+        assertEquals("3", mechanismOf(mechanisms, Level03Pursuit.DOOR_C).tag(), "C 板与门 C 同号");
+
+        RenderViews.Mechanism plateD = mechanismOf(mechanisms, Level03Pursuit.PLATE_D);
+        assertEquals("4", plateD.tag());
+        assertTrue(plateD.gateGroup(), "D 板作用于出口供能闸 → 终点组（琥珀）");
+        RenderViews.Mechanism exitView = mechanismOf(mechanisms, Level03Pursuit.EXIT);
+        assertEquals("4", exitView.tag(), "出口与 D 板同号");
+        assertTrue(exitView.gateGroup(), "出口属于终点组");
+
+        for (String openingGroup : List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_B,
+                Level03Pursuit.PLATE_C, Level03Pursuit.DOOR_A, Level03Pursuit.DOOR_B,
+                Level03Pursuit.DOOR_C)) {
+            assertFalse(mechanismOf(mechanisms, openingGroup).gateGroup(),
+                    openingGroup + " 属于开门组（蓝）");
         }
     }
 
