@@ -9,6 +9,7 @@ import org.example.timeloop.level.Level02Corridor;
 import org.example.timeloop.level.model.Vector2D;
 import org.example.timeloop.mechanism.DockingPlate;
 import org.example.timeloop.mechanism.event.GameEvent;
+import org.example.timeloop.mechanism.ray.Ray;
 import org.example.timeloop.render.RenderViews;
 import org.example.timeloop.ui.Level02ObjectiveViewModel;
 import org.junit.jupiter.api.AfterEach;
@@ -149,6 +150,47 @@ class LevelFlowTransitionTest {
         assertTrue(flow.level02().isEmpty());
     }
 
+    /**
+     * 第二关失败：按重开键是<b>在第二关重来</b>（回第 1 轮），不得退回第一关。
+     *
+     * <p>玩家预期（项目方口径）：一旦进到第二关，这一关就是「当前关」；
+     * 失败重开只重置本关，不会把已经通关的第一关再放回来，也不会让第一关复活推进。</p>
+     */
+    @Test
+    void failedLevel02RestartsLevel02AndNeverFallsBackToLevel01() {
+        flow = started();
+        long tick = runLevel01ToClear();
+        assertTrue(flow.switchToNextLevelIfCleared(), "第一关通关 → 进入第二关");
+        Level02Assembly l2 = flow.level02().orElseThrow();
+        long l1TickAtSwitch = flow.level01().hudContext().roundTick();
+
+        runLevel02ToFailure(tick);
+        assertEquals(GamePhase.FAILED, flow.phase(), "第二关 4 轮耗尽应进入 FAILED");
+        assertEquals(LevelFlow.LevelId.LEVEL_02, flow.activeLevel(), "失败后仍停在第二关");
+        assertTrue(flow.level01().isStopped(), "已通关的第一关不得因为第二关失败而复活");
+
+        flow.restart();
+
+        assertEquals(GamePhase.PLAYING, flow.phase(), "第二关失败后重开应回到 PLAYING");
+        assertEquals(LevelFlow.LevelId.LEVEL_02, flow.activeLevel(), "重开的是第二关，不是第一关");
+        assertEquals(1, flow.hudContext().currentRound(), "重开回到第二关第 1 轮");
+        assertEquals(Level02Corridor.MAX_ROUNDS, flow.hudContext().maxRounds(), "轮次上限仍是第二关的 4");
+        assertEquals(0L, flow.hudContext().roundTick(), "重开后刻数归零");
+        assertTrue(flow.level01().isStopped(), "重开第二关不得让第一关复活（它仍是已卸载状态）");
+        assertEquals(l1TickAtSwitch, flow.level01().hudContext().roundTick(),
+                "第一关的刻数在第二关重开后仍必须冻结");
+        assertFalse(l2.isStopped(), "第二关自身仍在运行");
+
+        // 机关与射线都回到初始态，不带上一局的残留。
+        assertEquals(Ray.State.OFF, l2.rays().get(0).getState(), "重开后射线回到周期起点 OFF");
+        for (String plateId : List.of(Level02Corridor.PLATE_GATE, Level02Corridor.PLATE_RELAY,
+                Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_CORE)) {
+            assertFalse(l2.isPlateOccupied(plateId), "重开后 " + plateId + " 不得残留占用");
+        }
+        assertEquals(Level02Corridor.cellCenter(1, 13), positionOf(flow.renderViews()),
+                "重开后玩家回到第二关出生点");
+    }
+
     // ---------- 第一关驾驶脚本（与 Level01AssemblyLevel01FlowTest 同路线） ----------
 
     /** 真·驾驶第一关到通关（RESULT）：第 1 轮压左板，第 2 轮压右板后在半径内按 E。 */
@@ -178,6 +220,16 @@ class LevelFlowTransitionTest {
         }
         assertTrue(tick < guard, "轮次耗尽应在有限刻内到达 FAILED");
         return tick;
+    }
+
+    /** 只给一个方向输入启动第二关逻辑刻，之后空输入耗完 4 轮 → FAILED。 */
+    private void runLevel02ToFailure(long tick) {
+        long guard = tick + 40_000L;
+        flow.tick(press(tick++, LogicalKey.DIR_DOWN));
+        while (flow.phase() != GamePhase.FAILED && tick < guard) {
+            flow.tick(InputIntent.empty(tick++));
+        }
+        assertTrue(tick < guard, "第二关 4 轮耗尽应在有限刻内到达 FAILED");
     }
 
     /** 新地图左驻留板路线（18 格 = 432 刻）。 */
