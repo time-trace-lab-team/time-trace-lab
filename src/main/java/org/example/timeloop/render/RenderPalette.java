@@ -70,6 +70,12 @@ public final class RenderPalette {
     public static final Color INTERACTIVE = Color.web("#e6b85c");
     /** 相位下潜。 */
     public static final Color PHASE = Color.web("#7ADDE8");
+    /** 关闭射线的残留导轨。 */
+    public static final Color RAY_OFF = Color.web("#607080");
+    /** 射线启动预警。 */
+    public static final Color RAY_WARNING = Color.web("#f2c94c");
+    /** 已激活射线。 */
+    public static final Color RAY_ACTIVE = Color.web("#ff4d57");
     /** 正文与 HUD。 */
     public static final Color TEXT = Color.web("#D9DFEA");
 

@@ -21,9 +21,17 @@ final class PlayerVisualProjection {
                  boolean showsDirectionTick,
                  boolean showsSlowOutline,
                  boolean showsSlowTrail,
-                 boolean showsPhaseRing) {
+                 boolean showsPhaseRing,
+                 double bodyHeightScale,
+                 double bodyAlpha) {
         Style {
             Objects.requireNonNull(bodyShape, "bodyShape");
+            if (!(bodyHeightScale > 0.0 && bodyHeightScale <= 1.0)) {
+                throw new IllegalArgumentException("bodyHeightScale 必须在 (0, 1] 内");
+            }
+            if (!(bodyAlpha > 0.0 && bodyAlpha <= 1.0)) {
+                throw new IllegalArgumentException("bodyAlpha 必须在 (0, 1] 内");
+            }
         }
     }
 
@@ -37,11 +45,17 @@ final class PlayerVisualProjection {
     /** 把移动状态与相位状态一起投影为一组完整的玩家视觉语义。 */
     static Style forPlayer(MovementState movementState, boolean phased) {
         Objects.requireNonNull(movementState, "movementState");
+        double bodyHeightScale = phased ? 0.62 : 1.0;
+        double bodyAlpha = phased ? 0.58 : 1.0;
         return switch (movementState) {
-            case IDLE -> new Style(BodyShape.ROUNDED_SQUARE, false, false, false, phased);
-            case CRUISING -> new Style(BodyShape.CIRCLE, true, false, false, phased);
-            case SLOWED -> new Style(BodyShape.CIRCLE, true, true, true, phased);
-            case DOCKED -> new Style(BodyShape.ROUNDED_SQUARE, true, false, false, phased);
+            case IDLE -> new Style(BodyShape.ROUNDED_SQUARE, false, false, false,
+                    phased, bodyHeightScale, bodyAlpha);
+            case CRUISING -> new Style(BodyShape.CIRCLE, true, false, false,
+                    phased, bodyHeightScale, bodyAlpha);
+            case SLOWED -> new Style(BodyShape.CIRCLE, true, true, true,
+                    phased, bodyHeightScale, bodyAlpha);
+            case DOCKED -> new Style(BodyShape.ROUNDED_SQUARE, true, false, false,
+                    phased, bodyHeightScale, bodyAlpha);
         };
     }
 }

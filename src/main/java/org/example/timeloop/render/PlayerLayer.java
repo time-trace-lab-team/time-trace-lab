@@ -41,6 +41,7 @@ public final class PlayerLayer implements RenderLayer {
         double radius = transform.scaled(tileSize * BODY_RADIUS_FACTOR);
         PlayerVisualProjection.Style visual = PlayerVisualProjection.forPlayer(
                 player.movementState(), player.phased());
+        double bodyRadiusY = radius * visual.bodyHeightScale();
 
         gc.setGlobalAlpha(1.0);
 
@@ -52,11 +53,14 @@ public final class PlayerLayer implements RenderLayer {
         }
 
         gc.setFill(RenderPalette.PLAYER);
+        gc.setGlobalAlpha(visual.bodyAlpha());
         switch (visual.bodyShape()) {
-            case CIRCLE -> gc.fillOval(cx - radius, cy - radius, radius * 2.0, radius * 2.0);
-            case ROUNDED_SQUARE -> gc.fillRoundRect(cx - radius, cy - radius,
-                    radius * 2.0, radius * 2.0, radius * 0.9, radius * 0.9);
+            case CIRCLE -> gc.fillOval(cx - radius, cy - bodyRadiusY,
+                    radius * 2.0, bodyRadiusY * 2.0);
+            case ROUNDED_SQUARE -> gc.fillRoundRect(cx - radius, cy - bodyRadiusY,
+                    radius * 2.0, bodyRadiusY * 2.0, radius * 0.9, bodyRadiusY * 0.9);
         }
+        gc.setGlobalAlpha(1.0);
 
         double tick = radius * 1.4;
         double dx = directionX(player.direction(), tick);

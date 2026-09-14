@@ -4,6 +4,7 @@ import org.example.timeloop.core.Direction;
 import org.example.timeloop.core.MovementState;
 import org.example.timeloop.level.model.Vector2D;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
@@ -33,17 +34,51 @@ public final class RenderViews {
     /** 一帧的世界状态投影。 */
     public record Frame(Player player,
                         List<Mechanism> mechanisms,
-                        List<EchoTrail> echoes) {
+                        List<EchoTrail> echoes,
+                        List<RayBeam> rays) {
 
         public Frame {
             Objects.requireNonNull(player, "player");
             mechanisms = List.copyOf(Objects.requireNonNull(mechanisms, "mechanisms"));
             echoes = List.copyOf(Objects.requireNonNull(echoes, "echoes"));
+            rays = List.copyOf(Objects.requireNonNull(rays, "rays")).stream()
+                    .sorted(Comparator.comparing(RayBeam::id))
+                    .toList();
+        }
+
+        public Frame(Player player, List<Mechanism> mechanisms, List<EchoTrail> echoes) {
+            this(player, mechanisms, echoes, List.of());
         }
 
         public static Frame empty() {
             return new Frame(new Player(0, 0, Direction.DOWN, MovementState.CRUISING, false),
-                    List.of(), List.of());
+                    List.of(), List.of(), List.of());
+        }
+    }
+
+    /** 射线的可视状态；与机制层状态隔离，由 app 侧负责映射。 */
+    public enum RayVisualState {
+        OFF,
+        WARNING,
+        ACTIVE
+    }
+
+    /** 射线的一个只读渲染投影。坐标一律为世界坐标。 */
+    public record RayBeam(String id,
+                          double startX,
+                          double startY,
+                          double endX,
+                          double endY,
+                          RayVisualState state) {
+        public RayBeam {
+            if (id == null || id.isBlank()) {
+                throw new IllegalArgumentException("ray beam id 不能为空白");
+            }
+            if (!Double.isFinite(startX) || !Double.isFinite(startY)
+                    || !Double.isFinite(endX) || !Double.isFinite(endY)) {
+                throw new IllegalArgumentException("ray beam 坐标必须为有限数");
+            }
+            Objects.requireNonNull(state, "state");
         }
     }
 
