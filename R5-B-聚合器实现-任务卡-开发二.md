@@ -62,10 +62,14 @@
 ## 四、并行与前置
 
 - 本卡的 `validate` / `apply` / 半恢复防护 / `ROUND_END`·`FULL_RESTART` 走 `reset` 的部分**现在就做**；
-- `ResonanceResetReason.SCENE_EXIT` 由开发三在 `BUG-002-LIFECYCLE-P2` 内补齐。
-  **在它落地前**：不要写 `SCENE_EXIT`、也不要写「把 SCENE_EXIT 映射成 FULL_RESTART」的降级代码
-  （裁决已明确不许可）。先留 TODO 注释并在交付文档里写明等待项；
-- 若开发三的端口结论要求第 6 / 第 7 个端口，PM 会补一张增量卡，不在本卡内自行设计。
+- ~~`ResonanceResetReason.SCENE_EXIT` 由开发三在 `BUG-002-LIFECYCLE-P2` 内补齐~~
+  → **已由 PR #71（`5092245`）落地并合入 develop**（现为 `{ROUND_END, FULL_RESTART, SCENE_EXIT}`）：
+  本卡**必须**实现 `SCENE_EXIT` 的处理（与 `FULL_RESTART` 同样的 reset 语义），不留 TODO，
+  **更不得**写「把 SCENE_EXIT 降级映射成 FULL_RESTART」的代码；
+- 端口结论（PR #71 规格文档 §10.2）：**射线不需要端口**；**中继 / 核心暂无实现、暂无端口需求**；
+  聚合器**不得**用具体类旁路；后续实现中继/核心时另开卡补第 6 个 typed port，不在本卡自行设计；
+- 注意：`L01-门与终点合并-任务卡-开发2.md`（锁存开关的快照覆盖）是**另一条线**，需 PM 先冻结
+  `DockSnapshot.latched`；两条线都要动 `snapshot/**` 时**先做锁存那条**（先证明一致性语义），再做本卡的全量实现。
 
 ## 五、允许 / 禁止路径
 
