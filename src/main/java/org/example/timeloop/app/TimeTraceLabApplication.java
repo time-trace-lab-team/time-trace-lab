@@ -42,18 +42,20 @@ import java.util.function.Supplier;
  * 把 {@code flow.renderViews()} 交给渲染图层、刷新共享 HUD，并在退出时清理机关。
  * **本类不拥有玩法逻辑**，只做接线。</p>
  *
- * <p><b>关卡切换</b>：当前关卡由 {@link LevelFlow} 持有。第一关<b>通关</b>
+ * <p><b>关卡切换</b>：当前关卡由 {@link LevelFlow} 持有。当前关<b>通关</b>
  * （{@link org.example.timeloop.core.GamePhase#RESULT}）后，{@link LevelFlow#switchToNextLevelIfCleared()}
- * 返回 true：先停掉第一关（停止推进 + 注销事件监听），再装配第二关，然后
+ * 返回 true：先停掉旧关（停止推进 + 注销事件监听），再装配下一关，然后
  * {@link #installWorldView()} 按新关卡的数据<b>重建</b>画布与全部图层
  * （旧图层绑定的网格 / 出生点 / 节点提示 / {@code frames} 供应者一并丢弃，
- * 不会再有图层从旧关卡取帧）。第一关失败（{@code FAILED}，轮次耗尽）不触发切换。</p>
+ * 不会再有图层从旧关卡取帧）。第三关是最后一关，其通关不再切关。失败（{@code FAILED}，轮次耗尽）
+ * 不触发切换。</p>
  *
  * <p>目标提示面板只有一块 {@link org.example.timeloop.ui.SharedHud} 自带的
  * {@code objectiveLabel}（由 {@code SharedHud.render(context, phase, String)} 写入），
  * 内容来自 {@link LevelFlow#objectiveText()}
  * —— 即<b>当前关卡自己的</b>只读目标投影（第一关 {@code ui.ObjectiveViewModel}、
- * 第二关 {@code ui.Level02ObjectiveViewModel}），切关后不会残留上一关的文本。</p>
+ * 第二关 {@code ui.Level02ObjectiveViewModel}、第三关 {@code ui.Level03ObjectiveViewModel}），
+ * 切关后不会残留上一关的文本。</p>
  */
 public final class TimeTraceLabApplication extends Application {
 
@@ -164,8 +166,8 @@ public final class TimeTraceLabApplication extends Application {
             @Override
             public void handle(long nanoTime) {
                 loop.onAnimationFrame(nanoTime, flow.phase());
-                // 第一关通关（RESULT）在此切到第二关并重建世界视图。
-                // FAILED（轮次耗尽）返回 false：玩家留在第一关，重开/返回行为与之前完全一致。
+                // 通关（RESULT）在此切到下一关并重建世界视图（L1→L2、L2→L3；L3 之后不再切）。
+                // FAILED（轮次耗尽）返回 false：玩家留在当前关，重开/返回行为与之前完全一致。
                 // 有弹窗待玩家确认时先不自动切关，否则结算界面会被瞬间顶掉。
                 if (!resultPresenter.isShown() && flow.switchToNextLevelIfCleared()) {
                     input.releaseAll();

@@ -22,8 +22,9 @@ import java.util.Optional;
  */
 final class ResultDialogPresenter {
 
-    /** 有下一关的关卡 → 确认即进入下一关；其余（末关 / 失败）→ 本关重开。 */
+    /** 有下一关的关卡 → 确认即进入下一关；末关（第三关）/ 失败 → 本关重开。 */
     private static final String LEVEL_ONE_NEXT_TITLE = "第二关";
+    private static final String LEVEL_TWO_NEXT_TITLE = "第三关";
 
     private final ResultDialog dialog = new ResultDialog();
     private boolean shown;
@@ -52,13 +53,13 @@ final class ResultDialogPresenter {
         }
         String title = flow.activeLevel().title();
         if (flow.phase() == GamePhase.RESULT) {
-            if (flow.activeLevel() == LevelFlow.LevelId.LEVEL_01) {
-                // 第一关通关：确认后进入第二关（关卡名由集成层传入，组件不再写死关卡号）。
+            // 通关：有下一关就「进入下一关」（关卡名由集成层传入，组件不写死关卡号），
+            // 第三关是最后一关 → 本关重开。
+            String nextTitle = nextLevelTitle(flow.activeLevel());
+            if (nextTitle != null) {
                 confirmEntersNextLevel = true;
-                dialog.show(result.get(), title, ResultDialog.NextAction.ENTER_NEXT_LEVEL,
-                        LEVEL_ONE_NEXT_TITLE);
+                dialog.show(result.get(), title, ResultDialog.NextAction.ENTER_NEXT_LEVEL, nextTitle);
             } else {
-                // 第二关目前是最后一关；第三关装配到位后改为 ENTER_NEXT_LEVEL + "第三关"。
                 confirmEntersNextLevel = false;
                 dialog.show(result.get(), title, ResultDialog.NextAction.RESTART_LEVEL);
             }
@@ -67,6 +68,20 @@ final class ResultDialogPresenter {
             dialog.show(result.get(), title, ResultDialog.NextAction.RESTART_LEVEL);
         }
         shown = true;
+    }
+
+    /**
+     * 下一关的显示名（关卡号），最后一关返回 {@code null}。
+     *
+     * <p>刻意写成穷尽的 {@code switch} 表达式：新增关卡时这里会直接编译失败，
+     * 而不是悄悄把新关当作「最后一关」——那样玩家通关后会被卡在结算界面。</p>
+     */
+    private static String nextLevelTitle(LevelFlow.LevelId level) {
+        return switch (level) {
+            case LEVEL_01 -> LEVEL_ONE_NEXT_TITLE;
+            case LEVEL_02 -> LEVEL_TWO_NEXT_TITLE;
+            case LEVEL_03 -> null;
+        };
     }
 
     /** 隐藏并把边沿守卫复位（确认、重开、切关后都必须调用）。 */

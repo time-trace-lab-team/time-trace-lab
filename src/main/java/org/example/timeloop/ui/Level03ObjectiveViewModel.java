@@ -17,10 +17,20 @@ package org.example.timeloop.ui;
  * <p>提示只显示信息：{@link #text()} 及其它 accessor 都是纯函数，不推进、不暂停、不修改任何时钟
  * （设定书 §9.4 末条）。</p>
  *
+ * <p><b>校验只保留真命题</b>：紧凑构造器里曾经有过一条
+ * {@code !doorAOpen && inBranchB → 抛异常}（「门 A 没开时不可能已经在 B 支路里」），
+ * 它把「门<b>此刻</b>是否被打开」误当成「玩家<b>能不能</b>已经在里面」—— 与第一关那条被删掉的
+ * 假不变量同类。第三关的真实玩法里它<b>必然</b>触发：E₁ 在刻 384 离开 A 板后门 A 就回锁，
+ * 而第二轮 / 第三轮的玩家此时正在 B 支路里跑到轮末（见 {@code Level03Pursuit.GATE_A_WINDOW_END}）。
+ * 因此该条校验已删除，{@code doorAOpen=false && inBranchB=true} 是<b>合法</b>状态。</p>
+ *
  * @param currentRound         当前轮次（1..maxRounds）
  * @param maxRounds            最大轮次（本关 = 3）
  * @param firstEchoFinalRound  第一残影是否已进入最后有效轮（= 当前已是最后一轮，设定书 §9.2）
- * @param doorAOpen            门 A 是否开着（E₁ 正压着 A 板）
+ * @param doorAOpen            门 A <b>此刻</b>是否开着（E₁ 正压着 A 板）。它与 {@code inBranchB}
+ *                             <b>互相独立</b>：门只在一小段窗口里开着，而玩家（尤其在第二轮 / 第三轮）
+ *                             完全可以已经身处 B 支路、门 A 却早已回锁 —— 这是本关的<b>正常</b>局面，
+ *                             不是矛盾状态
  * @param inBranchB            当前玩家是否已进入 B 支路（会接触射线）
  * @param rayActive            射线此刻是否 ACTIVE（该按下潜了）
  * @param doorBOpen            门 B 是否开着（E₂ 已压住 B 板）
@@ -48,9 +58,6 @@ public record Level03ObjectiveViewModel(int currentRound,
             throw new IllegalArgumentException(
                     "「E₁ 最后有效轮」只可能出现在最后一轮: currentRound=" + currentRound
                             + ", maxRounds=" + maxRounds);
-        }
-        if (!doorAOpen && inBranchB) {
-            throw new IllegalArgumentException("门 A 没开时不可能已经在 B 支路里");
         }
         if (!doorBOpen && doorCOpen && currentRound < 3) {
             throw new IllegalArgumentException("门 C 只能由第一残影在第三轮打开");
