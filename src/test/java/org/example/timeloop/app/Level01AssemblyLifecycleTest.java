@@ -5,8 +5,13 @@ import org.example.timeloop.core.input.InputIntent;
 import org.example.timeloop.core.input.LogicalKey;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -74,21 +79,41 @@ class Level01AssemblyLifecycleTest {
         b.cleanup();
     }
 
+    /**
+     * app 层不得引用任何全局单例 —— BUG-002-LIFECYCLE 的架构不变量。
+     *
+     * <p><b>为什么改成静态扫描</b>（PM 复核，2026-09-14）：本用例原先把
+     * {@code DockingPlateRegistry.getInstance().isOccupied(...)} 当断言，Phase 2 删除单例后无法编译；
+     * 中间一版改成「B 的 {@code drainEvents()} 为空」，但那是**永远通过的假绿**——
+     * {@code Level01Assembly.events} 只承载**本装配玩家自己的驻留决策**
+     * （`events.addAll(decision.events())`），B 不驱动就恒为空，无论两条装配是否共享总线。
+     * 「两套装配互不串扰」这条运行时性质已由 {@link #twoAssembliesDoNotSharePlateOccupancy()} 真正覆盖。
+     * 因此这里回到原本的意图（app 不碰全局状态），改用**能失败**的形式：直接扫描 app 源码。</p>
+     */
     @Test
-    void appDoesNotTouchGlobalEventDispatcher() {
-        Level01Assembly a = new Level01Assembly();
-        Level01Assembly b = new Level01Assembly();
-        a.start();
-        b.start();
-        b.drainEvents(); // 清掉 B 自己启动阶段的事件
+    void appSourcesDoNotReferenceGlobalSingletons() throws IOException {
+        Path appSources = Path.of("src", "main", "java", "org", "example", "timeloop", "app");
+        assertTrue(Files.isDirectory(appSources),
+                "找不到 app 源码目录（测试工作目录应为项目根）：" + appSources.toAbsolutePath());
 
-        drive(a, 0, LogicalKey.DIR_DOWN, 40);
+        List<String> offenders;
+        try (Stream<Path> files = Files.walk(appSources)) {
+            offenders = files
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .filter(path -> {
+                        try {
+                            return Files.readString(path).contains("getInstance");
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    })
+                    .map(Path::toString)
+                    .sorted()
+                    .toList();
+        }
 
-        // 原先的断言依赖全局单例（`DockingPlateRegistry.getInstance()`），而 BUG-002 Phase 2 会删除该单例。
-        // 这里改成**等价的、不依赖单例的观测**：A 的事件不得出现在 B 的装配上（无全局总线串扰）。
-        assertTrue(b.drainEvents().isEmpty(), "B 不应看到 A 的事件（两套装配的总线互不串扰）");
-        a.cleanup();
-        b.cleanup();
+        assertTrue(offenders.isEmpty(),
+                "app/** 不得引用全局单例 getInstance()：" + offenders);
     }
 
     // ---------- 工具 ----------
