@@ -5,7 +5,9 @@ import org.example.timeloop.core.AnimationState;
 import org.example.timeloop.core.Direction;
 import org.example.timeloop.core.GamePhase;
 import org.example.timeloop.core.MovementState;
+import org.example.timeloop.core.PlayerEffectResetReason;
 import org.example.timeloop.core.PlayerKinematics;
+import org.example.timeloop.core.PlayerPhaseStateMachine;
 import org.example.timeloop.core.TickStepResult;
 import org.example.timeloop.core.input.InputIntent;
 import org.example.timeloop.core.input.LogicalKey;
@@ -17,6 +19,7 @@ import org.example.timeloop.entity.C3DockController;
 import org.example.timeloop.entity.C3DockDecision;
 import org.example.timeloop.entity.PatrolConfig;
 import org.example.timeloop.entity.PatrolController;
+import org.example.timeloop.entity.PlayerSlowdownController;
 import org.example.timeloop.level.Level02Corridor;
 import org.example.timeloop.level.LevelGeometryImpl;
 import org.example.timeloop.level.model.DoorInfo;
@@ -93,6 +96,10 @@ public final class Level02Assembly {
     private final LevelData levelData;
     private final AutoDockService autoDock;
     private final PatrolController patrol;
+
+    /** B4：相位状态机与减速控制器（core/entity 交付，app 只做接线与投影）。 */
+    private final PlayerPhaseStateMachine phaseState;
+    private final PlayerSlowdownController slowdown;
     private final C3DockController dockController;
     private final RoundClock clock;
     private final EchoQueue echoQueue;
@@ -138,8 +145,10 @@ public final class Level02Assembly {
         OrthogonalPathGraph graph =
                 new PathGraphBridge(levelData.getPathNodes(), levelData.getTileSize()).toGraph();
         this.pathNodeMarkers = projectPathNodeMarkers(levelData);
+        this.phaseState = new PlayerPhaseStateMachine();
+        this.slowdown = new PlayerSlowdownController();
         this.patrol = new PatrolController(graph, PLAYER_SPAWN_NODE_ID, PLAYER_SPAWN_DIRECTION,
-                PatrolConfig.c2Greybox());
+                PatrolConfig.c2Greybox(), slowdown);
         this.dockController = new C3DockController(autoDock, autoDock, PLAYER_ACTOR_ID, PLAYER_SOURCE_ROUND);
 
         this.clock = new RoundClock(Math.toIntExact(levelData.getDurationTicks()), levelData.getMaxRounds());
@@ -221,6 +230,8 @@ public final class Level02Assembly {
                 ray.reset();
             }
             dockController.reset(AutoDockResetReason.FULL_RESTART, clock.roundTick());
+            phaseState.reset(PlayerEffectResetReason.FULL_RESTART);
+            slowdown.reset(PlayerEffectResetReason.FULL_RESTART);
         });
         clock.transition(GamePhase.PLAYING);
         resetPlayerForNewRound();
@@ -342,6 +353,9 @@ public final class Level02Assembly {
         long tick = clock.roundTick();
         // 射线没有持久状态，行为完全由共享 roundTick 决定：每逻辑刻驱动一次即可（无独立计时器）。
         RayFactory.updateAll(rays, tick);
+        slowdown.beginTick(tick);
+        PlayerPhaseStateMachine.Snapshot phaseSnapshot =
+                phaseState.advance(input.isHeld(LogicalKey.PHASE), tick);
         Vector2D position = new Vector2D(patrol.position().x(), patrol.position().y());
 
         C3DockDecision decision = dockController.step(tick, input, position);
@@ -367,7 +381,8 @@ public final class Level02Assembly {
             kinematics = patrol.advance(tick, heldDirections, newestEdge, passability());
         }
 
-        lastFrame = toFrame(kinematics, input);
+        resolveRayHits(tick);
+        lastFrame = toFrame(kinematics, input, phaseSnapshot, slowdown.isSlowed());
         lastTick = tick;
         recording.recordFrame(lastFrame);
         events.addAll(decision.events());
@@ -478,6 +493,9 @@ public final class Level02Assembly {
      * </ol>
      */
     public void stop() {
+        // 退出/卸载场景：相位与减速必须成对复位（SCENE_EXIT）。
+        phaseState.reset(PlayerEffectResetReason.SCENE_EXIT);
+        slowdown.reset(PlayerEffectResetReason.SCENE_EXIT);
         stopped = true;
         cleanup();
     }
@@ -502,6 +520,8 @@ public final class Level02Assembly {
     /** 轮初复位：把玩家放回出生节点中心与初始朝向（每轮只调用一次）。 */
     private void resetPlayerForNewRound() {
         patrol.resetTo(PLAYER_SPAWN_NODE_ID, PLAYER_SPAWN_DIRECTION);
+        phaseState.reset(PlayerEffectResetReason.ROUND_END);
+        slowdown.reset(PlayerEffectResetReason.ROUND_END);
         lastFrame = null;
     }
 
@@ -552,13 +572,37 @@ public final class Level02Assembly {
                 AnimationState.DOCKED);
     }
 
-    private PlayerFrame toFrame(PlayerKinematics k, InputIntent input) {
+    private PlayerFrame toFrame(PlayerKinematics k, InputIntent input,
+                                PlayerPhaseStateMachine.Snapshot phaseSnapshot, boolean slowed) {
         boolean interacting = input.isPressed(LogicalKey.INTERACT);
         AnimationState animation = interacting
                 ? AnimationState.INTERACTING
                 : k.movementState() == MovementState.DOCKED ? AnimationState.DOCKED : AnimationState.MOVING;
         return new PlayerFrame(k.tick(), k.x(), k.y(), k.direction(), interacting,
-                k.movementState(), k.actorPhase(), k.actorPhaseTicksRemaining(), animation);
+                k.movementState() == MovementState.DOCKED || !slowed ? k.movementState() : MovementState.SLOWED,
+                phaseSnapshot.phase(), phaseSnapshot.ticksRemaining(), animation);
+    }
+
+    /**
+     * 命中结算：只对**当前玩家**、用**移动后**位置与权威端点判定；PHASED 直接豁免（不写减速）。
+     *
+     * <p>周期编号来自关卡数据（{@code RAY_CYCLE_TICKS}），同 (rayId, activeCycle) 只结算一次；
+     * 残影不参与判定。命中只写减速，不进入 FAILED，也不截断录制。</p>
+     */
+    private void resolveRayHits(long tick) {
+        if (phaseState.snapshot().phase() == ActorPhase.PHASED) {
+            return;
+        }
+        Vector2D position = new Vector2D(patrol.position().x(), patrol.position().y());
+        long activeCycle = tick / Level02Corridor.RAY_CYCLE_TICKS;
+        for (Ray ray : rays) {
+            if (ray.getState() != Ray.State.ACTIVE) {
+                continue;
+            }
+            if (ray.containsPoint(position, Level02Corridor.RAY_HIT_WIDTH)) {
+                slowdown.noteHit(ray.getId(), activeCycle);
+            }
+        }
     }
 
     /** 把当前玩家的 autoDock 边沿镜像到机关侧（驱动门）。 */
