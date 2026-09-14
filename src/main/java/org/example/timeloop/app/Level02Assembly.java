@@ -307,6 +307,16 @@ public final class Level02Assembly {
     }
 
     /**
+     * 本关持有的权威射线（只读副本）。
+     *
+     * <p>存在理由：B3 要求 {@code Ray -> RenderViews.RayBeam} 的投影可被测试逐刻比对到权威状态，
+     * 否则「画面比碰撞早/晚一 tick」这类缺陷无法在 headless 下发现。</p>
+     */
+    public List<Ray> rays() {
+        return List.copyOf(rays);
+    }
+
+    /**
      * 该驻留板当前是否被占用（只读；走本装配自己的占用端口，与全局单例无关）。
      *
      * <p>第二关五块板都是普通驻留板（不锁存），因此本方法就是「此刻是否有人（玩家 / 残影）站在上面」。</p>
@@ -413,7 +423,31 @@ public final class Level02Assembly {
             echoes.add(new RenderViews.EchoTrail(echo.sourceRound(), trail, newer));
         }
 
-        return new RenderViews.Frame(playerView, mechanisms, echoes);
+        // B3-2：射线 → 只读渲染投影（映射只允许出现在 app 侧，render/** 不得反向取机制层状态）。
+        List<RenderViews.RayBeam> rayBeams = new ArrayList<>(rays.size());
+        for (Ray ray : rays) {
+            rayBeams.add(toRayBeam(ray));
+        }
+
+        return new RenderViews.Frame(playerView, mechanisms, echoes, rayBeams);
+    }
+
+    /**
+     * {@link Ray} → {@link RenderViews.RayBeam} 的穷尽投影。
+     *
+     * <p>状态映射刻意<b>不写 default</b>：将来 {@link Ray.State} 新增状态时这里会直接编译失败，
+     * 而不是把新状态悄悄画成 OFF。</p>
+     */
+    private static RenderViews.RayBeam toRayBeam(Ray ray) {
+        RenderViews.RayVisualState state = switch (ray.getState()) {
+            case OFF -> RenderViews.RayVisualState.OFF;
+            case WARNING -> RenderViews.RayVisualState.WARNING;
+            case ACTIVE -> RenderViews.RayVisualState.ACTIVE;
+        };
+        return new RenderViews.RayBeam(ray.getId(),
+                ray.getStart().x(), ray.getStart().y(),
+                ray.getEnd().x(), ray.getEnd().y(),
+                state);
     }
 
     /**

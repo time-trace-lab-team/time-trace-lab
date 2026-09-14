@@ -25,6 +25,7 @@ import org.example.timeloop.render.GroundWallLayer;
 import org.example.timeloop.render.MechanismLayer;
 import org.example.timeloop.render.PathNodeHintLayer;
 import org.example.timeloop.render.PlayerLayer;
+import org.example.timeloop.render.RayLayer;
 import org.example.timeloop.render.RenderViews;
 import org.example.timeloop.render.SpawnLayer;
 import org.example.timeloop.render.WorldTransform;
@@ -212,6 +213,8 @@ public final class TimeTraceLabApplication extends Application {
         canvasAdapter.addLayer(new PathNodeHintLayer(
                 frames, flow.pathNodeMarkers(), tileSize, transformSource));
         canvasAdapter.addLayer(new MechanismLayer(frames, tileSize, transformSource));
+        // B3-3：射线必须在地图/机关之上（光束可见），且在玩家之下（ACTIVE 光晕不得盖住玩家与 PHASED 外观）。
+        canvasAdapter.addLayer(new RayLayer(frames, transformSource));
         canvasAdapter.addLayer(new PlayerLayer(frames, tileSize, transformSource));
         canvasAdapter.addLayer(new EchoTrailLayer(frames, transformSource));
 
