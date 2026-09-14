@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -179,28 +180,60 @@ class Level01AssemblyMovementTest {
         assertEquals(4.5 * TILE_SIZE, turned.y(), EPSILON, "转向必须发生在 (10,4) 节点中心行");
     }
 
-    /** P0-A：前方被关闭门挡住时，允许原路返回。 */
+    /** P0-A：前方被关闭闸门挡住时，允许原路返回。 */
     @Test
     void closedDoorDeadEndAllowsReversal() {
         Level01Assembly a = started();
         a.tick(InputIntent.empty(0));
 
-        // 新地图：门在 (18,13)。从下方走廊 (9,14) 绕到 (16,13) 再向右贴上门口节点 (17,13)。
+        // L01-GATE-MERGE 后闸门与终点同在 (18,7)。绕行第 9 行走廊、经第 16 列上到 (16,7)，
+        // 再向右进入 (17,7)（保持朝向 RIGHT），全程避开开关格 (18,8)（否则会被 autoDock 停住）。
         long tick = 1;
         tick = drive(a, tick, LogicalKey.DIR_DOWN, 24);           // (10,2) 出生点 → (10,3)
-        tick = drive(a, tick, LogicalKey.DIR_LEFT, 24);           // (10,3) → (9,3)
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 264);          // (9,3) → (9,14) 竖廊
-        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 168);         // (9,14) → (16,14)
-        tick = drive(a, tick, LogicalKey.DIR_UP, 24);             // (16,14) → (16,13)
-        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 44);          // (16,13) → 停在门前 (17,13)
-        double lockedX = 17.5 * TILE_SIZE;
-        assertEquals(lockedX, player(a).x(), EPSILON, "关闭的门必须把玩家挡在 (17,13) 节点中心");
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 12 * 24);     // (10,3) → (22,3) 第 3 行长廊
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 6 * 24);       // (22,3) → (22,9)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 5 * 24);       // (22,9) → (17,9)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 24);             // (17,9) → (17,8)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 24);           // (17,8) → (16,8)
+        tick = drive(a, tick, LogicalKey.DIR_UP, 24);             // (16,8) → (16,7)
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 24);          // (16,7) → (17,7)，朝向 RIGHT
+        assertEquals(17.5 * TILE_SIZE, player(a).x(), EPSILON, "应先到达闸门左侧节点 (17,7) 中心");
+        assertEquals(7.5 * TILE_SIZE, player(a).y(), EPSILON);
         assertEquals(Direction.RIGHT, player(a).direction());
 
-        a.tick(press(tick, LogicalKey.DIR_LEFT));                 // 松 RIGHT、按 LEFT → 被门堵住时掉头
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 44);          // 向右顶住锁着的闸门
+        double lockedX = 17.5 * TILE_SIZE;
+        assertEquals(lockedX, player(a).x(), EPSILON, "关闭的闸门必须把玩家挡在 (17,7) 节点中心");
+        assertEquals(Direction.RIGHT, player(a).direction());
+
+        a.tick(press(tick, LogicalKey.DIR_LEFT));                 // 松 RIGHT、按 LEFT → 被闸门堵住时掉头
         RenderViews.Player reversed = player(a);
         assertEquals(Direction.LEFT, reversed.direction());
         assertEquals(lockedX - BASE_SPEED, reversed.x(), EPSILON);
+    }
+
+    /** L01-GATE-MERGE：开关的锁存在轮末随机关复位，闸门重新上锁（真实装配接线，不是机制单测）。 */
+    @Test
+    void switchLatchResetsAtRoundBoundary() {
+        Level01Assembly a = started();
+        a.tick(InputIntent.empty(0));
+
+        long tick = 1;
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 24);           // (10,2) 出生点 → (10,3)
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 12 * 24);     // (10,3) → (22,3)
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 5 * 24);       // (22,3) → (22,8)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 2 * 24);       // (22,8) → (20,8)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 24);           // (20,8) → (19,8) 原终点节点
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 24);           // (19,8) → (18,8) 开关，autoDock 停驻
+
+        assertTrue(a.isPlateOccupied("L01_plate_right"), "踩上开关后应处于锁存 ON");
+        assertFalse(a.objectiveView().doorUnlocked(), "只踩开关（左板未占）不得解锁闸门");
+
+        while (a.hudContext().currentRound() == 1) {              // 推到本轮结束（轮末机关 reset）
+            a.tick(InputIntent.empty(tick++));
+        }
+        assertFalse(a.isPlateOccupied("L01_plate_right"), "轮末必须复位开关锁存");
+        assertFalse(a.objectiveView().doorUnlocked(), "轮末闸门必须重新上锁");
     }
 
     /** P0-A 的连锁修复：驻留板从区域边界走到机关中心再停驻，离开时能在节点中心提交转向并释放占用。 */
