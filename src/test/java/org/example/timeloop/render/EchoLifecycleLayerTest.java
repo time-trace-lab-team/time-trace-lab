@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** R2 代际与最后有效轮标识的离屏 Canvas 回归。 */
+/** R2 代际标识与 R5 消散投影的离屏 Canvas 回归。 */
 class EchoLifecycleLayerTest {
 
     private static final int WIDTH = 240;
@@ -84,6 +84,64 @@ class EchoLifecycleLayerTest {
                     "缩放后标签应跟随锚点到 (122,28) 附近");
             assertFalse(updated.getPixelReader().getArgb(48, 32) != updatedBackground,
                     "动态变换后不得保留旧标签位置");
+        });
+    }
+
+    @Test
+    void dissipatingEchoUsesInjectedProgressForFadeAndFragments() throws Exception {
+        onFxThread(() -> {
+            Canvas halfProgressCanvas = new Canvas(WIDTH, HEIGHT);
+            new EchoLifecycleLayer(
+                    () -> frame(echo(1, true, 80.0, 60.0)),
+                    () -> List.of(new EchoLifecycleVisual(1, false, EchoVisualPhase.DISSIPATING, 0.5)),
+                    WorldTransform.identity())
+                    .render(halfProgressCanvas.getGraphicsContext2D(), WIDTH, HEIGHT, 0.0);
+            WritableImage halfProgress = halfProgressCanvas.snapshot(null, null);
+            int background = halfProgress.getPixelReader().getArgb(0, 0);
+
+            assertTrue(halfProgress.getPixelReader().getArgb(80, 44) != background,
+                    "DISSIPATING 的中途进度仍应保留淡出的代际标签");
+            assertTrue(halfProgress.getPixelReader().getArgb(93, 44) != background,
+                    "effectProgress=0.5 应在标签中心外绘制扩散碎片");
+
+            Canvas completedCanvas = new Canvas(WIDTH, HEIGHT);
+            new EchoLifecycleLayer(
+                    () -> frame(echo(1, true, 80.0, 60.0)),
+                    () -> List.of(new EchoLifecycleVisual(1, false, EchoVisualPhase.DISSIPATING, 1.0)),
+                    WorldTransform.identity())
+                    .render(completedCanvas.getGraphicsContext2D(), WIDTH, HEIGHT, 0.0);
+            WritableImage completed = completedCanvas.snapshot(null, null);
+            int completedBackground = completed.getPixelReader().getArgb(0, 0);
+            assertFalse(completed.getPixelReader().getArgb(80, 44) != completedBackground,
+                    "进度由上游给到 1 时，render 不得自行保留标签或创建额外计时");
+        });
+    }
+
+    @Test
+    void dissipationFragmentsReprojectTheirWorldAnchorWithoutScalingScreenEffect() throws Exception {
+        onFxThread(() -> {
+            AtomicReference<WorldTransform> transform = new AtomicReference<>(WorldTransform.identity());
+            EchoLifecycleLayer layer = new EchoLifecycleLayer(
+                    () -> frame(echo(1, true, 48.0, 48.0)),
+                    () -> List.of(new EchoLifecycleVisual(1, false, EchoVisualPhase.DISSIPATING, 0.5)), transform::get);
+
+            Canvas firstCanvas = new Canvas(WIDTH, HEIGHT);
+            layer.render(firstCanvas.getGraphicsContext2D(), WIDTH, HEIGHT, 0.0);
+            WritableImage first = firstCanvas.snapshot(null, null);
+            int firstBackground = first.getPixelReader().getArgb(0, 0);
+            assertTrue(first.getPixelReader().getArgb(61, 32) != firstBackground,
+                    "初始碎片应锚定于世界点 (48,48) 上方的标签中心");
+
+            transform.set(new WorldTransform(0.5, 100.0, 20.0));
+            Canvas updatedCanvas = new Canvas(WIDTH, HEIGHT);
+            layer.render(updatedCanvas.getGraphicsContext2D(), WIDTH, HEIGHT, 0.0);
+            WritableImage updated = updatedCanvas.snapshot(null, null);
+            int updatedBackground = updated.getPixelReader().getArgb(0, 0);
+
+            assertTrue(updated.getPixelReader().getArgb(137, 28) != updatedBackground,
+                    "缩放后碎片应随标签中心投影到 (124,28) 附近，扩散距离仍为屏幕像素");
+            assertFalse(updated.getPixelReader().getArgb(61, 32) != updatedBackground,
+                    "动态变换后不得遗留旧世界投影位置的消散碎片");
         });
     }
 
