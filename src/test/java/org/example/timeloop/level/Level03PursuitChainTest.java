@@ -35,9 +35,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 配 {@link PatrolConfig#C2_BASE_SPEED} 逐刻走完「射线 → B」那段路算出来，并先用真实
  * {@link Ray} 状态确认抵达射线那一刻确实是 ACTIVE。</p>
  *
- * <p>三条路线（设定书 §6.3）：正确下潜 → 准时到 B（刻 {@code 384}）；被命中 → 迟 30 刻（{@code 414}）；
- * 等射线关闭 → 迟 60 刻（{@code 444}）。B 板仍有用的最晚抵达刻是 {@code 408}，所以后两条都会让
- * 第三轮 E₂ 晚开门 B，当前玩家因此错过 E₁ 的门 C 窗口（刻 {@code 504} 关闭）。</p>
+ * <p>三条路线（设定书 §6.3）：正确下潜 → 准时到 B（刻 {@code 624}）；被命中 → 迟 30 刻（{@code 654}）；
+ * 等射线关闭 → 迟 60 刻（{@code 684}）。B 板仍有用的最晚抵达刻是 {@code 648}，所以后两条都会让
+ * 第三轮 E₂ 晚开门 B，当前玩家因此错过 E₁ 的门 C 窗口（刻 {@code 744} 关闭）。</p>
+ *
+ * <p><b>新图的一条设计差异</b>：C→D（13 格）比「门 C→出口」（5 格）长，所以 D 供能刻 {@code 1056}
+ * 晚于玩家走到出口的刻 {@code 840} —— 玩家要在出口<b>等</b>到供能刻再按 {@code E}。这是设计意图，
+ * 因此 {@link Simulation#runThirdRound} 的按 E 时刻取 {@code max(到出口刻, 供能刻)}。</p>
  */
 class Level03PursuitChainTest {
 
@@ -68,14 +72,19 @@ class Level03PursuitChainTest {
         assertTrue(run.crossedDoorB, "门 B 必须由 E₂ 及时打开");
         assertTrue(run.crossedDoorC, "正解必须在门 C 窗口内穿过门 C");
         assertEquals(Level03Pursuit.DOOR_C_CROSS_TICK, run.doorCCrossTick, "穿门 C 的刻");
-        assertEquals(Level03Pursuit.EXIT_ARRIVAL, run.exitArrivalTick, "走到出口的刻");
+        assertEquals(Level03Pursuit.EXIT_ARRIVAL, run.exitArrivalTick,
+                "走到出口的刻不因等待供能而改变（" + Level03Pursuit.EXIT_ARRIVAL + "）");
+        assertTrue(Level03Pursuit.PLATE_D_ARRIVAL < Level03Pursuit.DURATION_TICKS,
+                "供能必须早于轮末，玩家才来得及按 E");
+        assertTrue(Level03Pursuit.PLATE_D_ARRIVAL >= run.exitArrivalTick,
+                "本图 D 供能晚于玩家抵达出口：玩家确实在出口等过供能");
+        assertEquals(Level03Pursuit.PLATE_D_ARRIVAL, run.interactTick,
+                "按 E 的刻 = 供能刻（等到供能后才按）");
         assertTrue(run.exitArmed, "E₁ 抵达 D 后出口必须被武装");
-        assertTrue(run.cleared, "当前玩家在出口按 E 必须通关");
+        assertTrue(run.cleared, "当前玩家在出口等到供能后按 E 必须通关");
         assertTrue(Level03Pursuit.PLATE_C_WINDOW_END - run.doorCCrossTick
                         >= Level03Pursuit.SUCCESS_MARGIN_TICKS,
                 "正解过门 C 后必须仍有 successMargin 刻余量");
-        assertTrue(Level03Pursuit.PLATE_D_ARRIVAL <= run.exitArrivalTick,
-                "出口供能的刻不得晚于玩家走到出口的刻");
     }
 
     @Test
@@ -227,6 +236,8 @@ class Level03PursuitChainTest {
     private static final class Run {
         long doorCCrossTick = -1;
         long exitArrivalTick = -1;
+        /** 当前玩家在出口按 E 的刻（新图 D 供能晚于到出口 ⇒ 这里晚于 {@link #exitArrivalTick}）。 */
+        long interactTick = -1;
         boolean doorAOpenedByEcho;
         boolean crossedDoorA;
         boolean doorBOpened;
@@ -340,7 +351,9 @@ class Level03PursuitChainTest {
         /**
          * 第三轮：E₁ 回放 A/C/D，E₂ 回放 B（在第二轮记录的刻），当前玩家走主通道。
          *
-         * <p>玩家每一步都要现查门：门 B 开在「E₂ 抵达 B」的刻，门 C 只开在 E₁ 的 C 窗口内。</p>
+         * <p>玩家每一步都要现查门：门 B 开在「E₂ 抵达 B」的刻，门 C 只开在 E₁ 的 C 窗口内。
+         * 新图 D 供能晚于玩家走到出口，因此按 E 的刻取
+         * {@code max(到出口刻, PLATE_D_ARRIVAL)}，并在那一刻真被供能时才 {@code interact}。</p>
          */
         Run runThirdRound(boolean withE1, boolean withE2) {
             return runThirdRound(withE1, withE2, null);
@@ -355,6 +368,9 @@ class Level03PursuitChainTest {
             long exitArrivalTick = doorCCrossTick == NEVER
                     ? NEVER
                     : doorCCrossTick + Level03Pursuit.DOOR_C_TO_EXIT_TICKS;
+            // 新图 C→D（13 格）比门 C→出口（5 格）长：D 供能晚于玩家到出口，玩家要在出口等到
+            // 供能刻再按 E。只有那一刻出口真被供能（isDoorUnlocked）才 interact。
+            long interactTick = Math.max(exitArrivalTick, Level03Pursuit.PLATE_D_ARRIVAL);
 
             for (long tick = 0; tick <= ROUND_END; tick++) {
                 if (observer != null) {
@@ -391,6 +407,11 @@ class Level03PursuitChainTest {
                 }
                 if (tick == exitArrivalTick) {
                     run.exitArrivalTick = tick;
+                    // 到出口时 D 可能还没供能（新图正是如此）→ 这里通常为 false，等 interactTick 再看。
+                    run.exitArmed = exit.isDoorUnlocked();
+                }
+                if (tick == interactTick) {
+                    run.interactTick = tick;
                     run.exitArmed = exit.isDoorUnlocked();
                     run.cleared = run.exitArmed && exit.interact(tick, 0);
                     return run;

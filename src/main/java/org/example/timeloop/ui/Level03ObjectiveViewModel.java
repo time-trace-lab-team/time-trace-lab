@@ -105,7 +105,7 @@ public record Level03ObjectiveViewModel(int currentRound,
 
     /** 三级提示（设定书 §9.4）：两条推荐路线与关键时间节点（刻数以共享刻表为准）。 */
     public String tierThreeRoute() {
-        return "控制线 A(120) → C(288) → D(576)　｜　支路 门A(120) → J(192) → 射线(288) → B(384)";
+        return "控制线 A(336) → C(600) → D(1056)　｜　支路 门A(336) → J(432) → 射线(552) → B(624)";
     }
 
     /** J 分岔引导（设定书 §11.4）：上方是 B 支路，右侧是最终主通道。 */
