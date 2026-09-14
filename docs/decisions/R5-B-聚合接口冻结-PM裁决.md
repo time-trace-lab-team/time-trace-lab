@@ -95,3 +95,37 @@ PM 复核属实：`AutoDockResetReason = {ROUND_END, FULL_RESTART, SCENE_EXIT}`�
 3. 轮内恢复（时钟不回退）路径有测试：恢复后 `observe` 不抛错、状态与快照一致；
 4. `SCENE_EXIT` 三值语义测试通过；
 5. `.\mvnw.cmd -o clean test` 退出码 0、任何单测 ≤ 1s、数字回填。
+
+## 七、**冻结增补 1**：锁存开关字段 `DockingPlate.StateSnapshot.latched`（2026-09-14）
+
+> 依据：`L01-门与终点合并-PM裁决.md` §十一（唯一批准的最小增补）+ 开发三字段提案 + PR #78（`develop @ 6fd35de`）。
+> **本增补即冻结**；除下列内容外，`ExitTerminal`、`Door`、`AutoDockStateSnapshot` 的契约与语义**一律不变**。
+
+### 7.1 字段（provider：开发三）
+
+| 项 | 冻结值 |
+| --- | --- |
+| 位置 | `mechanism/DockingPlate.StateSnapshot` 的**第 5 分量** `boolean latched` |
+| 接口 | `DockingPlate.Snapshot` 增 `default boolean isLatched()`；**保留 4 参兼容构造器**（旧快照等价 `latched = false`） |
+| `reset()` | `false`（OFF）——轮末 / `FULL_RESTART` / `SCENE_EXIT` 共用同一路径 |
+| `restore()` | 取快照值 |
+| 不变量 | `latched ⟹ latching`；与 `state` **独立**（`(UNOCCUPIED, latched = true)` 合法且为常态）；本轮单调 `false → true`（单向、幂等）；与 `reentryBlockedAtTick` 无耦合 |
+| **明确不加** | `AutoDockStateSnapshot.DockSnapshot` —— 锁存是机关侧状态，autoDock 侧继续只表达「真实占用 + 防重入」，避免第二个真相源 |
+| `isOccupied()` | 语义扩展为 `state == OCCUPIED || latched`；只对开关变体有可观察影响，普通驻留板语义不变 |
+
+### 7.2 消费方义务（开发二）
+
+1. `MechanismSnapshot` 的恢复路径必须**透传 `snapshot.isLatched()`**（改用 5 参构造器）；
+   否则「已触发但玩家已离开」的开关在快照往返后会**丢成 OFF**，导致门上锁而无解。
+2. 必须覆盖（至少 4 条，含一条端到端）：
+   - 恢复到「开关锁存 ON（占用为空）+ 左板被残影占用 + 门解锁」后，`exit.interact(...)` 返回 `true`；
+   - `ROUND_END` / `FULL_RESTART` / `SCENE_EXIT` 后开关回到 `OFF`、门回到 `LOCKED`；
+   - 非开关机关带 `latched = true` 的快照必须被 `validate` 拒绝且**世界零变化**（半恢复防护）；
+   - **不得**在恢复路径上「按占用重算门态」—— 锁存 ON 时占用可能已为空，重算会把门错误地锁回去。
+
+### 7.3 三方签署
+
+- provider **开发三**：字段已交付（`feature/content-l01-gate-merge`，`72a0bfc`/`746ffd2`）；
+- consumer **开发二**：按 §7.2 实现（另行发卡 / 已在 `L01-门与终点合并-任务卡-开发2.md` 同步冻结值）；
+- **PM**：登记本增补为冻结依据，并在 app 侧投影（`rightPlate.isLatched()` → `MechanismKind.SWITCH.active`）。
+
