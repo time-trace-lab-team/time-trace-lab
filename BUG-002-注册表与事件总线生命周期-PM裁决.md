@@ -137,6 +137,37 @@ PM 将与开发一/测试确认后决定：**补进 README 并写清**，或**�
 - 依据：开发一 `MOVE-TURN-RULES-SYNC-开发一最终规则表.md` 第 7 行（`Level01Assembly.tick` 门槛 + 只读测试证据
   `countdownWaitsForTheFirstMovementKey`）。
 
+### 8.3 app 侧阻塞解除记录（2026-09-14，**一次性跨板授权**）
+
+**背景**：Phase 2（删两处全局单例）被 `app/**` 里 4 行对全局单例的断言卡住 —— 单例一删，该测试编译失败，全量测试跑不起来。
+开发三按卡 §六-1 已多次停手回报；**项目方 2026-09-14 一次性授权开发三代改 `app/**`**（原话：「PM 忙不过来，直接清掉，就这一次」）。
+
+**代改内容**（`src/test/java/org/example/timeloop/app/Level01AssemblyLifecycleTest.java`，1 文件 +8/−7，仅测试、未碰生产代码）：
+
+| 位置 | 处理 |
+| --- | --- |
+| `twoAssembliesDoNotSharePlateOccupancy` | 删除 2 行 `DockingPlateRegistry.getInstance()` 断言；该用例真正的断言（A 自己的板被占、B 不受影响、B 的时钟独立）**全部保留** |
+| `appDoesNotTouchGlobalEventDispatcher` | 原 2 行单例断言被替换 |
+| `import DockingPlateRegistry` | 删除 |
+
+**PM 复核（2026-09-14，本文件的路径所有者）**：**接受代改**，但对第二条用例**做了进一步修正**：
+
+- 开发三给出的替代断言是「B 的 `drainEvents()` 为空 ⇒ 两套装配总线互不串扰」——
+  PM 实测判定这是**永远通过的假绿**：`Level01Assembly.events` 只承载**本装配玩家自己的驻留决策**
+  （`events.addAll(decision.events())`），B 不驱动就恒为空，**与总线是否共享无关**；
+  真正的「互不串扰」已由 `twoAssembliesDoNotSharePlateOccupancy` 覆盖；
+- 因此 PM 把该用例改为 **`appSourcesDoNotReferenceGlobalSingletons`**：**静态扫描 `app/**` 源码**，
+  只要有人重新引入 `getInstance()` 即失败 —— 回到原用例的真实意图（app 不碰全局状态），但**形式可失败**；
+- **负向验证（PM 实测）**：临时往 `Level01Assembly.java` 注入 `DockingPlateRegistry.getInstance()` → 该用例**红灯**
+  （`Tests run: 3, Failures: 1`）；还原后回到 **420 / 0 / 0** ⇒ 守卫有牙齿。
+
+**流程结论**：
+
+1. 本阻塞**已关闭**，Phase 2 可开工（开发三不再需要为它停手）；
+2. 跨板授权的记录即本节：**授权方 = 项目方、执行方 = 开发三、复核与后续修改 = PM**；
+   该授权是**一次性**的，不构成先例 —— 后续任何跨板改动仍走「停手回报 + PM 决定」；
+3. 「app 不碰全局单例」由此成为**可执行的不变量**（静态扫描），单例删除后依然有效，无需二次维护。
+
 ## 九、附：BUG-001 报告未到手
 
 `BUG-001-段中间转向锁死与驻留板原路返回.md` **不在本地工作树，也不在本地对象库的任何 ref 里**
