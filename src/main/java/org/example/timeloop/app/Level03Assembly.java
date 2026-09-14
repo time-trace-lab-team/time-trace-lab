@@ -54,6 +54,7 @@ import org.example.timeloop.ui.Level03ObjectiveViewModel;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -458,16 +459,42 @@ public final class Level03Assembly {
     }
 
     /**
+     * 把板与「它作用的那扇门」用<b>同一个序号</b>关联起来（自开局起静态显示，不随玩法状态变化）。
+     *
+     * <p>与第二关同一套视觉语言：<b>开门组</b>（蓝，板心写数字、门在本格右下角带同号角标）；
+     * <b>终点组</b>（琥珀，与终点闸/出口同色系）。序号对应关系：</p>
+     *
+     * <pre>
+     * 1 = A 板 → 门 A      2 = B 板 → 门 B      3 = C 板 → 门 C      4 = D 板 → 出口供能闸
+     * </pre>
+     */
+    private static final Map<String, String> TAG_BY_PLATE = Map.of(
+            Level03Pursuit.PLATE_A, "1",
+            Level03Pursuit.PLATE_B, "2",
+            Level03Pursuit.PLATE_C, "3",
+            Level03Pursuit.PLATE_D, "4");
+
+    /** 门侧角标：与 {@link #TAG_BY_PLATE} 里的板同号（含与出口同格的终点供能闸 = 4）。 */
+    private static final Map<String, String> TAG_BY_DOOR = Map.of(
+            Level03Pursuit.DOOR_A, "1",
+            Level03Pursuit.DOOR_B, "2",
+            Level03Pursuit.DOOR_C, "3",
+            Level03Pursuit.DOOR_EXIT, "4");
+
+    /** 作用于出口供能闸的板（D）：与出口同色系（琥珀，终点组）。 */
+    private static final Set<String> GATE_GROUP_PLATES = Set.of(Level03Pursuit.PLATE_D);
+
+    /**
      * 只读渲染视图（零回写）。
      *
-     * <p>投影契约：4 个 {@code PLATE}（A / B / C / D，{@code active} = 此刻是否被占）+
+     * <p>投影契约：4 个 {@code PLATE}（A / B / C / D，{@code active} = 此刻是否被占，各带序号 1–4）+
      * {@code L03_door_a} / {@code L03_door_b} / {@code L03_door_c} 三个 {@code DOOR}
-     * （{@code active} = 是否解锁）+ 终点格一个 {@code EXIT}
-     * （{@code active} = {@code exit.isDoorUnlocked()}）。终点供能闸 {@code L03_door_exit} 与出口同格，
-     * 该格<b>不</b>再投影 {@code DOOR}（同格叠画会互相遮挡）。</p>
+     * （{@code active} = 是否解锁，各带与板同号的角标）+ 终点格一个 {@code EXIT}
+     * （{@code active} = {@code exit.isDoorUnlocked()}，角标 4、终点组色）。终点供能闸
+     * {@code L03_door_exit} 与出口同格，该格<b>不</b>再投影 {@code DOOR}（同格叠画会互相遮挡）。</p>
      *
-     * <p>本关不需要「组色 / 数字角标」，故 {@code tag=null}、{@code gateGroup=false}；
-     * 用户界面上的机关顺序与 {@link #plates} / {@link #doors} 的声明顺序一致：
+     * <p><b>序号与组色自开局起就在</b>：它们是静态投影，不看任何玩法状态，玩家一进关就能看出
+     * 「哪块板管哪扇门」。机关顺序与 {@link #plates} / {@link #doors} 的声明顺序一致：
      * 板 A、板 B、板 C、板 D、门 A、门 B、门 C、出口。</p>
      */
     public RenderViews.Frame renderViews() {
@@ -481,18 +508,23 @@ public final class Level03Assembly {
         List<RenderViews.Mechanism> mechanisms = new ArrayList<>();
         for (DockingPlate p : plates) {
             mechanisms.add(new RenderViews.Mechanism(p.getId(), p.getPosition().x(),
-                    p.getPosition().y(), RenderViews.MechanismKind.PLATE, p.isOccupied()));
+                    p.getPosition().y(), RenderViews.MechanismKind.PLATE, p.isOccupied(),
+                    TAG_BY_PLATE.get(p.getId()),
+                    GATE_GROUP_PLATES.contains(p.getId())));
         }
         for (Door d : doors) {
             if (Level03Pursuit.DOOR_EXIT.equals(d.getId())) {
-                // 终点供能闸与出口同格：不投影 DOOR，开/关由下面那个 EXIT 的 active 表达。
+                // 终点供能闸与出口同格：不投影 DOOR，开/关由下面那个 EXIT 的 active 表达；
+                // 它的序号 4 由 EXIT 自己带（与 D 板同号）。
                 continue;
             }
             mechanisms.add(new RenderViews.Mechanism(d.getId(), d.getPosition().x(),
-                    d.getPosition().y(), RenderViews.MechanismKind.DOOR, d.isUnlocked()));
+                    d.getPosition().y(), RenderViews.MechanismKind.DOOR, d.isUnlocked(),
+                    TAG_BY_DOOR.get(d.getId()), false));
         }
         mechanisms.add(new RenderViews.Mechanism(exit.getId(), exit.getPosition().x(),
-                exit.getPosition().y(), RenderViews.MechanismKind.EXIT, exit.isDoorUnlocked()));
+                exit.getPosition().y(), RenderViews.MechanismKind.EXIT, exit.isDoorUnlocked(),
+                TAG_BY_DOOR.get(Level03Pursuit.DOOR_EXIT), true));
 
         List<RenderViews.EchoTrail> echoes = new ArrayList<>();
         for (EchoState echo : echoQueue.activeEchoes(clock.currentRound())) {
