@@ -1,5 +1,10 @@
 package org.example.timeloop.app;
 
+import org.example.timeloop.render.TimelineEventKind;
+import org.example.timeloop.render.TimelineVisualEvent;
+import org.example.timeloop.replay.EchoState;
+import org.example.timeloop.replay.PlayerFrame;
+import org.example.timeloop.replay.TimelineEvent;
 import org.example.timeloop.core.ActorPhase;
 import org.example.timeloop.core.AnimationState;
 import org.example.timeloop.core.Direction;
@@ -444,6 +449,57 @@ public final class Level02Assembly {
      * {@code PLATE_RELAY}/D2 = 2）；作用于终点闸的板（{@code GATE_GROUP_PLATES}，含锁存开关）
      * 用终点闸同族色系；终点闸格只投影一个不带角标的 {@code EXIT}（同色即同组，不需要数字）。</p>
      */
+    /**
+     * R4：Δt（{@code RAY_DELAY}）只读投影 —— 当前轮与各活跃残影**消费同一条记录事实**。
+     *
+     * <p>不重算命中、不看轨迹速度、不碰射线碰撞：逐刻从记录取事件；位置取该来源在该刻的
+     * **权威录制位置**（活玩家用本轮录制帧，残影用 {@code EchoState.frameAt}）；
+     * {@code delayTicks} 只在此处解析 {@code reason} 的 {@code delay=<ticks>}。</p>
+     */
+    public List<TimelineVisualEvent> timelineVisualEvents() {
+        List<TimelineVisualEvent> out = new ArrayList<>();
+        int duration = Math.toIntExact(levelData.getDurationTicks());
+        long maxTick = Math.max(lastTick, 0);
+
+        currentRecording().ifPresent(rec -> {
+            for (int tick = 0; tick <= Math.min(maxTick, duration - 1); tick++) {
+                for (TimelineEvent event : rec.eventsAt(tick)) {
+                    if (event.eventType() == TimelineEvent.EventType.RAY_DELAY) {
+                        out.add(rayDelayVisual(event, clock.currentRound(), rec.frameAt(tick)));
+                    }
+                }
+            }
+        });
+
+        for (EchoState echo : echoQueue.activeEchoes(clock.currentRound())) {
+            for (int tick = 0; tick <= duration - 1; tick++) {
+                for (TimelineEvent event : echo.eventsAt(tick)) {
+                    if (event.eventType() == TimelineEvent.EventType.RAY_DELAY) {
+                        out.add(rayDelayVisual(event, echo.sourceRound(), echo.frameAt(tick)));
+                    }
+                }
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    private static TimelineVisualEvent rayDelayVisual(TimelineEvent event, int sourceRound, PlayerFrame frame) {
+        return new TimelineVisualEvent(sourceRound, event.tick(),
+                new Vector2D(frame.x(), frame.y()), TimelineEventKind.RAY_DELAY,
+                delayTicksOf(event.reason()));
+    }
+
+    private static int delayTicksOf(String reason) {
+        if (reason == null || !reason.startsWith("delay=")) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(reason.substring("delay=".length()).trim());
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
     public RenderViews.Frame renderViews() {
         PlayerFrame player = lastFrame;
         RenderViews.Player playerView = player == null

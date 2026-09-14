@@ -346,6 +346,11 @@ public final class Level01Assembly {
     }
 
     /** 只读渲染视图（开发一图层消费；零回写）。 */
+    /** R4：第一关没有时滞射线，Δt 投影恒空（与第二关同接口，供 LevelFlow 统一委托）。 */
+    public java.util.List<org.example.timeloop.render.TimelineVisualEvent> timelineVisualEvents() {
+        return java.util.List.of();
+    }
+
     public RenderViews.Frame renderViews() {
         PlayerFrame player = lastFrame;
         RenderViews.Player playerView = player == null

@@ -1,5 +1,6 @@
 package org.example.timeloop.app;
 
+import org.example.timeloop.render.TimelineEventLayer;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.beans.property.ObjectProperty;
@@ -217,6 +218,8 @@ public final class TimeTraceLabApplication extends Application {
         canvasAdapter.addLayer(new RayLayer(frames, transformSource));
         canvasAdapter.addLayer(new PlayerLayer(frames, tileSize, transformSource));
         canvasAdapter.addLayer(new EchoTrailLayer(frames, transformSource));
+        // R4：Δt 只读投影（与残影轨迹同源；render 不重算命中）
+        canvasAdapter.addLayer(new TimelineEventLayer(flow::timelineVisualEvents, transformSource));
 
         // 画布跟随容器尺寸；逻辑坐标仍是世界坐标，只有显示投影变化。
         canvas.widthProperty().bind(canvasHolder.widthProperty());

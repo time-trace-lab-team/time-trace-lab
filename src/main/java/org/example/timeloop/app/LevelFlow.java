@@ -106,6 +106,12 @@ final class LevelFlow {
         return activeLevel == LevelId.LEVEL_01 ? level01.isPlaying() : level02.isPlaying();
     }
 
+    /** R4：当前关卡的 Δt 只读投影（第一关恒空）。 */
+    java.util.List<org.example.timeloop.render.TimelineVisualEvent> timelineVisualEvents() {
+        return activeLevel == LevelId.LEVEL_01
+                ? level01.timelineVisualEvents() : level02.timelineVisualEvents();
+    }
+
     boolean isFinalPhase() {
         return activeLevel == LevelId.LEVEL_01 ? level01.isFinalPhase() : level02.isFinalPhase();
     }
