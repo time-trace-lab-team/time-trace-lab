@@ -2,6 +2,7 @@ package org.example.timeloop.level;
 
 import javafx.application.Platform;
 import javafx.scene.canvas.Canvas;
+import javafx.scene.image.PixelFormat;
 import javafx.scene.image.PixelReader;
 import javafx.scene.image.WritableImage;
 import org.example.timeloop.app.Level01Assembly;
@@ -208,19 +209,28 @@ class Level01MapRenderSnapshotTest {
 
                 WritableImage image = canvas.snapshot(null, null);
                 PixelReader reader = image.getPixelReader();
-                BufferedImage buffered = new BufferedImage(
-                        (int) worldW, (int) worldH, BufferedImage.TYPE_INT_ARGB);
-                for (int y = 0; y < (int) worldH; y++) {
-                    for (int x = 0; x < (int) worldW; x++) {
-                        buffered.setRGB(x, y, reader.getArgb(x, y));
-                    }
-                }
+                int width = (int) worldW;
+                int height = (int) worldH;
+                BufferedImage buffered = new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+
+                // TECH-DEBT-SNAPSHOT-RUNTIME-v2：原实现逐像素 getArgb + setRGB
+                //（1344×768 ≈ 103 万次调用）是本用例的主要耗时；改为一次性批量像素拷贝，
+                // 产出的图像与逐像素版本逐位相同，断言强度不变。
+                int[] pixels = new int[width * height];
+                reader.getPixels(0, 0, width, height, PixelFormat.getIntArgbInstance(), pixels, 0, width);
+                buffered.setRGB(0, 0, width, height, pixels, 0, width);
+
                 File out = new File(outPath);
                 File parent = out.getParentFile();
                 if (parent != null) {
                     parent.mkdirs();
                 }
                 ImageIO.write(buffered, "png", out);
+
+                // 结构断言（替代原先仅"文件字节数 > 4096"的弱断言）：
+                // 每隔 8 像素抽样，要求画面确实存在足量不同颜色 —— 单一色块（漏画图层/整屏同色）会被立刻发现。
+                assertTrue(distinctSampledColors(pixels, width, height, 8) >= 8,
+                        "画面抽样颜色数不足，疑似漏画图层或整屏单色: " + outPath);
             } catch (Throwable throwable) {
                 failure[0] = throwable;
             } finally {
@@ -243,5 +253,22 @@ class Level01MapRenderSnapshotTest {
         } catch (IllegalStateException alreadyStarted) {
             // 同一个 JVM 里第二次出图：Toolkit 已启动，直接复用。
         }
+    }
+
+    /**
+     * 抽样统计不同颜色数（每隔 {@code step} 像素取一个样本）。
+     *
+     * <p>抽样而非全量扫描：本断言要抓的是「整屏单色 / 漏画图层」这类粗粒度回归，
+     * 每 8 像素取样仍有约 1.6 万个样本，足以覆盖全部 28×16 格与所有图层；
+     * 而全量去重需要 ~103 万次哈希操作，正是本卡要收口的耗时来源。</p>
+     */
+    private static int distinctSampledColors(int[] pixels, int width, int height, int step) {
+        java.util.HashSet<Integer> colors = new java.util.HashSet<>();
+        for (int y = 0; y < height; y += step) {
+            for (int x = 0; x < width; x += step) {
+                colors.add(pixels[y * width + x]);
+            }
+        }
+        return colors.size();
     }
 }
