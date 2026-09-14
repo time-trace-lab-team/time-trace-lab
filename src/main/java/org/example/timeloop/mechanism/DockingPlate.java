@@ -247,6 +247,16 @@ public class DockingPlate implements GameObserver {
         return new StateSnapshot(id, state, occupantId, occupantSourceRound, latched);
     }
 
+    /**
+     * 用快照恢复纯状态（不调用 {@link #tryEnter}/{@link #tryExit}，因此不产生重复 gameplay 事件）。
+     *
+     * <p><b>锁存位校验（L01-GATE-MERGE-DEV2 请求，2026-09-14）</b>：非开关板
+     * （{@code latching == false}）不允许被恢复成 {@code latched = true} —— 否则
+     * {@link #isOccupied()} 会恒为真，门被错误解锁。校验在所有状态赋值<b>之前</b>执行，
+     * 因此抛异常时世界状态零变化。</p>
+     *
+     * @throws IllegalArgumentException 快照 ID 不匹配、状态非法，或向非开关板恢复锁存位
+     */
     public void restore(Snapshot snapshot) {
         Objects.requireNonNull(snapshot, "dockingPlate.snapshot");
         String snapshotId = snapshot.getMechanismId();
@@ -260,6 +270,12 @@ public class DockingPlate implements GameObserver {
         String restoredOccupantId = snapshot.getOccupantId();
         int restoredSourceRound = snapshot.getOccupantSourceRound();
         validateState(restoredState, restoredOccupantId, restoredSourceRound);
+
+        // 非开关板不得携带锁存位：否则 isOccupied() 恒真，门会被错误解锁。
+        if (!latching && snapshot.isLatched()) {
+            throw new IllegalArgumentException(
+                    "非开关驻留板不能恢复锁存位: id=" + id);
+        }
 
         // 直接恢复纯状态，不调用 tryEnter/tryExit，因而不会产生重复 gameplay 事件。
         this.state = restoredState;
