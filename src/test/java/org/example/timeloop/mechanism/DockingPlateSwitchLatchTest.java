@@ -149,6 +149,30 @@ class DockingPlateSwitchLatchTest {
         assertFalse(switchPlate.isOccupied());
     }
 
+    /**
+     * PM 追加确认项（2026-09-14）：残影淘汰只释放占用，<b>绝不清锁存</b>。
+     *
+     * <p>若这里被清成 OFF，第 2 轮里「E₁ 踩开的开关」会在 E₁ 消散时凭空关掉，
+     * 门随之重新上锁 → 关卡在轮末前就变成无解。</p>
+     */
+    @Test
+    void echoDisappearanceReleasesOccupancyButKeepsTheLatch() {
+        DockingPlate switchPlate = switchPlate();
+        List<String> exited = new ArrayList<>();
+        bus.register(GameEvent.PLATE_EXITED, event -> exited.add(event.eventType() + ":" + event.sourceRound()));
+
+        assertTrue(switchPlate.tryEnter("echo_1", 1, 300));
+        assertTrue(switchPlate.isLatched());
+
+        bus.dispatch(GameEvent.echoDisappeared("L01_plate_right", 400, 1));
+
+        assertEquals(DockingPlate.State.UNOCCUPIED, switchPlate.getState(), "占用必须被释放");
+        assertEquals(null, switchPlate.getOccupantId(), "占用者必须清空");
+        assertTrue(switchPlate.isLatched(), "ECHO_DISAPPEARED 不得清除锁存");
+        assertTrue(switchPlate.isOccupied(), "锁存仍在 → 门条件依然成立");
+        assertEquals(List.of(GameEvent.PLATE_EXITED + ":1"), exited);
+    }
+
     /** Door 行为不变（卡 §三 禁止修改）：它只问端口 isOccupied，锁存后即视为满足。 */
     @Test
     void doorSeesTheLatchedSwitchWithoutAnyDoorChange() {

@@ -373,3 +373,61 @@ R5-B 交接文档提到"射线 / 中继 / 核心"是否需要各自快照端口�
 
 补充：`ResonanceStateSnapshot` 覆盖的是**固定区域共振**（`DORMANT` / `ARMED` / `LATCHED` 等状态），
 **不覆盖**中继或核心 —— 后两者是否复用共振状态机，须在其实现时单独评估，**不得假定已被覆盖**。
+
+---
+
+## 11. 锁存开关与快照字段冻结（L01-GATE-MERGE，2026-09-14）
+
+> 依据：PM 裁决 `L01-门与终点合并-PM裁决.md`（含 §十/§十一 追加裁决）+ 项目方 2026-09-14 冻结确认。
+> 本节记录**已落地并被冻结**的接口，不再是提案。
+> 分支：`feature/content-l01-gate-merge`（开发三）。
+
+### 11.1 闸门终点节点
+
+| 项 | 冻结值 |
+| --- | --- |
+| 稳定 ID | **`L01_node_c18_r7`** |
+| 世界坐标 | **(888.0, 360.0)**（格 (18,7)，tileSize 48） |
+| 与开关 `L01_plate_right` (18,8) 距离 | 48（**1 格**，可读性 + 站在开关上即可按 E） |
+| 与左驻留板 `L01_plate_left` (216,312) 距离 | **673.71 > 72**（防「占着左板直接按 E」的单轮通关） |
+| 割点检查 | 删掉该节点后 `spawn→左板`、`spawn→开关` 仍连通（非割点） |
+| 门与出口 | `L01_door_01` 与 `L01_exit_00` **同格同节点**；原终点节点 `L01_node_exit_terminal` 保留未删 |
+
+### 11.2 开关变体（`role=switch`）的锁存语义
+
+- 实现位置：**`DockingPlate` 的变体状态**（不新建机关类）；5 参构造 `DockingPlate(id, position, occupancy, bus, latching)`，4 参构造等价 `latching = false`。
+- 触发：`tryEnter` 成功即置 `latched = true`，**复用 `PLATE_ENTERED`，不新增事件类型**；残影可触发。
+- **离开不清锁存**；**残影淘汰（`ECHO_DISAPPEARED`）也不清锁存**（只释放占用）。
+- 单向：本轮内只 `false → true`，重复触发幂等；锁存不阻止再次踩上。
+- 复位：`reset()` 归零（普通轮末 / `FULL_RESTART` / 场景退出共用）；app 的 `restart()` 与轮末事务均已调用 `reset()`。
+- 只读查询：**`isLatched()`**（供 `RenderViews.MechanismKind.SWITCH.active`）。
+
+### 11.3 `isOccupied()` 的语义扩展（**PM 已认可**）
+
+`DockingPlate.isOccupied()` = `state == OCCUPIED || latched`。理由与边界：
+
+1. `Door` 只依赖 `DockingPlateOccupancyPort.isOccupied(plateId)`，且**行为不得修改**；锁存若不并入本判定，玩家离开开关的瞬间门会重新上锁。
+2. 因此本扩展**只对开关变体**有可观察影响；普通驻留板语义不变。
+3. 「此刻是否有人站着」= `getState()`；「开关是否已触发」= `isLatched()`；**渲染不得用 `isOccupied()` 代替锁存 ON**。
+4. 原提案中「改 `DockingPlateRegistry` 一行」的方案因**不在本卡允许路径内**而未采用；替代方案即本节。
+
+### 11.4 快照字段（**冻结**）
+
+```java
+public interface Snapshot {
+    default boolean isLatched() { return false; }        // 新增，默认值保证既有实现可编译
+}
+public record StateSnapshot(String mechanismId, State state,
+                            String occupantId, int occupantSourceRound,
+                            boolean latched) implements Snapshot { }   // 第 5 个分量
+```
+
+| 项 | 冻结值 |
+| --- | --- |
+| 字段 | **`DockingPlate.StateSnapshot.latched`**（`boolean`） |
+| `reset()` | `false`（OFF） |
+| `restore()` | 取快照值；无锁存位的旧快照（4 参兼容构造器）等价 `false` |
+| 交叉不变量 | `latched ⟹ latching`；与 `state` **独立**（`(UNOCCUPIED, latched=true)` 是常态）；本轮单调 `false→true`；与 `reentryBlockedAtTick` 无耦合 |
+| **不改** | `validateState(...)` 无需改动 |
+| **不加** | `AutoDockStateSnapshot.DockSnapshot` **不加** `latched`（避免第二个真相源） |
+| 开发二待办 | `snapshot/MechanismSnapshot` 的装配处（L62–64）改为透传 `snapshot.isLatched()`，并补 3 条往返测试 |

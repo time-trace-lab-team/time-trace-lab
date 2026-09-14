@@ -96,9 +96,17 @@ public class DockingPlate implements GameObserver {
      *
      * <p>锁存的语义就是「即使人离开，条件依然成立」，因此必须并入本判定：否则
      * {@code Door} 依赖的 {@link DockingPlateOccupancyPort#isOccupied(String)} 会在玩家离开开关的
-     * 瞬间把门重新锁上（{@code Door} 行为按卡 §三 不得修改）。想知道「此刻是否真有人站着」用
-     * {@link #getState()}；想知道「开关是否已触发」用 {@link #isLatched()}；锁存<b>不</b>阻止再次
-     * 踩上去，重复触发是幂等的。</p>
+     * 瞬间把门重新锁上（{@code Door} 行为按卡 §三 不得修改）。</p>
+     *
+     * <p><b>本次语义扩展已经 PM 认可（2026-09-14，L01-GATE-MERGE-DEV3）</b>，边界如下：</p>
+     * <ul>
+     *   <li>只在<b>开关变体</b>（{@code latching == true}）上可能出现 {@code true} 而 {@link #getState()}
+     *       为 {@code UNOCCUPIED}；普通驻留板的行为与语义<b>完全不变</b>。</li>
+     *   <li>«此刻是否真有人站着»请用 {@link #getState()}；«开关是否已触发»请用 {@link #isLatched()}。</li>
+     *   <li>残影淘汰（{@code ECHO_DISAPPEARED}）只释放占用，<b>不清锁存</b>：开关是本轮已兑现的事实，
+     *       不随触发者消散而回滚（见 {@code DockingPlateSwitchLatchTest.echoDisappearanceReleasesOccupancyButKeepsTheLatch}）。</li>
+     *   <li>锁存<b>不</b>阻止再次踩上去（{@link #tryEnter} 仍按 {@link #getState()} 判定），重复触发是幂等的。</li>
+     * </ul>
      */
     public boolean isOccupied() {
         return state == State.OCCUPIED || latched;
