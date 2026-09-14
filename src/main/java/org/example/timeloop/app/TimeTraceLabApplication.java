@@ -85,6 +85,8 @@ public final class TimeTraceLabApplication extends Application {
     private SharedHud hud;
     private FixedStepLoop loop;
     private AnimationTimer animationTimer;
+    /** 终局弹窗接线（边沿触发 + 确认驱动切关）。 */
+    private ResultDialogPresenter resultPresenter;
     private Stage stage;
 
     /** 画布容器（固定不变；切关时只替换里面的画布与图层）。 */
@@ -117,7 +119,10 @@ public final class TimeTraceLabApplication extends Application {
         double sceneWidth = Math.min(DEFAULT_WINDOW_WIDTH, visualBounds.getWidth() * SMALL_SCREEN_FIT);
         double sceneHeight = Math.min(DEFAULT_WINDOW_HEIGHT, visualBounds.getHeight() * SMALL_SCREEN_FIT);
         canvasHolder.setPrefSize(sceneWidth, Math.max(1.0, sceneHeight - HUD_HEIGHT));
-        Scene scene = new Scene(new StackPane(root), sceneWidth, sceneHeight);
+        StackPane sceneRoot = new StackPane(root);
+        resultPresenter = new ResultDialogPresenter();
+        sceneRoot.getChildren().add(resultPresenter.node());
+        Scene scene = new Scene(sceneRoot, sceneWidth, sceneHeight);
 
         // 画布与图层按「当前关卡」（第一关）装配；切关时原地重建。
         installWorldView();
@@ -127,7 +132,14 @@ public final class TimeTraceLabApplication extends Application {
             // 必须给一个明确的重开入口，否则玩家会停在"角色不能动、也没有下一步"的死画面里。
             if (flow.isFinalPhase() && isRestartKey(event.getCode())) {
                 input.releaseAll();
-                flow.restart();
+                boolean enterNext = resultPresenter.confirmEntersNextLevel();
+                resultPresenter.hide();
+                if (enterNext && flow.switchToNextLevelIfCleared()) {
+                    installWorldView();
+                    stage.setTitle(WINDOW_TITLE + " — " + flow.activeLevel().title());
+                } else {
+                    flow.restart();
+                }
                 return;
             }
             LogicalKey key = KEY_MAP.get(event.getCode());
@@ -154,11 +166,13 @@ public final class TimeTraceLabApplication extends Application {
                 loop.onAnimationFrame(nanoTime, flow.phase());
                 // 第一关通关（RESULT）在此切到第二关并重建世界视图。
                 // FAILED（轮次耗尽）返回 false：玩家留在第一关，重开/返回行为与之前完全一致。
-                if (flow.switchToNextLevelIfCleared()) {
+                // 有弹窗待玩家确认时先不自动切关，否则结算界面会被瞬间顶掉。
+                if (!resultPresenter.isShown() && flow.switchToNextLevelIfCleared()) {
                     input.releaseAll();
                     installWorldView();
                     stage.setTitle(WINDOW_TITLE + " — " + flow.activeLevel().title());
                 }
+                resultPresenter.onFrame(flow);
                 canvasAdapter.renderFrame(worldWidth, worldHeight, loop.interpolationAlpha());
                 // 目标提示随当前关卡换主人：文本由 LevelFlow 从当前关卡的只读投影取，
                 // 写进 SharedHud 自带的那一块 objectiveLabel（不再另起第二块 Label）。

@@ -517,6 +517,11 @@ public final class Level02Assembly {
      *
      * <p>幂等：可重复调用（切换关卡与场景退出都会走到这里）。</p>
      */
+    /** 结算只读投影（通关或终局失败后可用；未结算时为空）。 */
+    public java.util.Optional<org.example.timeloop.replay.LevelResult> result() {
+        return recording.result();
+    }
+
     public void cleanup() {
         for (DockingPlate p : plates) {
             p.dispose();
