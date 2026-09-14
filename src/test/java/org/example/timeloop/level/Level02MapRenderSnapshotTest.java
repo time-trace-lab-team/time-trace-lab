@@ -48,12 +48,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 第二关「闸链」新地图的离屏出图（沿用仓库既有六个渲染图层，渲染代码零改动）。
  *
  * <p>本用例<b>不依赖 {@code app/**}</b>：直接按开发侧契约手构造 {@link RenderViews.Frame}
- * （5 板 + 2 门 + 1 出口 + 2 条残影轨迹），用与 {@code TimeTraceLabApplication} 相同的图层顺序
+ * （4 板 + 1 开关 + 2 门 + 1 出口 + 2 条残影轨迹），用与 {@code TimeTraceLabApplication} 相同的图层顺序
  * 离屏渲染，产出：</p>
  * <ul>
  *   <li>{@code target/observations/level02-map-render.png} —— 加载态（8 件机关齐全，无残影）；</li>
  *   <li>{@code target/observations/level02-acceptance-solved.png} —— 官方解第 3 轮通关瞬间：
- *       内板(E2) + 主板(E1) + 终结板(玩家) 同刻被占 → 终点闸 EXIT active，D2 已回锁。</li>
+ *       锁存开关（玩家踩过即离开）+ 内板(E2) + 主板(E1) 同时成立 → 终点闸 EXIT active，D2 已回锁。</li>
  * </ul>
  */
 class Level02MapRenderSnapshotTest {
@@ -62,30 +62,34 @@ class Level02MapRenderSnapshotTest {
     private static final String LOADED_PATH = "target/observations/level02-map-render.png";
     private static final String SOLVED_PATH = "target/observations/level02-acceptance-solved.png";
 
-    /** 机关投影硬要求：5 块普通板 + 2 扇门 + 1 个出口，且不得出现 SWITCH。 */
+    /** 机关投影硬要求：4 块普通板 + 1 个锁存开关 + 2 扇门 + 1 个出口。 */
     @Test
-    void mechanismProjectionIsFivePlatesTwoDoorsAndOneExit() {
+    void mechanismProjectionIsFourPlatesOneSwitchTwoDoorsAndOneExit() {
         Fixture fixture = new Fixture();
 
         List<RenderViews.Mechanism> mechanisms = fixture.mechanisms();
 
         assertEquals(8, mechanisms.size(),
-                "应为 5 板 + 2 门 + 1 出口 = 8 件（终点闸与出口同格，只投影一个 EXIT）");
-        assertEquals(5, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.PLATE).count(),
-                "五块驻留板必须都是普通 PLATE（P2 已从 role=switch 改回普通板）");
+                "应为 4 板 + 1 开关 + 2 门 + 1 出口 = 8 件（终点闸与出口同格，只投影一个 EXIT）");
+        assertEquals(4, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.PLATE).count(),
+                "四块普通驻留板必须都是普通 PLATE");
+        assertEquals(1, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.SWITCH).count(),
+                "锁存开关必须投影成 SWITCH（role=switch 的表现变体）");
+        assertEquals(Level02Corridor.PLATE_SWITCH,
+                mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.SWITCH)
+                        .findFirst().orElseThrow().id(),
+                "SWITCH 必须正好是 L02_plate_switch");
         assertEquals(2, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.DOOR).count(),
                 "两扇门必须使用 DOOR（外闸 D1 / 内室门 D2）");
         assertEquals(1, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.EXIT).count(),
                 "终点闸 + 出口必须使用 EXIT，不得用 DOOR 替代");
-        assertEquals(0, mechanisms.stream().filter(m -> m.kind() == RenderViews.MechanismKind.SWITCH).count(),
-                "L2 不得出现 SWITCH");
 
         Set<String> ids = new HashSet<>();
         for (RenderViews.Mechanism mechanism : mechanisms) {
             assertTrue(ids.add(mechanism.id()), "机关 ID 不得重复: " + mechanism.id());
         }
         assertTrue(ids.containsAll(Set.of(Level02Corridor.PLATE_GATE, Level02Corridor.PLATE_RELAY,
-                Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_CORE,
+                Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_SWITCH,
                 Level02Corridor.DOOR_GATE, Level02Corridor.DOOR_RELAY, Level02Corridor.DOOR_EXIT)),
                 "机关投影必须覆盖设计说明 §三 的全部机关: " + ids);
     }
@@ -97,27 +101,33 @@ class Level02MapRenderSnapshotTest {
         assertTrue(new File(LOADED_PATH).length() > 4096, "应生成非空 PNG");
     }
 
-    /** 官方解第 3 轮画面：内板 + 主板 + 终结板同刻被占 → 终点闸解锁；D1/D2 均已回锁。 */
+    /** 官方解第 3 轮画面：锁存开关 + 内板 + 主板 → 终点闸解锁；D1/D2 均已回锁。 */
     @Test
-    void rendersTheSolvedMomentWithThreePlatesAndOpenGate() throws Exception {
+    void rendersTheSolvedMomentWithTheLatchedSwitchAndTwoPlates() throws Exception {
         Fixture fixture = new Fixture();
 
-        // R1 的残影 E1：闸板窗口 [240,384) + 主板自 624 起驻留。
+        // R1 的残影 E1：闸板窗口 [240,384) + 主板自 672 起驻留。
         assertTrue(fixture.gatePlate.tryEnter("echo_1", 1, Level02Corridor.GATE_WINDOW_START));
         assertTrue(fixture.gatePlate.tryExit("echo_1", 1, Level02Corridor.GATE_WINDOW_END));
         assertTrue(fixture.mainPlate.tryEnter("echo_1", 1, Level02Corridor.MAIN_ARRIVAL));
-        // R2 的残影 E2：中继窗口 [456,744) + 内板自 960 起驻留。
+        // R2 的残影 E2：中继窗口 [480,768) + 内板自 1008 起驻留。
         assertTrue(fixture.relayPlate.tryEnter("echo_2", 2, Level02Corridor.RELAY_WINDOW_START));
         assertTrue(fixture.relayPlate.tryExit("echo_2", 2, Level02Corridor.RELAY_WINDOW_END));
-        assertTrue(fixture.innerPlate.tryEnter("echo_2", 2, Level02Corridor.INNER_ARRIVAL));
-        // 当前玩家：跨 D2 后踩住终结板。
-        assertTrue(fixture.corePlate.tryEnter("player", 0, Level02Corridor.CORE_ARRIVAL));
 
-        assertTrue(fixture.exitGate.isUnlocked(), "内板 + 主板 + 终结板同刻被占 → 终点闸解锁");
+        // 当前玩家：跨 D2 后在 816 踩下锁存开关，随即离开走向终点闸（锁存不占 actor）。
+        assertTrue(fixture.switchPlate.tryEnter("player", 0, Level02Corridor.SWITCH_ARRIVAL));
+        assertTrue(fixture.switchPlate.tryExit("player", 0,
+                Level02Corridor.SWITCH_ARRIVAL + Level02Corridor.TICKS_PER_TILE));
+        assertTrue(fixture.switchPlate.isLatched(),
+                "开关必须已锁存 —— 否则解锁那一刻没人压着，条件当场失效");
+        assertFalse(fixture.exitGate.isUnlocked(), "此刻只有主板 + 锁存开关，终点闸仍锁");
+
+        assertTrue(fixture.innerPlate.tryEnter("echo_2", 2, Level02Corridor.INNER_ARRIVAL));
+        assertTrue(fixture.exitGate.isUnlocked(), "锁存开关 + 内板 + 主板 → 终点闸解锁");
         assertTrue(fixture.exit.isDoorUnlocked(), "出口应被武装（E 提示可见）");
         assertFalse(fixture.gateDoor.isUnlocked(), "E1 已离开外闸板 → D1 回锁");
         assertFalse(fixture.relayDoor.isUnlocked(), "E2 已离开中继板 → D2 回锁");
-        assertTrue(fixture.exit.interact(Level02Corridor.EXIT_UNLOCK_TICK, 0), "站在 P5 上按 E 通关");
+        assertTrue(fixture.exit.interact(Level02Corridor.EXIT_UNLOCK_TICK, 0), "站在闸门旁按 E 通关");
 
         snapshot(fixture, fixture.frameSolved(), SOLVED_PATH);
         assertTrue(new File(SOLVED_PATH).length() > 4096, "应生成非空 PNG");
@@ -136,7 +146,7 @@ class Level02MapRenderSnapshotTest {
         final DockingPlate relayPlate;
         final DockingPlate innerPlate;
         final DockingPlate mainPlate;
-        final DockingPlate corePlate;
+        final DockingPlate switchPlate;
         final Door gateDoor;
         final Door relayDoor;
         final Door exitGate;
@@ -147,7 +157,7 @@ class Level02MapRenderSnapshotTest {
             relayPlate = plate(Level02Corridor.PLATE_RELAY);
             innerPlate = plate(Level02Corridor.PLATE_INNER);
             mainPlate = plate(Level02Corridor.PLATE_MAIN);
-            corePlate = plate(Level02Corridor.PLATE_CORE);
+            switchPlate = plate(Level02Corridor.PLATE_SWITCH);
             gateDoor = door(Level02Corridor.DOOR_GATE);
             relayDoor = door(Level02Corridor.DOOR_RELAY);
             exitGate = door(Level02Corridor.DOOR_EXIT);
@@ -164,11 +174,11 @@ class Level02MapRenderSnapshotTest {
                     List.of());
         }
 
-        /** 通关瞬间：玩家站在终结板上（DOCKED），两条残影仍在压板路线上。 */
+        /** 通关瞬间：玩家站在终点闸/出口格上（开关已锁存，人已离开开关），两条残影仍压着各自的板。 */
         RenderViews.Frame frameSolved() {
-            Vector2D core = position(Level02Corridor.PLATE_CORE);
+            Vector2D gate = position(Level02Corridor.EXIT);
             return new RenderViews.Frame(
-                    new RenderViews.Player(core.x(), core.y(), Direction.RIGHT, MovementState.DOCKED, false),
+                    new RenderViews.Player(gate.x(), gate.y(), Direction.RIGHT, MovementState.IDLE, false),
                     mechanisms(),
                     List.of(
                             new RenderViews.EchoTrail(1, trace(Level02Corridor.NODE_SPAWN,
@@ -188,8 +198,9 @@ class Level02MapRenderSnapshotTest {
                     RenderViews.MechanismKind.PLATE, innerPlate.isOccupied()));
             list.add(mechanism(mainPlate.getId(), mainPlate.getPosition(),
                     RenderViews.MechanismKind.PLATE, mainPlate.isOccupied()));
-            list.add(mechanism(corePlate.getId(), corePlate.getPosition(),
-                    RenderViews.MechanismKind.PLATE, corePlate.isOccupied()));
+            // 锁存开关是 dock_plate 的表现变体（role=switch），投影成 SWITCH。
+            list.add(mechanism(switchPlate.getId(), switchPlate.getPosition(),
+                    RenderViews.MechanismKind.SWITCH, switchPlate.isOccupied()));
             list.add(mechanism(gateDoor.getId(), gateDoor.getPosition(),
                     RenderViews.MechanismKind.DOOR, gateDoor.isUnlocked()));
             list.add(mechanism(relayDoor.getId(), relayDoor.getPosition(),
@@ -245,8 +256,14 @@ class Level02MapRenderSnapshotTest {
             return new RenderViews.Mechanism(id, pos.x(), pos.y(), kind, active);
         }
 
+        /** 按关卡数据的 {@code role} 装配：{@code role=switch} → 锁存开关变体（同 Level01Assembly）。 */
         private DockingPlate plate(String id) {
-            return new DockingPlate(id, position(id), registry, bus);
+            boolean latching = level.getEntitySpawnList().stream()
+                    .filter(e -> id.equals(e.getId()))
+                    .findFirst()
+                    .map(e -> "switch".equals(e.getProperties().get("role")))
+                    .orElse(false);
+            return new DockingPlate(id, position(id), registry, bus, latching);
         }
 
         private Door door(String id) {
