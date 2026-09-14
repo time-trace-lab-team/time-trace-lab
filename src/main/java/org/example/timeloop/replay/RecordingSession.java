@@ -33,15 +33,30 @@ public final class RecordingSession {
 
     private final RoundClock clock;
     private final EchoQueue echoQueue;
+    private final String levelName;
     private TimelineRecording currentBuffer;
+    private LevelResult result;
 
     /**
+     * 兼容构造器：{@code levelName} 取 {@code null}（装配层尚未接线关卡名）。
+     * 新代码请用三参构造器注入关卡名。
+     *
      * @param clock     权威共享时钟
      * @param echoQueue 滑动窗口容器（其 L 为进关冻结值）
      */
     public RecordingSession(RoundClock clock, EchoQueue echoQueue) {
+        this(clock, echoQueue, null);
+    }
+
+    /**
+     * @param clock     权威共享时钟
+     * @param echoQueue 滑动窗口容器（其 L 为进关冻结值）
+     * @param levelName 关卡名（结算界面显示；来源 {@code LevelFlow.LevelId.title()}，可为 {@code null}）
+     */
+    public RecordingSession(RoundClock clock, EchoQueue echoQueue, String levelName) {
         this.clock = Objects.requireNonNull(clock, "clock");
         this.echoQueue = Objects.requireNonNull(echoQueue, "echoQueue");
+        this.levelName = levelName;
     }
 
     /** 滑动窗口容器（只读持有，供查询活跃残影与寿命视图）。 */
@@ -52,6 +67,16 @@ public final class RecordingSession {
     /** 当前轮缓冲（若已开始本轮）。 */
     public Optional<TimelineRecording> currentBuffer() {
         return Optional.ofNullable(currentBuffer);
+    }
+
+    /**
+     * 终局结算结果（通关 {@link #completeGoal} / 失败 {@link #failFinalRound} 固化）。
+     * 未进入终局、或已从第一轮重开（{@link #restartFromFirstRound} 清空）时为空。
+     *
+     * @return 只读结果，或空
+     */
+    public Optional<LevelResult> result() {
+        return Optional.ofNullable(result);
     }
 
     /**
@@ -124,20 +149,34 @@ public final class RecordingSession {
         return echo;
     }
 
-    /** 最终轮读秒归零未通关：丢弃缓冲、不生成残影、进入 FAILED。 */
+    /** 最终轮读秒归零未通关：固化失败结果、丢弃缓冲、不生成残影、进入 FAILED。 */
     public void failFinalRound() {
         if (clock.currentRound() != clock.maxRounds()) {
             throw new IllegalStateException(
                     "仅最终轮可进入 FAILED：当前第 " + clock.currentRound() + " 轮");
         }
+        this.result = buildResult(false);
         currentBuffer = null;
         clock.transition(GamePhase.FAILED);
     }
 
-    /** 目标达成：丢弃未满缓冲、不生成残影、进入 RESULT。 */
+    /** 目标达成：固化通关结果、丢弃未满缓冲、不生成残影、进入 RESULT。 */
     public void completeGoal() {
+        this.result = buildResult(true);
         currentBuffer = null;
         clock.transition(GamePhase.RESULT);
+    }
+
+    /**
+     * 在终局边界刻固化只读结果。用时口径与 HUD 的唯一共享读秒同源：
+     * {@code usedTicks = (clearedRound - 1) × durationTicks + roundTickAtEnd}，
+     * 其中 {@code roundTickAtEnd} 取固化那一刻的 {@code clock.roundTick()}（{@code RESULT} /
+     * {@code FAILED} 阶段均保留 roundTick，故在 {@code transition} 前取值即达成/失败刻）。
+     */
+    private LevelResult buildResult(boolean cleared) {
+        long usedTicks = (clock.currentRound() - 1L) * clock.durationTicks() + clock.roundTick();
+        return new LevelResult(
+                levelName, cleared, clock.currentRound(), clock.maxRounds(), usedTicks);
     }
 
     /**
@@ -151,6 +190,7 @@ public final class RecordingSession {
         Objects.requireNonNull(initialSnapshotRestorer, "initialSnapshotRestorer");
         currentBuffer = null;
         echoQueue.clear();
+        this.result = null;
         initialSnapshotRestorer.run();
         clock.transition(GamePhase.READY);
         beginRound();
