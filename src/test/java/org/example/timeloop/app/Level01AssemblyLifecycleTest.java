@@ -3,7 +3,6 @@ package org.example.timeloop.app;
 import org.example.timeloop.core.Direction;
 import org.example.timeloop.core.input.InputIntent;
 import org.example.timeloop.core.input.LogicalKey;
-import org.example.timeloop.mechanism.DockingPlateRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -66,10 +65,6 @@ class Level01AssemblyLifecycleTest {
         assertFalse(b.isPlateOccupied("L01_plate_left"), "B 不受 A 的占用影响");
         assertFalse(b.isPlateOccupied("L01_plate_right"));
 
-        // app 不应再写入全局注册表单例（两套装配都不写）
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"));
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_right"));
-
         // B 独立推进：它的时钟自己在走，不被 A 影响
         long bTickBefore = b.hudContext().roundTick();
         drive(b, 0, LogicalKey.DIR_DOWN, 30);
@@ -82,12 +77,18 @@ class Level01AssemblyLifecycleTest {
     @Test
     void appDoesNotTouchGlobalEventDispatcher() {
         Level01Assembly a = new Level01Assembly();
+        Level01Assembly b = new Level01Assembly();
         a.start();
+        b.start();
+        b.drainEvents(); // 清掉 B 自己启动阶段的事件
+
         drive(a, 0, LogicalKey.DIR_DOWN, 40);
 
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"));
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_right"));
+        // 原先的断言依赖全局单例（`DockingPlateRegistry.getInstance()`），而 BUG-002 Phase 2 会删除该单例。
+        // 这里改成**等价的、不依赖单例的观测**：A 的事件不得出现在 B 的装配上（无全局总线串扰）。
+        assertTrue(b.drainEvents().isEmpty(), "B 不应看到 A 的事件（两套装配的总线互不串扰）");
         a.cleanup();
+        b.cleanup();
     }
 
     // ---------- 工具 ----------
