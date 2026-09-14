@@ -117,24 +117,46 @@ public final class MechanismLayer implements RenderLayer {
         gc.strokeLine(cx - size * 0.12, indicatorY, cx + size * 0.12, indicatorY);
     }
 
-    /** 门：菱形；解锁时红色实心带光晕，锁着时只留灰蓝轮廓。 */
+    /**
+     * 独立房门：关闭时门扇和竖栅封住入口，打开时只保留两侧门框和顶梁。
+     * 与 {@link #drawExit} 的终点闸门分开：房门不绘制 {@code E} 提示，也不使用终点门栅样式。
+     */
     private void drawDoor(GraphicsContext gc, double cx, double cy, double size, boolean active) {
-        double s = size * 0.50;
+        double halfWidth = size * 0.50;
+        double halfHeight = size * 0.58;
+        double frameWidth = size * 0.16;
+
+        gc.setFill(active ? fade(RenderPalette.DOOR_EDGE, 0.82) : fade(RenderPalette.DOOR, 0.88));
+        gc.setStroke(active ? RenderPalette.PLATE_EDGE : RenderPalette.DOOR_EDGE);
+        gc.setLineWidth(3.0);
+
         if (active) {
-            glow(gc, cx, cy, size * 2.1, RenderPalette.DOOR, 0.45);
-        }
-        double[] xs = {cx, cx + s, cx, cx - s};
-        double[] ys = {cy - s, cy, cy + s, cy};
-        gc.setFill(active ? RenderPalette.DOOR : fade(RenderPalette.DOOR, 0.18));
-        gc.fillPolygon(xs, ys, 4);
-        gc.setStroke(active ? RenderPalette.DOOR_EDGE : fade(RenderPalette.DOOR, 0.45));
-        gc.setLineWidth(4.0);
-        gc.strokePolygon(xs, ys, 4);
-        if (active) {
-            gc.setStroke(Color.web("#781414", 0.80));
+            // 中央保留从上到下的空白通道，只画门框与顶梁。
+            gc.fillRoundRect(cx - halfWidth, cy - halfHeight, frameWidth, halfHeight * 2.0, 5, 5);
+            gc.fillRoundRect(cx + halfWidth - frameWidth, cy - halfHeight,
+                    frameWidth, halfHeight * 2.0, 5, 5);
+            gc.fillRoundRect(cx - halfWidth, cy - halfHeight,
+                    halfWidth * 2.0, frameWidth, 5, 5);
+            gc.strokeRoundRect(cx - halfWidth, cy - halfHeight,
+                    halfWidth * 2.0, halfHeight * 2.0, 6, 6);
+
+            gc.setStroke(Color.web("#c8e1ff", 0.72));
             gc.setLineWidth(2.0);
-            gc.strokeLine(cx - s, cy, cx + s, cy);
-            gc.strokeLine(cx, cy - s, cx, cy + s);
+            gc.strokeLine(cx - halfWidth + frameWidth, cy + halfHeight * 0.72,
+                    cx + halfWidth - frameWidth, cy + halfHeight * 0.72);
+        } else {
+            // 高不透明门扇覆盖入口中心，竖栅进一步强化“不可通行”结构。
+            gc.fillRoundRect(cx - halfWidth, cy - halfHeight,
+                    halfWidth * 2.0, halfHeight * 2.0, 6, 6);
+            gc.strokeRoundRect(cx - halfWidth, cy - halfHeight,
+                    halfWidth * 2.0, halfHeight * 2.0, 6, 6);
+
+            gc.setStroke(Color.web("#781414", 0.82));
+            gc.setLineWidth(2.0);
+            for (double factor : new double[]{-0.50, 0.0, 0.50}) {
+                double barX = cx + halfWidth * factor;
+                gc.strokeLine(barX, cy - halfHeight * 0.72, barX, cy + halfHeight * 0.72);
+            }
         }
     }
 
