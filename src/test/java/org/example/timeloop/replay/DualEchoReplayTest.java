@@ -118,14 +118,18 @@ class DualEchoReplayTest {
         assertEquals(first, second, "争抢顺序必须确定");
 
         // 用真实机关验证：echo_1 先占（胜），echo_2 后到（败），不覆盖前者。
+        // L03-DEV3 后驻留板支持多占用：echo_2 照样被登记（不再被静默丢弃），
+        // 「不覆盖」现在体现在**主占用者仍然是 echo_1**；旧断言把「第二个人不存在」
+        // 当成了「第二个人被拒绝」——那正是被修掉的缺陷本身。
         DockingPlateRegistry registry = new DockingPlateRegistry();
         EventDispatcher bus = new EventDispatcher();
         DockingPlate plate = new DockingPlate(
                 "L02_plate_door", new Vector2D(100.0, 100.0), registry, bus);
 
         assertTrue(plate.tryEnter("echo_1", 1, COMPETE_TICK), "较旧残影 echo_1 先占，胜");
-        assertFalse(plate.tryEnter("echo_2", 2, COMPETE_TICK), "较新残影 echo_2 争抢失败，不覆盖");
-        assertEquals("echo_1", plate.getOccupantId());
+        assertTrue(plate.tryEnter("echo_2", 2, COMPETE_TICK), "多占用模型：echo_2 也被登记");
+        assertEquals("echo_1", plate.getOccupantId(), "较旧残影仍是主占用者（不覆盖）");
+        assertEquals(List.of("echo_1", "echo_2"), plate.getOccupantIds(), "两人都在板上");
     }
 
     @Test
