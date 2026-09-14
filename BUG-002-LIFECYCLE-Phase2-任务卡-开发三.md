@@ -3,9 +3,19 @@
 > 任务 ID：**BUG-002-LIFECYCLE-P2**
 > 主责：**开发三**（`mechanism/**` + 其测试）｜ 配合：**PM**（`app/**`，Phase 1 已完成注入接线）
 > 依据：`BUG-002-注册表与事件总线生命周期-PM裁决.md` §三/§四/§五 + `docs/decisions/R5-B-聚合接口冻结-PM裁决.md` §二/§四
-> 基线：`origin/develop` = **`1aa58ab`**（PM clean 复跑 **381 / 0 / 0**）
+> 基线：`origin/develop` = **`d7463f8`**（PM clean 复跑 **382 / 0 / 0**，含 PR #71）
 > 状态：**开工**（Phase 2 的唯一前置见 §一，已由 PM 复核满足）
-> 日期：2026-09-13
+> 日期：2026-09-13（2026-09-14 修订：§二 第 4/5/6 条已由 PR #71 交付，见 §二.0）
+
+## 二.0、**已交付项（PR #71，`5092245`）—— 勿重复劳动**
+
+| 原卡条目 | 状态 | 证据 |
+| --- | --- | --- |
+| 4. `ResonanceResetReason` 增加 `SCENE_EXIT` + 测试 + 文档三值语义 | ✅ 已交付 | 现为 `{ROUND_END, FULL_RESTART, SCENE_EXIT}`；测试 `sceneExitAndFullRestartBothClearInRoundStateWithoutConfusingEachOther` |
+| 5. `GameEvent.sourceRound` 不变量 javadoc | ✅ 已交付 | `mechanism/event/GameEvent.java`（+13 行） |
+| 6. R5-B「射线 / 中继 / 核心」端口结论 | ✅ 已交付（**但射线结论被 PM 改判**，见 §二.3） | 规格文档 §10.2：射线**不需要端口**；中继/核心**暂无实现、暂无端口需求**；禁止具体类旁路 |
+
+→ 本卡**只剩** §二 第 1 / 2 / 3 / 7 / 8 条。
 
 ## 一、前置复核（PM 已完成，结论：可开工）
 
@@ -26,21 +36,21 @@
    （Phase 1 已具备）与 `DockingPlateOccupancyPort` 实现。兼容构造器（自动取 `getInstance()` 的那几个）
    **一并删除**，并在交付文档里逐一列出删除了哪些签名。
 2. **删除 `EventDispatcher` 全局单例**：同上，保留公开构造器与 `GameEventBus` 实现。
-3. **删除 `mechanism/ray/Ray.java`**：先给**零引用证明**（`git grep -n "new Ray("`、`git grep -n "\bRay\b"` 的完整输出）。
-   与已删的 `RayManager`/`PhaseManager` 同类：死代码不做生命周期改造，直接删。
-   若发现**存在**生产引用（例如第二关已开工的射线接线），**停手回报 PM**，不擅自决定。
-4. **`ResonanceResetReason` 增加 `SCENE_EXIT`**（`mechanism/resonance/**`）：
-   - 与 `AutoDockResetReason = {ROUND_END, FULL_RESTART, SCENE_EXIT}` 对齐；
-   - 确认无 ordinal 序列化依赖（`values()[i]`、`ordinal()`、持久化索引）；
-   - 补测试：`SCENE_EXIT` 与 `FULL_RESTART` **都清空 ARMED 且互不混淆**；
-   - 规格文档写清三值语义。
-5. **`GameEvent.sourceRound` 不变量 javadoc**：`0` = 活玩家（不得被残影替换）；`N ≥ 1` = 第 N 轮残影，
-   且必须与 actor `echo_<N>` 一致。
-6. **R5-B §二「待补」端口结论**（书面，逐条）：
-   - 射线：是否需要独立快照端口 → 写「不需要」或给规格；
-   - 中继 / 核心：状态是否已被 `ResonanceStateSnapshot(state, armedAtRoundTick, armedSourceRound,
-     currentPlayerInside, insideEchoSourceRounds)` 覆盖 → 写「由 #5 覆盖」或补第 6 / 第 7 个 typed port；
-   - **不得**让聚合器用具体类旁路。
+3. **删除 `mechanism/ray/Ray.java`**（**PM 已于 2026-09-14 明确裁决：删除**）：
+   - PM 已独立复核：`git grep -n "\bRay\b" -- src` **只命中 `Ray.java` 自身**（无生产、无测试引用），
+     与已删的 `RayManager`/`PhaseManager` 同类；
+   - 规格文档 §9.6 写的「第二关需要它，故暂不删除」**被 PM 改判**：
+     README §五 的时滞射线规则不变，但**不为死代码做生命周期改造**；
+     第二关实现射线时必须**重新立项 + 走注入端口**（§10.2 已写明「不得让聚合器用具体类旁路」）；
+   - 交付要求：删除后在本卡交付文档与规格文档 §9.6 登记 **删除提交 SHA**，
+     供第二关需要时从 git 历史取回参考实现；
+   - 若发现**存在**引用（例如第二关已开工接线），**停手回报 PM**，不擅自决定。
+4. ~~**`ResonanceResetReason` 增加 `SCENE_EXIT`**~~ → **已由 PR #71 交付（见 §二.0），本卡不再重复**；
+   只需在规格文档「注册表与事件总线生命周期」节引用其现状。
+5. ~~**`GameEvent.sourceRound` 不变量 javadoc**~~ → **已由 PR #71 交付（见 §二.0）**。
+6. ~~**R5-B §二「待补」端口结论**~~ → **已由 PR #71 交付（见 §二.0）**：
+   射线不需要独立端口（且本卡删除 `Ray.java`）、中继/核心暂无实现暂无端口需求；
+   聚合器**不得**用具体类旁路。
 7. **测试迁移**：所有仍依赖单例的机制/关卡/快照测试改为「每用例独立实例」。已知相关类
    （以实际 `git grep` 为准）：`level/Level01CausalChainTest`、`level/Level01TwoRoundSimulationTest`、
    `snapshot/MechanismSnapshotTest`、`mechanism/MechanismSnapshotTest`、`mechanism/DockingPlateEchoDisappearanceTest`、
