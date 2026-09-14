@@ -1,8 +1,8 @@
 package org.example.timeloop.mechanism.ray;
 
 import org.example.timeloop.level.model.Vector2D;
-import org.example.timeloop.mechanism.event.EventDispatcher;
 import org.example.timeloop.mechanism.event.GameEvent;
+import org.example.timeloop.mechanism.event.GameEventBus;
 import org.example.timeloop.mechanism.event.GameObserver;
 
 import java.util.Objects;
@@ -24,12 +24,19 @@ public class Ray implements GameObserver {
     private final long activeStartTick;
     private final long activeDurationTicks;
     private final long cycleDurationTicks;
+    /** 事件总线（注入；BUG-002 Phase 2 后不得使用任何全局单例）。 */
+    private final GameEventBus bus;
 
     private State state = State.OFF;
 
+    /**
+     * @param bus 关卡装配持有的事件总线（注入，禁止全局单例）。
+     *            L2-B 将在此之上完成「共享 roundTick 驱动 + 关卡接线 + 命中语义」的正式接线。
+     */
     public Ray(String id, Vector2D start, Vector2D end,
                long warningStartTick, long warningDurationTicks,
-               long activeStartTick, long activeDurationTicks) {
+               long activeStartTick, long activeDurationTicks,
+               GameEventBus bus) {
         this.id = Objects.requireNonNull(id);
         this.start = Objects.requireNonNull(start);
         this.end = Objects.requireNonNull(end);
@@ -38,8 +45,9 @@ public class Ray implements GameObserver {
         this.activeStartTick = activeStartTick;
         this.activeDurationTicks = activeDurationTicks;
         this.cycleDurationTicks = warningStartTick + warningDurationTicks + activeDurationTicks;
+        this.bus = Objects.requireNonNull(bus, "bus");
 
-        EventDispatcher.getInstance().register(GameEvent.TICK_ADVANCED, this);
+        bus.register(GameEvent.TICK_ADVANCED, this);
     }
 
     public String getId() { return id; }
@@ -86,7 +94,7 @@ public class Ray implements GameObserver {
     }
 
     public void dispose() {
-        EventDispatcher.getInstance().unregisterAll(this);
+        bus.unregisterAll(this);
     }
 
     @Override

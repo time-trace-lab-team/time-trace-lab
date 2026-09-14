@@ -287,31 +287,33 @@ W1/W4 已在 `mechanism/**`、`level/**` 及开发三测试范围内按本规格
 
 ---
 
-## 9. 注册表与事件总线的生命周期（BUG-002-LIFECYCLE Phase 1）
+## 9. 注册表与事件总线的生命周期（BUG-002-LIFECYCLE Phase 1 + Phase 2）
 
-> 依据：PM 裁决 `BUG-002-注册表与事件总线生命周期-PM裁决.md` §六。日期 2026-09-12。
+> 依据：PM 裁决 `BUG-002-注册表与事件总线生命周期-PM裁决.md` §六；Phase 2 任务卡
+> `BUG-002-LIFECYCLE-Phase2-任务卡-开发三.md`；射线条目经 `L02-门房与双残影-PM裁决.md` §六 修订。
+> 日期 2026-09-12（Phase 1）／**2026-09-14（Phase 2：单例已删除）**。
 
-### 9.1 实例归属
+### 9.1 实例归属（Phase 2 起：不存在全局单例）
 
-- `DockingPlateRegistry` 与 `EventDispatcher` 的**权威形态是"每个关卡装配持有自己的实例"**；
+- `DockingPlateRegistry` 与 `EventDispatcher` 的**唯一形态是"每个关卡装配持有自己的实例"**；
   同一实例内的驻留板 ID 必须唯一，**跨实例同名 ID 互不冲突**。
-- `getInstance()` 只是**兼容层**（Phase 1 保留），Phase 2 在 app 与测试全部迁移后删除。
+- **静态单例访问器与全部"取单例"的兼容构造器已在 Phase 2 删除**（`DockingPlate` / `Door` / `ExitTerminal`
+  只剩注入构造器），因此"有的板注册到单例、有的注册到实例"的分裂状态**在类型层面已不可能出现**。
 
 ### 9.2 注入优先（强制）
 
-- 新代码**一律使用注入构造器**：
-  - `DockingPlate(id, position, DockingPlateOccupancyPort, GameEventBus)`
+- 唯一可用的构造器即注入形态：
+  - `DockingPlate(id, position, DockingPlateOccupancyPort, GameEventBus)`（开关变体另有 `+boolean latching`）
   - `Door(id, position, requiredPlateIds, DockingPlateOccupancyPort, GameEventBus)`
   - `ExitTerminal(id, position, associatedDoorId, interactRadius, GameEventBus)`
 - 消费者（`Door` 等）只依赖窄端口 `DockingPlateOccupancyPort`，**不得**直接引用 `DockingPlateRegistry`。
-- 不允许长期并存"有的板注册到单例、有的注册到实例"的分裂状态。
 
 ### 9.3 场景退出 / 重开时必须释放的引用
 
 | 时机 | 必须做的动作 |
 | --- | --- |
 | 普通轮末 | `DockingPlate.reset()` + `Door.reset()` + `ExitTerminal.reset()`（现有轮末事务） |
-| 整局重开 / 场景退出 | 释放装配持有的注册表与总线实例（不再依赖全局 `clear()`）；机关 `dispose()` 反注册 |
+| 整局重开 / 场景退出 | 释放装配持有的注册表与总线实例（**不再存在任何全局清理入口**）；机关 `dispose()` 反注册 |
 | 关卡装配销毁 | 旧实例不得被 Canvas / listener / 缓存继续持有（与 `RecordingSession` 契约同款要求） |
 
 ### 9.4 Door 计数口径（与 §5.1 第 6 条一致）
@@ -319,22 +321,23 @@ W1/W4 已在 `mechanism/**`、`level/**` 及开发三测试范围内按本规格
 `Door` 通过 `DockingPlateOccupancyPort.isOccupied(plateId)` 判定，**不区分占用者身份**；
 残影占板与当前玩家占板在门条件上等价。
 
-### 9.5 Phase 2 前置结论（开发三已核）
+### 9.5 Phase 2 前置结论与执行结果
 
-`DockingPlate.Snapshot`、`MechanismSnapshot`、`AutoDockSnapshotPort` 及其测试
-**均不引用注册表或事件总线单例**（`git grep "DockingPlateRegistry|getInstance()"` 在
-`src/main/java/.../{snapshot,mechanism/autodock,replay}` 下为空）。
-因此 **Phase 2 删除单例不会破坏快照族**。
+- 结论（Phase 1 已核，Phase 2 复用）：`DockingPlate.Snapshot`、`MechanismSnapshot`、`AutoDockSnapshotPort`
+  的**生产代码不引用**注册表或事件总线单例；其**测试**曾在 `snapshot/**`、`level/**`、`app/**` 中出现
+  全局清理调用，已在 Phase 2（及一次性的 `app/**` 清理）中全部迁移为每用例独立实例。
+- **Phase 2 执行清单（已完成）**：删除 `DockingPlateRegistry` 与 `EventDispatcher` 的静态单例访问器；
+  删除 `DockingPlate`（2 个）、`Door`（2 个）、`ExitTerminal`（2 个）兼容构造器；
+  迁移 `level/Level01TwoRoundSimulationTest`、`snapshot/MechanismSnapshotTest` 到独立实例。
 
-**Phase 2 删除清单**：`DockingPlateRegistry.getInstance()`、`EventDispatcher.getInstance()`
-以及所有"取单例"的兼容构造器；另需先处理零引用的 `mechanism/ray/Ray.java`（见 §9.6）。
+### 9.6 `mechanism/ray/Ray.java` 登记（**改为保留**）
 
-### 9.6 零引用死代码登记
-
-- `mechanism/ray/RayManager.java`：**已随本次删除**（零生产引用，与 `PhaseManager` 同类处理）。
-- `mechanism/ray/Ray.java`：删除 `RayManager` 后**已无任何引用者**（仅自引用）。它是 README 第五节的
-  "时滞射线"机制实现，第二关需要它，故**暂不删除**；但它仍通过兼容单例注册事件，
-  **Phase 2 删除单例前必须先决定"接线"还是"删除"**，否则会编译失败。
+- `mechanism/ray/RayManager.java`：**已删除**（零生产引用）。
+- `mechanism/ray/Ray.java`：**保留**。`L02-门房与双残影-PM裁决.md` **§六 已作废**「Phase 2 删除 Ray.java」一条：
+  第二关 L2-B 需要真实的时滞射线，Ray 从"零引用死代码"转为"有待接线需求"。
+- **因 Phase 2 删除单例，Ray 已在本批改为注入形态**（构造器接收 `GameEventBus`，不再取全局单例）；
+  「共享 `roundTick` 驱动 + 关卡接线 + 相位/减速语义」仍属 **L2-B**。
+- R5-B §10.2 的结论继续成立：**射线不需要快照端口**（无持久状态），聚合器不得为其加具体类旁路。
 
 ---
 

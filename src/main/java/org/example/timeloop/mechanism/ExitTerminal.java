@@ -33,20 +33,13 @@ public class ExitTerminal implements GameObserver {
     private boolean doorUnlocked = false;
     private boolean triggered = false;
 
-    /** 兼容构造器：半径取 {@link #DEFAULT_INTERACT_RADIUS}（1 × tileSize），总线取兼容单例。 */
-    public ExitTerminal(String id, Vector2D position, String associatedDoorId) {
-        this(id, position, associatedDoorId, DEFAULT_INTERACT_RADIUS, EventDispatcher.getInstance());
-    }
-
     /**
+     * 完全注入（BUG-002-LIFECYCLE）：事件总线由关卡装配持有。Phase 2 起<b>不再提供</b>兼容构造器；
+     * 半径请由关卡按 {@link #interactRadiusForTileSize(double)} 显式传入。
+     *
      * @param interactRadius 宽容交互半径（世界单位）；关卡应按 {@code 1.5 × tileSize} 传入
      *                       （第一关 = 72，见 {@link #interactRadiusForTileSize(double)}）
      */
-    public ExitTerminal(String id, Vector2D position, String associatedDoorId, double interactRadius) {
-        this(id, position, associatedDoorId, interactRadius, EventDispatcher.getInstance());
-    }
-
-    /** 完全注入（推荐，BUG-002-LIFECYCLE Phase 1）：事件总线由关卡装配持有。 */
     public ExitTerminal(String id,
                         Vector2D position,
                         String associatedDoorId,

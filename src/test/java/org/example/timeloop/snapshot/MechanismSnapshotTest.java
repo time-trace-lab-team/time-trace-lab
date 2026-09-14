@@ -20,12 +20,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MechanismSnapshotTest {
 
-    @AfterEach
-    void clearGlobalMechanismState() {
-        EventDispatcher.getInstance().clear();
-        DockingPlateRegistry.getInstance().clear();
-    }
-
     @Test
     void captureDefensivelyCopiesUnmodifiableCollections() {
         Fixture fixture = fixture();
@@ -128,7 +122,8 @@ class MechanismSnapshotTest {
         MechanismSnapshot snapshot = activatedSnapshot(fixture);
         reset(fixture);
         Door additionalDoor = new Door(
-                "L01_door_other", new Vector2D(336.0, 240.0), Set.of("L01_plate_left"));
+                "L01_door_other", new Vector2D(336.0, 240.0), Set.of("L01_plate_left"),
+                fixture.registry(), fixture.bus());
         Map<String, Door> doors = new LinkedHashMap<>(doorMap(fixture));
         doors.put(additionalDoor.getId(), additionalDoor);
 
@@ -185,16 +180,21 @@ class MechanismSnapshotTest {
         return Map.of(fixture.exit().getId(), fixture.exit());
     }
 
+    /** BUG-002-LIFECYCLE Phase 2：每个 fixture 自带注册表与事件总线，不再依赖全局单例。 */
     private static Fixture fixture() {
+        DockingPlateRegistry registry = new DockingPlateRegistry();
+        EventDispatcher bus = new EventDispatcher();
         DockingPlate plate = new DockingPlate(
-                "L01_plate_left", new Vector2D(96.0, 240.0));
+                "L01_plate_left", new Vector2D(96.0, 240.0), registry, bus);
         Door door = new Door(
-                "L01_door_01", new Vector2D(240.0, 240.0), Set.of(plate.getId()));
+                "L01_door_01", new Vector2D(240.0, 240.0), Set.of(plate.getId()), registry, bus);
         ExitTerminal exit = new ExitTerminal(
-                "L01_exit_00", new Vector2D(432.0, 240.0), door.getId());
-        return new Fixture(plate, door, exit);
+                "L01_exit_00", new Vector2D(432.0, 240.0), door.getId(),
+                ExitTerminal.DEFAULT_INTERACT_RADIUS, bus);
+        return new Fixture(plate, door, exit, registry, bus);
     }
 
-    private record Fixture(DockingPlate plate, Door door, ExitTerminal exit) {
+    private record Fixture(DockingPlate plate, Door door, ExitTerminal exit,
+                           DockingPlateRegistry registry, EventDispatcher bus) {
     }
 }

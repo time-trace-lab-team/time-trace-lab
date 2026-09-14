@@ -8,19 +8,15 @@ import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * 机制事件总线（BUG-002-LIFECYCLE）。
  *
- * <p>实现 {@link GameEventBus} 窄端口。{@link #getInstance()} 是<b>兼容层</b>：
- * Phase 2 将在 app 与测试全部迁移后删除全局单例；新代码应构造独立实例、由关卡装配持有，
- * 这样场景切换与"从第一轮重开"不会残留旧监听器。</p>
+ * <p>实现 {@link GameEventBus} 窄端口。权威形态是「每个关卡装配持有自己的实例」，
+ * 这样场景切换与「从第一轮重开」不会残留旧监听器，也不需要任何全局清理。</p>
+ *
+ * <p><b>全局单例已在 BUG-002-LIFECYCLE Phase 2 删除</b>（静态单例访问器与全部兼容构造器均已移除）：
+ * 新代码一律通过 {@link #EventDispatcher()} 构造独立实例。</p>
  */
 public final class EventDispatcher implements GameEventBus {
 
-    private static final EventDispatcher INSTANCE = new EventDispatcher();
     private final Map<String, List<GameObserver>> listeners = new ConcurrentHashMap<>();
-
-    /** 兼容层单例（Phase 2 删除）。新代码请用 {@link #EventDispatcher()}。 */
-    public static EventDispatcher getInstance() {
-        return INSTANCE;
-    }
 
     /** 每个关卡装配应持有自己的总线实例。 */
     public EventDispatcher() {}
