@@ -36,15 +36,13 @@
    （Phase 1 已具备）与 `DockingPlateOccupancyPort` 实现。兼容构造器（自动取 `getInstance()` 的那几个）
    **一并删除**，并在交付文档里逐一列出删除了哪些签名。
 2. **删除 `EventDispatcher` 全局单例**：同上，保留公开构造器与 `GameEventBus` 实现。
-3. **删除 `mechanism/ray/Ray.java`**（**PM 已于 2026-09-14 明确裁决：删除**）：
-   - PM 已独立复核：`git grep -n "\bRay\b" -- src` **只命中 `Ray.java` 自身**（无生产、无测试引用），
-     与已删的 `RayManager`/`PhaseManager` 同类；
-   - 规格文档 §9.6 写的「第二关需要它，故暂不删除」**被 PM 改判**：
-     README §五 的时滞射线规则不变，但**不为死代码做生命周期改造**；
-     第二关实现射线时必须**重新立项 + 走注入端口**（§10.2 已写明「不得让聚合器用具体类旁路」）；
-   - 交付要求：删除后在本卡交付文档与规格文档 §9.6 登记 **删除提交 SHA**，
-     供第二关需要时从 git 历史取回参考实现；
-   - 若发现**存在**引用（例如第二关已开工接线），**停手回报 PM**，不擅自决定。
+3. ~~**删除 `mechanism/ray/Ray.java`**~~ → **本项作废（2026-09-14 PM 改判）**：
+   - 第二关（`L02-门房与双残影-PM裁决.md` §六）确认**要在 L2-B 使用真实射线**，`Ray.java` 从「零引用死代码」
+     变成「有待接线需求」→ **不删除**；
+   - 改为在 **`L02-任务卡-开发3.md` §三（L2-B）** 里按注入端口接线（`GameEventBus` + 只读共享 `roundTick`），
+     **禁止**使用 `DockingPlateRegistry.getInstance()` / `EventDispatcher.getInstance()` 兼容单例；
+   - R5-B §10.2「射线不需要快照端口」的结论**仍然有效**（无持久状态）；
+   - 本卡（BUG-002 P2）**只删单例与兼容构造器**，`mechanism/ray/**` 不在本卡范围内。
 4. ~~**`ResonanceResetReason` 增加 `SCENE_EXIT`**~~ → **已由 PR #71 交付（见 §二.0），本卡不再重复**；
    只需在规格文档「注册表与事件总线生命周期」节引用其现状。
 5. ~~**`GameEvent.sourceRound` 不变量 javadoc**~~ → **已由 PR #71 交付（见 §二.0）**。
