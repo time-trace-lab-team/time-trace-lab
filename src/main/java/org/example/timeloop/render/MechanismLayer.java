@@ -10,7 +10,7 @@ import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
- * C5 机关图层：驻留板、门、出口终端。
+ * C5 机关图层：驻留板、开关表现变体、门、出口终端。
  *
  * <p>状态来自只读 {@link RenderViews.Frame}；渲染不写回机关状态。
  * 每个机关有自己的底色（板蓝、门红、终端琥珀），激活时满色并加光晕，
@@ -48,6 +48,7 @@ public final class MechanismLayer implements RenderLayer {
 
             switch (mechanism.kind()) {
                 case PLATE -> drawPlate(gc, cx, cy, size, mechanism.active());
+                case SWITCH -> drawSwitch(gc, cx, cy, size, mechanism.active());
                 case DOOR -> drawDoor(gc, cx, cy, size, mechanism.active());
                 case EXIT -> drawExit(gc, cx, cy, size, mechanism.active());
             }
@@ -81,6 +82,41 @@ public final class MechanismLayer implements RenderLayer {
         }
     }
 
+    /**
+     * 开关：横向踏板 + 下沉按键。{@code active} 表示本轮锁存 ON，而不是当前是否有人站在上面。
+     * 因此 ON 态保留压下位置与亮起指示，直到机关在轮末 reset。
+     */
+    private void drawSwitch(GraphicsContext gc, double cx, double cy, double size, boolean active) {
+        double width = size * 0.88;
+        double baseHeight = size * 0.34;
+        double buttonWidth = size * 0.56;
+        double buttonHeight = size * 0.22;
+        double buttonY = cy + (active ? size * 0.10 : -size * 0.10);
+
+        if (active) {
+            glow(gc, cx, cy, size * 1.55, RenderPalette.INTERACTIVE, 0.45);
+        }
+
+        gc.setFill(fade(RenderPalette.INACTIVE_OUTLINE, 0.85));
+        gc.fillRoundRect(cx - width / 2.0, cy - baseHeight / 2.0, width, baseHeight, 10, 10);
+        gc.setStroke(active ? Color.web("#ffe9b8") : fade(RenderPalette.INTERACTIVE, 0.48));
+        gc.setLineWidth(3.0);
+        gc.strokeRoundRect(cx - width / 2.0, cy - baseHeight / 2.0, width, baseHeight, 10, 10);
+
+        gc.setFill(active ? RenderPalette.INTERACTIVE : fade(RenderPalette.INTERACTIVE, 0.30));
+        gc.fillRoundRect(cx - buttonWidth / 2.0, buttonY - buttonHeight / 2.0,
+                buttonWidth, buttonHeight, 8, 8);
+        gc.setStroke(active ? Color.web("#fff0c8") : fade(RenderPalette.INTERACTIVE, 0.58));
+        gc.setLineWidth(2.0);
+        gc.strokeRoundRect(cx - buttonWidth / 2.0, buttonY - buttonHeight / 2.0,
+                buttonWidth, buttonHeight, 8, 8);
+
+        gc.setStroke(active ? Color.web("#7a5c17") : fade(RenderPalette.TEXT, 0.55));
+        gc.setLineWidth(2.0);
+        double indicatorY = buttonY + (active ? 0.0 : -size * 0.025);
+        gc.strokeLine(cx - size * 0.12, indicatorY, cx + size * 0.12, indicatorY);
+    }
+
     /** 门：菱形；解锁时红色实心带光晕，锁着时只留灰蓝轮廓。 */
     private void drawDoor(GraphicsContext gc, double cx, double cy, double size, boolean active) {
         double s = size * 0.50;
@@ -102,27 +138,41 @@ public final class MechanismLayer implements RenderLayer {
         }
     }
 
-    /** 终点终端：方框 + 内嵌 X；可交互时琥珀实心带光晕，并在正上方给出 `E` 按键提示。 */
+    /**
+     * 闸门终点：关闭时画出封闭门栅，解锁后画出两侧门框与通行缺口。
+     * 可交互时保留既有 {@code E} 提示。
+     */
     private void drawExit(GraphicsContext gc, double cx, double cy, double size, boolean active) {
-        double s = size * 0.43;
+        double s = size * 0.48;
         if (active) {
             glow(gc, cx, cy, size * 1.8, RenderPalette.INTERACTIVE, 0.50);
         }
-        gc.setFill(active ? Color.web("#7a5c17") : fade(RenderPalette.INTERACTIVE, 0.18));
-        gc.fillRoundRect(cx - s, cy - s, s * 2, s * 2, 6, 6);
-        gc.setStroke(active ? Color.web("#ffe9b8") : fade(RenderPalette.INTERACTIVE, 0.45));
+        gc.setStroke(active ? Color.web("#ffe9b8") : fade(RenderPalette.INTERACTIVE, 0.48));
         gc.setLineWidth(4.0);
-        gc.strokeRoundRect(cx - s, cy - s, s * 2, s * 2, 6, 6);
+
         if (active) {
-            gc.setStroke(Color.web("#fff0c8", 0.80));
-            gc.setLineWidth(3.0);
-            gc.strokeLine(cx - s * 0.45, cy - s * 0.45, cx + s * 0.45, cy + s * 0.45);
-            gc.strokeLine(cx + s * 0.45, cy - s * 0.45, cx - s * 0.45, cy + s * 0.45);
+            double pillarWidth = s * 0.34;
+            gc.setFill(Color.web("#7a5c17"));
+            gc.fillRoundRect(cx - s, cy - s, pillarWidth, s * 2, 6, 6);
+            gc.fillRoundRect(cx + s - pillarWidth, cy - s, pillarWidth, s * 2, 6, 6);
+            gc.strokeRoundRect(cx - s, cy - s, s * 2, s * 2, 6, 6);
+            gc.setStroke(Color.web("#fff0c8", 0.82));
+            gc.setLineWidth(2.0);
+            gc.strokeLine(cx - s + pillarWidth, cy - s * 0.62, cx + s - pillarWidth, cy - s * 0.62);
             // 交互提示：旧图层在终端可交互时会在正上方画 "E"（沿用默认字体与旧版位置，
             // 不引入新的字体依赖）。设计稿没有这个元素，但它是玩家判断
             // "现在能按 E 通关"的唯一视觉反馈，属于功能而非装饰，必须保留。
             gc.setFill(RenderPalette.INTERACTIVE);
             gc.fillText("E", cx - size * 0.08, cy - s - 7.0);
+        } else {
+            gc.setFill(fade(RenderPalette.DOOR, 0.34));
+            gc.fillRoundRect(cx - s, cy - s, s * 2, s * 2, 6, 6);
+            gc.strokeRoundRect(cx - s, cy - s, s * 2, s * 2, 6, 6);
+            gc.setStroke(fade(RenderPalette.DOOR_EDGE, 0.55));
+            gc.setLineWidth(2.0);
+            gc.strokeLine(cx - s * 0.42, cy - s * 0.72, cx - s * 0.42, cy + s * 0.72);
+            gc.strokeLine(cx, cy - s * 0.72, cx, cy + s * 0.72);
+            gc.strokeLine(cx + s * 0.42, cy - s * 0.72, cx + s * 0.42, cy + s * 0.72);
         }
     }
 
