@@ -42,6 +42,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -92,6 +93,42 @@ class Level02MapRenderSnapshotTest {
                 Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_SWITCH,
                 Level02Corridor.DOOR_GATE, Level02Corridor.DOOR_RELAY, Level02Corridor.DOOR_EXIT)),
                 "机关投影必须覆盖设计说明 §三 的全部机关: " + ids);
+
+        // 色系分组 + 数字角标（改版出图要求）：开门组 P1/D1 = 1、P2/D2 = 2；
+        // 终点闸组 P3 / P4 / 开关同色系（gateGroup=true）且不带数字；出口格不带角标。
+        assertEquals("1", tagOf(mechanisms, Level02Corridor.PLATE_GATE));
+        assertEquals("2", tagOf(mechanisms, Level02Corridor.PLATE_RELAY));
+        assertEquals("1", tagOf(mechanisms, Level02Corridor.DOOR_GATE));
+        assertEquals("2", tagOf(mechanisms, Level02Corridor.DOOR_RELAY));
+        assertNull(tagOf(mechanisms, Level02Corridor.PLATE_INNER));
+        assertNull(tagOf(mechanisms, Level02Corridor.PLATE_MAIN));
+        assertNull(tagOf(mechanisms, Level02Corridor.PLATE_SWITCH));
+        // 出口格的 EXIT 投影沿用终点闸的 ID（同格只投影一个 EXIT），且不带角标。
+        assertNull(tagOf(mechanisms, Level02Corridor.DOOR_EXIT));
+
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.PLATE_GATE));
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.PLATE_RELAY));
+        assertTrue(gateGroupOf(mechanisms, Level02Corridor.PLATE_INNER));
+        assertTrue(gateGroupOf(mechanisms, Level02Corridor.PLATE_MAIN));
+        assertTrue(gateGroupOf(mechanisms, Level02Corridor.PLATE_SWITCH));
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.DOOR_GATE));
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.DOOR_RELAY));
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.DOOR_EXIT));
+    }
+
+    private static String tagOf(List<RenderViews.Mechanism> mechanisms, String id) {
+        return mechanismOf(mechanisms, id).tag();
+    }
+
+    private static boolean gateGroupOf(List<RenderViews.Mechanism> mechanisms, String id) {
+        return mechanismOf(mechanisms, id).gateGroup();
+    }
+
+    private static RenderViews.Mechanism mechanismOf(List<RenderViews.Mechanism> mechanisms, String id) {
+        return mechanisms.stream()
+                .filter(m -> m.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("机关投影缺少: " + id));
     }
 
     @Test
@@ -190,24 +227,26 @@ class Level02MapRenderSnapshotTest {
 
         List<RenderViews.Mechanism> mechanisms() {
             List<RenderViews.Mechanism> list = new ArrayList<>();
+            // 开门组：板与它作用的那扇门共用数字角标 1 / 2，色系用板蓝。
             list.add(mechanism(gatePlate.getId(), gatePlate.getPosition(),
-                    RenderViews.MechanismKind.PLATE, gatePlate.isOccupied()));
+                    RenderViews.MechanismKind.PLATE, gatePlate.isOccupied(), "1", false));
             list.add(mechanism(relayPlate.getId(), relayPlate.getPosition(),
-                    RenderViews.MechanismKind.PLATE, relayPlate.isOccupied()));
+                    RenderViews.MechanismKind.PLATE, relayPlate.isOccupied(), "2", false));
+            // 终点闸组：P3 / P4 / 开关（gateGroup=true → 琥珀色系），同色即同组，不带数字。
             list.add(mechanism(innerPlate.getId(), innerPlate.getPosition(),
-                    RenderViews.MechanismKind.PLATE, innerPlate.isOccupied()));
+                    RenderViews.MechanismKind.PLATE, innerPlate.isOccupied(), null, true));
             list.add(mechanism(mainPlate.getId(), mainPlate.getPosition(),
-                    RenderViews.MechanismKind.PLATE, mainPlate.isOccupied()));
-            // 锁存开关是 dock_plate 的表现变体（role=switch），投影成 SWITCH。
+                    RenderViews.MechanismKind.PLATE, mainPlate.isOccupied(), null, true));
+            // 锁存开关是 dock_plate 的表现变体（role=switch），投影成 SWITCH；active = 本轮是否锁存。
             list.add(mechanism(switchPlate.getId(), switchPlate.getPosition(),
-                    RenderViews.MechanismKind.SWITCH, switchPlate.isOccupied()));
+                    RenderViews.MechanismKind.SWITCH, switchPlate.isLatched(), null, true));
             list.add(mechanism(gateDoor.getId(), gateDoor.getPosition(),
-                    RenderViews.MechanismKind.DOOR, gateDoor.isUnlocked()));
+                    RenderViews.MechanismKind.DOOR, gateDoor.isUnlocked(), "1", false));
             list.add(mechanism(relayDoor.getId(), relayDoor.getPosition(),
-                    RenderViews.MechanismKind.DOOR, relayDoor.isUnlocked()));
-            // 终点闸与出口终端同格：只投影一个 EXIT（与 L1 的做法一致，避免同格出现两个图标）。
+                    RenderViews.MechanismKind.DOOR, relayDoor.isUnlocked(), "2", false));
+            // 终点闸与出口终端同格：只投影一个 EXIT（与 L1 的做法一致，避免同格出现两个图标），不带角标。
             list.add(mechanism(exitGate.getId(), exitGate.getPosition(),
-                    RenderViews.MechanismKind.EXIT, exitGate.isUnlocked()));
+                    RenderViews.MechanismKind.EXIT, exitGate.isUnlocked(), null, false));
             return list;
         }
 
@@ -252,8 +291,9 @@ class Level02MapRenderSnapshotTest {
         }
 
         private RenderViews.Mechanism mechanism(String id, Vector2D pos,
-                                                RenderViews.MechanismKind kind, boolean active) {
-            return new RenderViews.Mechanism(id, pos.x(), pos.y(), kind, active);
+                                                RenderViews.MechanismKind kind, boolean active,
+                                                String tag, boolean gateGroup) {
+            return new RenderViews.Mechanism(id, pos.x(), pos.y(), kind, active, tag, gateGroup);
         }
 
         /** 按关卡数据的 {@code role} 装配：{@code role=switch} → 锁存开关变体（同 Level01Assembly）。 */

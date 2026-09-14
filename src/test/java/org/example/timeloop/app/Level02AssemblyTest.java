@@ -26,20 +26,23 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 第二关装配（{@link Level02Assembly}）的机关 / 门 / 通行性集成测试。
  *
- * <p>覆盖四件事：</p>
+ * <p>覆盖五件事：</p>
  * <ol>
- *   <li><b>普通驻留板实时性</b>：站上板 → 门立刻开；离开板 → 门立刻回锁（第二关五块板都不锁存，
- *       与第一关右板的 {@code role=switch} 锁存语义不同）；</li>
+ *   <li><b>普通驻留板实时性</b>：站上板 → 门立刻开；离开板 → 门立刻回锁（第二关四块普通板都不锁存，
+ *       与第一关右板 / 本关 {@code L02_plate_switch} 的 {@code role=switch} 锁存语义不同）；</li>
  *   <li><b>多门通行性</b>：三扇门各自挡住自己的门格，解锁后放行，且互不影响
  *       （{@code Level01Assembly.isPassable} 只查一扇门，这里必须逐门检查）；</li>
- *   <li><b>终点闸三条件</b>：内板 + 主板 + 终结板<b>同刻</b>被占才解锁，任一块释放立刻回锁（门格上的
- *       {@code Door} 状态实时回锁；出口终端的「已解锁」按机制契约在本轮内保持，轮末 {@code reset()} 归零）；</li>
- *   <li><b>渲染投影</b>：5 板 + 2 门 + 1 终点；终点闸与出口同格，该格只投影 {@code EXIT}。</li>
+ *   <li><b>终点闸三条件</b>：内板 + 主板 + <b>锁存开关</b>同时成立才解锁；内板 / 主板一松立刻回锁，
+ *       而开关一旦踩过（锁存）就<b>不需要有人压着</b>；没踩过开关时即使内板 + 主板被占也必须保持锁定
+ *       （反例，见 {@link #exitGateStaysLockedWhileTheSwitchWasNeverStepped()}）；</li>
+ *   <li><b>真·驾驶通关链路</b>：玩家真开到开关格踩下、离开（锁存保留）→ 走到出口旁按 E → {@code RESULT}；</li>
+ *   <li><b>渲染投影</b>：4 板 + 1 开关 + 2 门 + 1 终点；终点闸与出口同格，该格只投影 {@code EXIT}。</li>
  * </ol>
  *
  * <p>驾驶脚本不手抄地图：{@link #route} 用 {@link Level02Corridor#isOpen} 现算 BFS 最短格子路线
@@ -121,9 +124,9 @@ class Level02AssemblyTest {
         assertFalse(a.door(Level02Corridor.DOOR_EXIT).orElseThrow().isUnlocked(),
                 "终点闸与另两扇门无关，仍锁着");
 
-        // 离开中继板 (18,11) → (19,11)
+        // 离开中继板 (17,9) → (18,9)
         tick = drive(a, tick, LogicalKey.DIR_RIGHT);
-        assertEquals(cellX(19), player(a).x(), 1e-9);
+        assertEquals(cellX(18), player(a).x(), 1e-9);
         assertFalse(a.isPlateOccupied(Level02Corridor.PLATE_RELAY), "普通板离开即释放");
         assertFalse(a.door(Level02Corridor.DOOR_RELAY).orElseThrow().isUnlocked(),
                 "中继板一松 → 内室门立刻回锁");
@@ -179,10 +182,11 @@ class Level02AssemblyTest {
     // ---------- 3. 终点闸三条件 ----------
 
     @Test
-    void exitGateRequiresInnerMainAndCorePlatesAtTheSameTime() {
+    void exitGateRequiresInnerMainAndSwitchAtTheSameTime() {
         Level02Assembly a = started();
         Door exitGate = a.door(Level02Corridor.DOOR_EXIT).orElseThrow();
         ExitTerminal exit = a.exitTerminal();
+        DockingPlate switchPlate = a.dockingPlate(Level02Corridor.PLATE_SWITCH).orElseThrow();
 
         assertFalse(exitGate.isUnlocked(), "开局终点闸锁着");
         assertFalse(exit.interact(10L, 0), "闸门锁着时 E 不得结算");
@@ -191,54 +195,127 @@ class Level02AssemblyTest {
         assertFalse(exitGate.isUnlocked(), "只有内板 → 终点闸仍锁");
 
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_MAIN).orElseThrow().tryEnter("echo_1", 1, 200L));
-        assertFalse(exitGate.isUnlocked(), "内板 + 主板 → 终点闸仍锁（还差终结板）");
+        assertFalse(exitGate.isUnlocked(), "内板 + 主板 → 终点闸仍锁（还差开关）");
 
-        assertTrue(a.dockingPlate(Level02Corridor.PLATE_CORE).orElseThrow().tryEnter("player", 0, 300L));
-        assertTrue(exitGate.isUnlocked(), "三块板同刻被占 → 终点闸解锁");
+        assertTrue(switchPlate.tryEnter("player", 0, 300L));
+        assertTrue(switchPlate.isLatched(), "踩上开关即锁存");
+        assertTrue(exitGate.isUnlocked(), "内板 + 主板 + 锁存开关 → 终点闸解锁");
         assertTrue(a.isPlateOccupied(Level02Corridor.PLATE_INNER));
         assertTrue(a.isPlateOccupied(Level02Corridor.PLATE_MAIN));
-        assertTrue(a.isPlateOccupied(Level02Corridor.PLATE_CORE));
+        assertTrue(a.isPlateOccupied(Level02Corridor.PLATE_SWITCH), "锁存位并入门条件判定");
         assertTrue(exit.isDoorUnlocked(), "出口终端随终点闸一起武装");
         assertTrue(exit.interact(400L, 0), "闸门解锁后 interact 应成功");
 
-        // 门格通行性实时回锁：任一块板释放 → Door 立刻回到 LOCKED
+        // 开关的锁存语义：人离开后门条件依然成立（否则解锁那一刻没人压着，本关无解）。
+        assertTrue(switchPlate.tryExit("player", 0, 450L));
+        assertEquals(DockingPlate.State.UNOCCUPIED, switchPlate.getState(), "人确实已离开开关");
+        assertTrue(switchPlate.isLatched(), "离开不得清除锁存");
+        assertTrue(exitGate.isUnlocked(), "开关锁存后离开 → 终点闸不得回锁");
+
+        // 门格通行性实时回锁：内板 / 主板任一块释放 → Door 立刻回到 LOCKED
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_MAIN).orElseThrow().tryExit("echo_1", 1, 500L));
-        assertFalse(exitGate.isUnlocked(), "主板一松 → 终点闸门格立刻回锁");
+        assertFalse(exitGate.isUnlocked(), "主板一松 → 终点闸门格立刻回锁（开关已锁存也救不回来）");
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_MAIN).orElseThrow().tryEnter("echo_1", 1, 600L));
         assertTrue(exitGate.isUnlocked(), "主板重新被占 → 终点闸再次解锁");
     }
 
-    // ---------- 4. 真·驾驶：踩上终结板解锁终点闸 → 按 E 通关 ----------
+    // ---------- 4. 真·驾驶：踩下锁存开关（随后离开）→ 走到出口旁按 E 通关 ----------
 
     @Test
-    void dockingCoreUnlocksExitGateAndPressingInteractClearsTheLevel() {
+    void drivingOntoTheLatchingSwitchAndLeavingItStillUnlocksTheExitGate() {
         Level02Assembly a = started();
         long tick = 0;
         a.tick(InputIntent.empty(tick++));
 
-        // E1 压外闸板、E2 压中继板（过两扇门），另 E1/E2 同时压住主板与内板（终点闸三缺一）
+        // E1 压外闸板、E2 压中继板：玩家才过得了 D1 / D2，真开进右上角内室。
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_GATE).orElseThrow().tryEnter("echo_1", 1, tick));
-        assertTrue(a.dockingPlate(Level02Corridor.PLATE_MAIN).orElseThrow().tryEnter("echo_1", 1, tick));
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_RELAY).orElseThrow().tryEnter("echo_2", 2, tick));
-        assertTrue(a.dockingPlate(Level02Corridor.PLATE_INNER).orElseThrow().tryEnter("echo_2", 2, tick));
-        assertFalse(a.door(Level02Corridor.DOOR_EXIT).orElseThrow().isUnlocked());
+        Door exitGate = a.door(Level02Corridor.DOOR_EXIT).orElseThrow();
+        DockingPlate switchPlate = a.dockingPlate(Level02Corridor.PLATE_SWITCH).orElseThrow();
+        assertFalse(switchPlate.isLatched(), "开局开关未锁存");
 
-        tick = driveTo(a, tick, Level02Corridor.NODE_SPAWN, Level02Corridor.NODE_PLATE_CORE,
+        // 真·驾驶到开关格 (18,3)：寻路避开已被残影压住的板格与出口格（避免顺路把自己压上去）。
+        tick = driveTo(a, tick, Level02Corridor.NODE_SPAWN, Level02Corridor.NODE_PLATE_SWITCH,
                 Set.of(Level02Corridor.NODE_PLATE_GATE, Level02Corridor.NODE_PLATE_RELAY,
                         Level02Corridor.NODE_PLATE_INNER, Level02Corridor.NODE_PLATE_MAIN,
                         Level02Corridor.NODE_EXIT));
         tick = parkOnDock(a, tick);
 
-        assertEquals(MovementState.DOCKED, player(a).movementState(), "应停在终结板上");
+        assertEquals(MovementState.DOCKED, player(a).movementState(), "应停在锁存开关上");
+        assertEquals(cellX(18), player(a).x(), 1e-9);
+        assertEquals(cellY(3), player(a).y(), 1e-9);
+        assertTrue(switchPlate.isLatched(), "踩上开关即锁存（role=switch）");
+        assertEquals(DockingPlate.State.OCCUPIED, switchPlate.getState(), "此刻人正压着开关");
+        assertFalse(exitGate.isUnlocked(), "只踩了开关、内板 + 主板无人 → 终点闸仍锁");
+
+        // 离开开关：占用释放，但锁存位保留 —— 解锁那一刻不需要有人压着开关。
+        tick = drive(a, tick, LogicalKey.DIR_LEFT);
+        assertEquals(cellX(17), player(a).x(), 1e-9, "离开开关一格");
+        assertEquals(DockingPlate.State.UNOCCUPIED, switchPlate.getState(), "人已不在开关上");
+        assertTrue(switchPlate.isLatched(), "离开不得清除锁存");
+        assertTrue(a.isPlateOccupied(Level02Corridor.PLATE_SWITCH),
+                "锁存后即使没人站着，D3 所需的开关条件仍然成立");
+        assertFalse(exitGate.isUnlocked(), "开关 + 无人压内板 / 主板 → 终点闸仍锁");
+
+        // 内板 P3 / 主板 P4 由两条残影压住（设计里 E2 / E1 的角色）。
+        assertTrue(a.dockingPlate(Level02Corridor.PLATE_INNER).orElseThrow()
+                .tryEnter("echo_2", 2, tick));
+        assertTrue(a.dockingPlate(Level02Corridor.PLATE_MAIN).orElseThrow()
+                .tryEnter("echo_1", 1, tick));
+        assertTrue(exitGate.isUnlocked(), "锁存开关 + 内板 + 主板 → 终点闸解锁");
+
+        // 真·走到出口旁 (24,2)（距出口 1 格 = 48 ≤ 72 宽容半径）后按 E 通关。
+        tick = driveTo(a, tick, Level02Corridor.nodeId(17, 3), Level02Corridor.nodeId(24, 2),
+                Set.of(Level02Corridor.NODE_PLATE_SWITCH, Level02Corridor.NODE_EXIT));
         assertEquals(cellX(24), player(a).x(), 1e-9);
         assertEquals(cellY(2), player(a).y(), 1e-9);
-        assertTrue(a.isPlateOccupied(Level02Corridor.PLATE_CORE), "终结板由当前玩家压住");
-        assertTrue(a.door(Level02Corridor.DOOR_EXIT).orElseThrow().isUnlocked(),
-                "内板 + 主板 + 终结板同刻被占 → 终点闸解锁");
-
-        // 终结板 (24,2) 距出口 (25,2) 恰好 1 格 = 48 ≤ 72 宽容半径 → 原地按 E 结算
         a.tick(pressKey(tick, LogicalKey.INTERACT));
         assertEquals(GamePhase.RESULT, a.phase(), "闸门解锁后在半径内按 E 应通关");
+    }
+
+    /**
+     * 反例：开关<b>没被踩过</b>（未锁存）时，即使内板 + 主板都被残影压住，终点闸也必须保持锁定。
+     *
+     * <p>锁存开关是本关唯一的「不占 actor」的第三条件；若它被错接成普通板（或锁存位被漏掉），
+     * 这条会先红，而不是等到玩家在游戏里打不通关才发现。</p>
+     */
+    @Test
+    void exitGateStaysLockedWhileTheSwitchWasNeverStepped() {
+        Level02Assembly a = started();
+        long tick = 0;
+        a.tick(InputIntent.empty(tick++));
+
+        DockingPlate switchPlate = a.dockingPlate(Level02Corridor.PLATE_SWITCH).orElseThrow();
+        Door exitGate = a.door(Level02Corridor.DOOR_EXIT).orElseThrow();
+        assertFalse(switchPlate.isLatched(), "开局开关未锁存");
+
+        // 三缺一：内板 + 主板齐备，但没人碰过开关。
+        assertTrue(a.dockingPlate(Level02Corridor.PLATE_INNER).orElseThrow()
+                .tryEnter("echo_2", 2, tick));
+        assertTrue(a.dockingPlate(Level02Corridor.PLATE_MAIN).orElseThrow()
+                .tryEnter("echo_1", 1, tick));
+
+        assertFalse(exitGate.isUnlocked(), "内板 + 主板被占，但开关没踩过 → 终点闸必须保持锁定");
+        assertFalse(a.exitTerminal().isDoorUnlocked(), "出口终端不得被武装");
+        assertFalse(a.isPlateOccupied(Level02Corridor.PLATE_SWITCH),
+                "没人踩过开关 → 门条件视角也不成立");
+
+        // 推进若干逻辑刻（玩家真的走动）也不得凭空解锁。
+        a.tick(press(tick++, LogicalKey.DIR_UP));
+        for (int i = 0; i < 30; i++) {
+            a.tick(InputIntent.empty(tick++));
+        }
+        assertFalse(switchPlate.isLatched(), "玩家没走到开关格 → 不得锁存");
+        assertEquals(DockingPlate.State.UNOCCUPIED, switchPlate.getState());
+        assertFalse(exitGate.isUnlocked(), "推进过程中终点闸不得自行解锁");
+
+        // 画面同样不得把未触发的开关画成 ON。
+        RenderViews.Mechanism switchView = a.renderViews().mechanisms().stream()
+                .filter(m -> m.kind() == RenderViews.MechanismKind.SWITCH)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("渲染投影缺少锁存开关"));
+        assertEquals(Level02Corridor.PLATE_SWITCH, switchView.id());
+        assertFalse(switchView.active(), "未锁存的开关在画面上必须是 OFF");
     }
 
     @Test
@@ -247,51 +324,44 @@ class Level02AssemblyTest {
         long tick = 0;
         a.tick(InputIntent.empty(tick++));
 
-        // 只开两扇过路门（外闸 + 内室门）；终点闸三块板暂时无人压
+        // 只开两扇过路门（外闸 + 内室门）；终点闸的内板 / 主板暂时无人压。
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_GATE).orElseThrow().tryEnter("echo_1", 1, tick));
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_RELAY).orElseThrow().tryEnter("echo_2", 2, tick));
 
-        tick = driveTo(a, tick, Level02Corridor.NODE_SPAWN, Level02Corridor.NODE_PLATE_CORE,
+        // 真·驾驶到开关格踩下（锁存），再走到出口旁一格 (24,2)。
+        tick = driveTo(a, tick, Level02Corridor.NODE_SPAWN, Level02Corridor.NODE_PLATE_SWITCH,
                 Set.of(Level02Corridor.NODE_PLATE_GATE, Level02Corridor.NODE_PLATE_RELAY,
                         Level02Corridor.NODE_PLATE_INNER, Level02Corridor.NODE_PLATE_MAIN,
                         Level02Corridor.NODE_EXIT));
         tick = parkOnDock(a, tick);
+        DockingPlate switchPlate = a.dockingPlate(Level02Corridor.PLATE_SWITCH).orElseThrow();
+        assertTrue(switchPlate.isLatched(), "踩上即锁存");
 
-        // 只有终结板被占 → 终点闸锁着 → 门格 (25,2) 不可进入
+        tick = driveTo(a, tick, Level02Corridor.NODE_PLATE_SWITCH, Level02Corridor.nodeId(24, 2),
+                Set.of(Level02Corridor.NODE_EXIT));
+        assertEquals(cellX(24), player(a).x(), 1e-9);
+        assertEquals(cellY(2), player(a).y(), 1e-9);
+
+        // 只有锁存开关成立（内板 / 主板无人）→ 终点闸锁着 → 门格 (25,2) 不可进入
         Door exitGate = a.door(Level02Corridor.DOOR_EXIT).orElseThrow();
-        assertTrue(a.isPlateOccupied(Level02Corridor.PLATE_CORE));
-        assertFalse(exitGate.isUnlocked(), "只有终结板 → 终点闸锁着");
+        assertTrue(switchPlate.isLatched());
+        assertFalse(exitGate.isUnlocked(), "只有锁存开关 → 终点闸锁着");
         tick = drive(a, tick, LogicalKey.DIR_RIGHT);
         assertEquals(cellX(24), player(a).x(), 1e-9, "终点闸锁着时不得进入门格 (25,2)");
-        // 这次「想进门格」的尝试已经让玩家离开终结板（离开即释放占用）
-        assertFalse(a.isPlateOccupied(Level02Corridor.PLATE_CORE));
-
-        // 走开一格再回来 → 重新压住终结板（机关占用由真实停驻恢复）
-        tick = drive(a, tick, LogicalKey.DIR_LEFT);
-        assertEquals(cellX(23), player(a).x(), 1e-9);
-        tick = drive(a, tick, LogicalKey.DIR_RIGHT);
-        tick = parkOnDock(a, tick);
-        assertEquals(cellX(24), player(a).x(), 1e-9);
-        assertEquals(MovementState.DOCKED, player(a).movementState());
-        assertTrue(a.isPlateOccupied(Level02Corridor.PLATE_CORE), "回到终结板应重新压住它");
-        assertFalse(exitGate.isUnlocked(), "只补上终结板 → 终点闸仍锁（还差内板 + 主板）");
 
         // 补上内板 + 主板 → 终点闸解锁（实时）→ 同一按键即可穿过门格
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_INNER).orElseThrow().tryEnter("echo_2", 2, tick));
         assertTrue(a.dockingPlate(Level02Corridor.PLATE_MAIN).orElseThrow().tryEnter("echo_1", 1, tick));
-        assertTrue(exitGate.isUnlocked(), "三块板齐备 → 终点闸解锁");
+        assertTrue(exitGate.isUnlocked(), "锁存开关 + 内板 + 主板 → 终点闸解锁");
         tick = drive(a, tick, LogicalKey.DIR_RIGHT);
         assertEquals(cellX(25), player(a).x(), 1e-9, "终点闸解锁后应允许进入门格 (25,2)");
-
-        // 离开终结板（该次离板发生在同一刻的通行判定之后）→ 门格立刻回锁
-        assertFalse(a.isPlateOccupied(Level02Corridor.PLATE_CORE), "离开终结板即释放占用");
-        assertFalse(exitGate.isUnlocked(), "终结板一松 → 终点闸立刻回锁");
+        assertTrue(switchPlate.isLatched(), "全程开关保持锁存（没有人再压着它）");
     }
 
     // ---------- 5. 渲染投影 ----------
 
     @Test
-    void renderProjectionHasFivePlatesTwoDoorsAndOneExitAtTheExitCell() {
+    void renderProjectionHasFourPlatesOneSwitchTwoDoorsAndOneExitAtTheExitCell() {
         Level02Assembly a = started();
         List<RenderViews.Mechanism> mechanisms = a.renderViews().mechanisms();
 
@@ -299,15 +369,37 @@ class Level02AssemblyTest {
         for (RenderViews.Mechanism m : mechanisms) {
             idsByKind.computeIfAbsent(m.kind(), k -> new ArrayList<>()).add(m.id());
         }
-        assertEquals(8, mechanisms.size(), "5 板 + 2 门 + 1 终点");
+        assertEquals(8, mechanisms.size(), "4 板 + 1 开关 + 2 门 + 1 终点");
         assertEquals(Set.of(Level02Corridor.PLATE_GATE, Level02Corridor.PLATE_RELAY,
-                        Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN,
-                        Level02Corridor.PLATE_CORE),
-                Set.copyOf(idsByKind.get(RenderViews.MechanismKind.PLATE)));
+                        Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN),
+                Set.copyOf(idsByKind.get(RenderViews.MechanismKind.PLATE)),
+                "四块普通驻留板投影成 PLATE");
+        assertEquals(List.of(Level02Corridor.PLATE_SWITCH), idsByKind.get(RenderViews.MechanismKind.SWITCH),
+                "锁存开关必须投影成 SWITCH（role=switch 的表现变体，不是第 5 块 PLATE）");
         assertEquals(Set.of(Level02Corridor.DOOR_GATE, Level02Corridor.DOOR_RELAY),
                 Set.copyOf(idsByKind.get(RenderViews.MechanismKind.DOOR)),
                 "只投影两扇普通门；终点闸与出口同格，不投影 DOOR");
         assertEquals(List.of(Level02Corridor.EXIT), idsByKind.get(RenderViews.MechanismKind.EXIT));
+
+        // 「板 ↔ 它作用的那扇门」的数字角标：开门组 P1/D1 = 1、P2/D2 = 2；终点闸组不带数字。
+        assertEquals("1", tagOf(mechanisms, Level02Corridor.PLATE_GATE));
+        assertEquals("2", tagOf(mechanisms, Level02Corridor.PLATE_RELAY));
+        assertEquals("1", tagOf(mechanisms, Level02Corridor.DOOR_GATE));
+        assertEquals("2", tagOf(mechanisms, Level02Corridor.DOOR_RELAY));
+        assertNull(tagOf(mechanisms, Level02Corridor.PLATE_INNER));
+        assertNull(tagOf(mechanisms, Level02Corridor.PLATE_MAIN));
+        assertNull(tagOf(mechanisms, Level02Corridor.PLATE_SWITCH));
+        assertNull(tagOf(mechanisms, Level02Corridor.EXIT), "终点闸格不带角标（同色即同组）");
+
+        // 色系分组：作用于终点闸 D3 的三块（P3 / P4 / 开关）为 true，其余为 false。
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.PLATE_GATE));
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.PLATE_RELAY));
+        assertTrue(gateGroupOf(mechanisms, Level02Corridor.PLATE_INNER));
+        assertTrue(gateGroupOf(mechanisms, Level02Corridor.PLATE_MAIN));
+        assertTrue(gateGroupOf(mechanisms, Level02Corridor.PLATE_SWITCH));
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.DOOR_GATE));
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.DOOR_RELAY));
+        assertFalse(gateGroupOf(mechanisms, Level02Corridor.EXIT));
 
         Vector2D exitCell = Level02Corridor.cellCenter(25, 2);
         RenderViews.Mechanism exit = mechanisms.stream()
@@ -320,6 +412,21 @@ class Level02AssemblyTest {
                         && Math.abs(m.x() - exitCell.x()) < 1e-9 && Math.abs(m.y() - exitCell.y()) < 1e-9),
                 "终点格只能有一个 EXIT，不得同时叠一个 DOOR");
         assertFalse(exit.active(), "开局终点闸未解锁 → EXIT 未激活");
+    }
+
+    private static String tagOf(List<RenderViews.Mechanism> mechanisms, String id) {
+        return mechanismOf(mechanisms, id).tag();
+    }
+
+    private static boolean gateGroupOf(List<RenderViews.Mechanism> mechanisms, String id) {
+        return mechanismOf(mechanisms, id).gateGroup();
+    }
+
+    private static RenderViews.Mechanism mechanismOf(List<RenderViews.Mechanism> mechanisms, String id) {
+        return mechanisms.stream()
+                .filter(m -> m.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("渲染投影缺少机关: " + id));
     }
 
     // ---------- 驾驶与寻路 ----------

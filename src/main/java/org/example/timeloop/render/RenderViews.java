@@ -106,17 +106,42 @@ public final class RenderViews {
         }
     }
 
-    /** 驻留板 / 开关表现变体 / 门 / 出口终端。 */
+    /**
+     * 驻留板 / 开关表现变体 / 门 / 出口终端。
+     *
+     * <p>{@code tag} 与 {@code gateGroup} 是第二关「闸链」改版的<b>纯加法</b>分量：用简单符号把
+     * 「板 ↔ 它作用的那扇门」关联起来（开门组板与门共用数字），并让作用于终点闸的板换成与终点闸
+     * 同族的琥珀色系。两者都不参与任何玩法判定，只影响显示。</p>
+     *
+     * @param id        稳定机制 ID
+     * @param x         世界坐标 x
+     * @param y         世界坐标 y
+     * @param kind      机关类别（决定画法与外形）
+     * @param active    {@code PLATE}=是否被占；{@code SWITCH}=本轮是否已锁存；{@code DOOR}/{@code EXIT}=是否已解锁
+     * @param tag       画在图标上的数字角标；{@code null} = 不画（例如终点闸组的板与出口）
+     * @param gateGroup {@code true} = 终点闸组（用 {@code RenderPalette.INTERACTIVE} 琥珀色系画板）
+     */
     public record Mechanism(String id,
                             double x,
                             double y,
                             MechanismKind kind,
-                            boolean active) {
+                            boolean active,
+                            String tag,
+                            boolean gateGroup) {
+
+        /** 兼容构造器：既有调用点（第一关、既有离屏测试）不受影响，等价于「无角标、非终点闸组」。 */
+        public Mechanism(String id, double x, double y, MechanismKind kind, boolean active) {
+            this(id, x, y, kind, active, null, false);
+        }
+
         public Mechanism {
             if (id == null || id.isBlank()) {
                 throw new IllegalArgumentException("mechanism id 不能为空白");
             }
             Objects.requireNonNull(kind, "kind");
+            if (tag != null && tag.isBlank()) {
+                throw new IllegalArgumentException("mechanism tag 不能为空白字符串（不需要就传 null）");
+            }
         }
     }
 
