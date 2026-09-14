@@ -5,8 +5,12 @@ package org.example.timeloop.ui;
  *
  * <p>存在的理由：第一关的两块驻留板画得完全一样，而"该压哪块、残影压着哪块"只体现在
  * <b>板有没有亮</b>上；玩家站在被残影占用的板上时既不会驻留、也不会有任何反馈，
- * 于是出现"我明明站在板上按 E 却没反应"的困惑。本类把"谁压着哪块板 + 门开没开"
+ * 于是出现"我明明站在板上按 E 却没反应"的困惑。本类把"谁压着哪块板 + 开关开没开"
  * 变成一句人话，由 HUD 常驻显示。</p>
+ *
+ * <p>L01-GATE-MERGE 后右板改称<b>开关</b>（{@code role=switch}）：踩上即开启、离开不关闭，
+ * 保持到本轮结束。因此 {@code rightHeldByPlayer} / {@code rightHeldByEcho} 表示的是
+ * 「开关是否已开启（本轮锁存 ON）」，<b>不是</b>「此刻有没有人站在上面」。字段与结构按卡 §2.6 冻结不变。</p>
  *
  * <p>只做只读投影：不持有计时器、不推进任何游戏状态，也不参与胜负判定。</p>
  *
@@ -14,8 +18,8 @@ package org.example.timeloop.ui;
  * @param maxRounds         本关最大轮次
  * @param leftHeldByPlayer  左驻留板是否被当前玩家占用
  * @param leftHeldByEcho    左驻留板是否被残影占用
- * @param rightHeldByPlayer 右驻留板是否被当前玩家占用
- * @param rightHeldByEcho   右驻留板是否被残影占用
+ * @param rightHeldByPlayer 开关是否已由当前玩家开启（本轮锁存 ON）
+ * @param rightHeldByEcho   开关是否已由残影开启（本轮锁存 ON）
  * @param doorUnlocked      门是否已解锁（出口终端的锁存状态）
  */
 public record ObjectiveViewModel(int currentRound,
@@ -37,38 +41,37 @@ public record ObjectiveViewModel(int currentRound,
         if (leftHeldByPlayer && leftHeldByEcho) {
             throw new IllegalArgumentException("左驻留板不可能同时被玩家与残影占用");
         }
-        if (rightHeldByPlayer && rightHeldByEcho) {
-            throw new IllegalArgumentException("右驻留板不可能同时被玩家与残影占用");
-        }
     }
 
     /**
      * 一句话目标提示。
      *
-     * <p>判定顺序刻意是"门 → 右板被残影占 → 残影压左板 → 第 1 轮 → 兜底"：
-     * 门一旦解锁，玩家唯一的动作就是去按 E；右板被残影占则本轮已无解，应引导重开。</p>
+     * <p>判定顺序刻意是"门 → 开关已开且有板被压 → 只差开关 → 只差左板 → 第 1 轮 → 兜底"：
+     * 门一旦解锁，玩家唯一的动作就是去闸门按 E。</p>
      */
     public String text() {
+        boolean switchOn = rightHeldByPlayer || rightHeldByEcho;
         if (doorUnlocked) {
-            return "门已解锁：站到右驻留板上按 E 通关";
+            return "门已解锁：到闸门（开关正上方一格）按 E 通关";
         }
-        if (rightHeldByEcho) {
-            return "残影占着右驻留板，本轮无解：按 R 重开";
+        if (switchOn && leftHeldByEcho) {
+            return "开关已开启、左板已被残影压住：去闸门按 E";
         }
-        if (leftHeldByEcho && rightHeldByPlayer) {
-            return "两块板都已压住，等门解锁后按 E";
+        if (switchOn) {
+            return leftHeldByPlayer
+                    ? "开关已开启：保持不动，等本轮结束让残影记住这条路线"
+                    : "开关已开启：去左驻留板停住，把「压住左板」留给下一轮";
         }
         if (leftHeldByEcho) {
-            return "残影已压住左板：你去右驻留板站住，门一解锁就按 E";
+            return "残影已压住左板：你去踩一下开关（踩上即开启，离开也不会关）";
         }
         if (currentRound == 1) {
             return leftHeldByPlayer
                     ? "已压住左驻留板：保持不动，等本轮结束让残影记住这条路线"
-                    : "第 1 轮：走到左驻留板并停住（松开方向键）";
+                    : "第 1 轮：先踩开关（踩上即开启），再去左驻留板停住";
         }
-        if (leftHeldByPlayer) {
-            return "你压着左板，但残影没压右板，门不会开：按 R 重开";
-        }
-        return "左驻留板空着（残影没留在左板）：按 R 重开后，第 1 轮务必站上左板";
+        return leftHeldByPlayer
+                ? "你压着左板，但开关没开，门不会开：按 R 重开"
+                : "开关没开、左板也空着：按 R 重开后，第 1 轮先踩开关再压左板";
     }
 }

@@ -19,9 +19,13 @@ public class DockingPlate implements GameObserver {
     private final Vector2D position;
     private final DockingPlateOccupancyPort occupancy;
     private final GameEventBus bus;
+    /** 开关变体（关卡数据 {@code role=switch}）：被踩上后锁存，直到本轮 {@link #reset()}。 */
+    private final boolean latching;
     private State state = State.UNOCCUPIED;
     private String occupantId = null;
     private int occupantSourceRound = 0;
+    /** 锁存位：单向 {@code false -> true}，只由 {@link #reset()} / {@link #restore} 归零。 */
+    private boolean latched = false;
 
     /** 兼容构造器：占用注册表与事件总线都取全局单例（Phase 2 删除单例后不再保留）。 */
     public DockingPlate(String id, Vector2D position) {
@@ -35,16 +39,32 @@ public class DockingPlate implements GameObserver {
 
     /**
      * 完全注入（推荐，BUG-002-LIFECYCLE Phase 1）：占用注册表与事件总线都由关卡装配持有，
-     * 同一实例内的板 ID 必须唯一，场景切换/重开时随装配一起丢弃。
+     * 同一实例内的板 ID 必须唯一，场景切换/重开时随装配一起丢弃。默认<b>非锁存</b>。
      */
     public DockingPlate(String id,
                         Vector2D position,
                         DockingPlateOccupancyPort occupancy,
                         GameEventBus bus) {
+        this(id, position, occupancy, bus, false);
+    }
+
+    /**
+     * 锁存开关变体（L01-GATE-MERGE-DEV3 §2.2）：关卡数据 {@code role=switch} 时由装配传
+     * {@code latching = true}。该板被踩上即置锁存位，<b>离开不释放</b>，保持到本轮
+     * {@link #reset()}；残影踩上同样触发（复用 {@code PLATE_ENTERED}，不新增事件类型）。
+     *
+     * @param latching 是否启用本轮内锁存；{@code false} 时 {@link #isLatched()} 恒为 false
+     */
+    public DockingPlate(String id,
+                        Vector2D position,
+                        DockingPlateOccupancyPort occupancy,
+                        GameEventBus bus,
+                        boolean latching) {
         this.id = StableIdValidator.requireMechanismId(id, "plate", "dockingPlate.id");
         this.position = Objects.requireNonNull(position);
         this.occupancy = Objects.requireNonNull(occupancy, "occupancy");
         this.bus = Objects.requireNonNull(bus, "bus");
+        this.latching = latching;
         occupancy.register(this);
         bus.register(GameEvent.PLATE_ENTERED, this);
         bus.register(GameEvent.PLATE_EXITED, this);
@@ -71,8 +91,30 @@ public class DockingPlate implements GameObserver {
         return occupantSourceRound;
     }
 
+    /**
+     * 门条件视角的判定：真实占用 <b>或</b>（开关变体）已锁存。
+     *
+     * <p>锁存的语义就是「即使人离开，条件依然成立」，因此必须并入本判定：否则
+     * {@code Door} 依赖的 {@link DockingPlateOccupancyPort#isOccupied(String)} 会在玩家离开开关的
+     * 瞬间把门重新锁上（{@code Door} 行为按卡 §三 不得修改）。</p>
+     *
+     * <p><b>本次语义扩展已经 PM 认可（2026-09-14，L01-GATE-MERGE-DEV3）</b>，边界如下：</p>
+     * <ul>
+     *   <li>只在<b>开关变体</b>（{@code latching == true}）上可能出现 {@code true} 而 {@link #getState()}
+     *       为 {@code UNOCCUPIED}；普通驻留板的行为与语义<b>完全不变</b>。</li>
+     *   <li>«此刻是否真有人站着»请用 {@link #getState()}；«开关是否已触发»请用 {@link #isLatched()}。</li>
+     *   <li>残影淘汰（{@code ECHO_DISAPPEARED}）只释放占用，<b>不清锁存</b>：开关是本轮已兑现的事实，
+     *       不随触发者消散而回滚（见 {@code DockingPlateSwitchLatchTest.echoDisappearanceReleasesOccupancyButKeepsTheLatch}）。</li>
+     *   <li>锁存<b>不</b>阻止再次踩上去（{@link #tryEnter} 仍按 {@link #getState()} 判定），重复触发是幂等的。</li>
+     * </ul>
+     */
     public boolean isOccupied() {
-        return state == State.OCCUPIED;
+        return state == State.OCCUPIED || latched;
+    }
+
+    /** 开关变体：本轮是否已触发并锁存（与「此刻是否有人站着」无关）。非开关板恒为 {@code false}。 */
+    public boolean isLatched() {
+        return latched;
     }
 
     public boolean tryEnter(String actorId, int sourceRound, long tick) {
@@ -82,6 +124,10 @@ public class DockingPlate implements GameObserver {
         state = State.OCCUPIED;
         occupantId = actorId;
         occupantSourceRound = sourceRound;
+        if (latching) {
+            // 单向：本轮内只允许 false -> true；重复踩上是幂等 no-op。
+            latched = true;
+        }
         bus.dispatch(GameEvent.plateEntered(id, tick, sourceRound));
         return true;
     }
@@ -101,6 +147,8 @@ public class DockingPlate implements GameObserver {
         state = State.UNOCCUPIED;
         occupantId = null;
         occupantSourceRound = 0;
+        // 普通轮末 / FULL_RESTART / 场景退出共用本方法：锁存必须一并归零（OFF）。
+        latched = false;
     }
 
     public void dispose() {
@@ -141,19 +189,42 @@ public class DockingPlate implements GameObserver {
         DockingPlate.State getState();
         String getOccupantId();
         int getOccupantSourceRound();
+
+        /**
+         * 开关变体的锁存位（L01-GATE-MERGE-DEV3 §2.3）。默认 {@code false}，
+         * 使既有自定义快照实现无需改动即可继续编译。
+         */
+        default boolean isLatched() { return false; }
     }
 
-    /** 不可变的驻留板状态快照。 */
+    /**
+     * 不可变的驻留板状态快照。
+     *
+     * <p>{@code latched} 是 L01-GATE-MERGE 新增的<b>锁存位</b>，与 {@code state} 相互独立：
+     * {@code (UNOCCUPIED, latched=true)} 是开关已触发但人已离开的<b>常态</b>组合。</p>
+     */
     public record StateSnapshot(String mechanismId,
                                 State state,
                                 String occupantId,
-                                int occupantSourceRound) implements Snapshot {
+                                int occupantSourceRound,
+                                boolean latched) implements Snapshot {
 
         public StateSnapshot {
             mechanismId = StableIdValidator.requireMechanismId(
                     mechanismId, "plate", "dockingPlate.snapshot.mechanismId");
             state = Objects.requireNonNull(state, "dockingPlate.snapshot.state");
             validateState(state, occupantId, occupantSourceRound);
+        }
+
+        /**
+         * 兼容构造器（无锁存位）：保持既有调用方（如 {@code snapshot/MechanismSnapshot}）不改即可编译，
+         * 语义等价于 {@code latched = false}。锁存位冻结后应改用五参构造器。
+         */
+        public StateSnapshot(String mechanismId,
+                             State state,
+                             String occupantId,
+                             int occupantSourceRound) {
+            this(mechanismId, state, occupantId, occupantSourceRound, false);
         }
 
         @Override
@@ -167,10 +238,13 @@ public class DockingPlate implements GameObserver {
 
         @Override
         public int getOccupantSourceRound() { return occupantSourceRound; }
+
+        @Override
+        public boolean isLatched() { return latched; }
     }
 
     public Snapshot createSnapshot() {
-        return new StateSnapshot(id, state, occupantId, occupantSourceRound);
+        return new StateSnapshot(id, state, occupantId, occupantSourceRound, latched);
     }
 
     public void restore(Snapshot snapshot) {
@@ -191,6 +265,8 @@ public class DockingPlate implements GameObserver {
         this.state = restoredState;
         this.occupantId = restoredOccupantId;
         this.occupantSourceRound = restoredSourceRound;
+        // 锁存位随快照恢复；无锁存位的旧快照（兼容构造器）等价于 false。
+        this.latched = snapshot.isLatched();
     }
 
     private static void validateState(State state, String occupantId, int sourceRound) {

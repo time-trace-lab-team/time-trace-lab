@@ -133,7 +133,11 @@ public final class Level01Assembly {
         this.occupancy = new DockingPlateRegistry();
         this.eventBus = new EventDispatcher();
         this.leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos(), occupancy, eventBus);
-        this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos(), occupancy, eventBus);
+        // L01-GATE-MERGE：右板是「开关」表现变体（关卡数据 role=switch）→ 启用本轮内锁存。
+        // 不接线的话游戏里开关离开就弹起，与 render 契约「active = 本轮锁存」不符。
+        boolean rightLatching = "switch".equals(rightInfo.getProperties().get("role"));
+        this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos(), occupancy, eventBus,
+                rightLatching);
         this.door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds(),
                 occupancy, eventBus);
         this.exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId(),
@@ -255,7 +259,14 @@ public final class Level01Assembly {
         return Optional.empty();
     }
 
-    /** 该驻留板当前是否被占用（只读；走本装配自己的占用端口，与全局单例无关）。 */
+    /**
+     * 该驻留板当前是否被占用（只读；走本装配自己的占用端口，与全局单例无关）。
+     *
+     * <p><b>开关变体（{@code role=switch}）语义扩展</b>：L01-GATE-MERGE 后右板是锁存开关，
+     * 本方法对它返回「**占用 ∨ 本轮已锁存**」——人离开后仍为 {@code true}，直到轮末 {@code reset()}。
+     * 要问「现在是否有人站在上面」请用 {@code DockingPlate.getState()/getOccupantId()}，
+     * 要问「开关是否已开启」请用 {@code DockingPlate.isLatched()}。</p>
+     */
     public boolean isPlateOccupied(String plateId) {
         Objects.requireNonNull(plateId, "plateId");
         return occupancy.isOccupied(plateId);
@@ -335,13 +346,15 @@ public final class Level01Assembly {
                 : new RenderViews.Player(player.x(), player.y(), player.direction(),
                         player.movementState(), player.isPhaseDodging());
 
+        // L01-GATE-MERGE 投影契约（开发一 render 对接卡）：
+        // 左板 = PLATE/占用；右板 = SWITCH/**本轮锁存**（不是「当前是否有人站着」）；
+        // 第一关不再投影独立 DOOR —— 闸门与终点同格，开/关由 EXIT 的 active（exit.isDoorUnlocked()）表达；
+        // MechanismKind.DOOR 绘制分支保留给第二关起使用。
         List<RenderViews.Mechanism> mechanisms = List.of(
                 new RenderViews.Mechanism(leftPlate.getId(), leftPlate.getPosition().x(),
                         leftPlate.getPosition().y(), RenderViews.MechanismKind.PLATE, leftPlate.isOccupied()),
                 new RenderViews.Mechanism(rightPlate.getId(), rightPlate.getPosition().x(),
-                        rightPlate.getPosition().y(), RenderViews.MechanismKind.PLATE, rightPlate.isOccupied()),
-                new RenderViews.Mechanism(door.getId(), door.getPosition().x(),
-                        door.getPosition().y(), RenderViews.MechanismKind.DOOR, door.isUnlocked()),
+                        rightPlate.getPosition().y(), RenderViews.MechanismKind.SWITCH, rightPlate.isLatched()),
                 new RenderViews.Mechanism(exit.getId(), exit.getPosition().x(),
                         exit.getPosition().y(), RenderViews.MechanismKind.EXIT, exit.isDoorUnlocked()));
 

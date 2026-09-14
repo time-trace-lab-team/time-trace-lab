@@ -21,6 +21,11 @@ public final class RenderViews {
     /** 机关类别。 */
     public enum MechanismKind {
         PLATE,
+        /**
+         * {@code dock_plate} 的开关表现变体（关卡数据 {@code role=switch}），不是独立机关类型；
+         * README §五 / §七 的机关范围不因此变更。
+         */
+        SWITCH,
         DOOR,
         EXIT
     }
@@ -66,7 +71,7 @@ public final class RenderViews {
         }
     }
 
-    /** 驻留板 / 门 / 出口终端。 */
+    /** 驻留板 / 开关表现变体 / 门 / 出口终端。 */
     public record Mechanism(String id,
                             double x,
                             double y,
