@@ -335,3 +335,41 @@ W1/W4 已在 `mechanism/**`、`level/**` 及开发三测试范围内按本规格
 - `mechanism/ray/Ray.java`：删除 `RayManager` 后**已无任何引用者**（仅自引用）。它是 README 第五节的
   "时滞射线"机制实现，第二关需要它，故**暂不删除**；但它仍通过兼容单例注册事件，
   **Phase 2 删除单例前必须先决定"接线"还是"删除"**，否则会编译失败。
+
+---
+
+## 10. 共振复位边界与 R5-B 聚合端口结论（R5-B 冻结，2026-09-13）
+
+> 依据：`R5-B-聚合接口冻结-PM裁决.md` §四、§五。本节只冻结语义，不含实现细节。
+
+### 10.1 `ResonanceResetReason` 三值语义
+
+| 取值 | 触发时机 | 结果 |
+| --- | --- | --- |
+| `ROUND_END` | 普通轮末（非最终轮） | 轮内状态与边沿记忆全部清空，下一轮从 `DORMANT` 开始 |
+| `FULL_RESTART` | 整局从第一轮重新开始 | 同左（清除全部共振轮内状态） |
+| `SCENE_EXIT` | 退出关卡场景 | 同左（放弃本会话） |
+
+三条不变量：
+
+1. **三个原因的实现行为完全一致** —— `ResonanceStateMachine.reset(reason)` 不按原因分支
+   （只 `requireNonNull` + 清态）。区分的意义在**调用方语义**：聚合器与 app **不再**把
+   "场景退出"降级映射成 `FULL_RESTART`。
+2. **枚举按名字序列化、无 ordinal 依赖** —— 全仓 `ResonanceResetReason` 引用点极少
+   （枚举定义、`reset` 的 `requireNonNull`、javadoc、测试），**无 `ordinal()` / `values()` 用法**，
+   因此新增 `SCENE_EXIT` 是源码兼容变更。
+3. **取值集合与 `AutoDockResetReason` 对齐**（均为 `{ROUND_END, FULL_RESTART, SCENE_EXIT}`），
+   并有测试断言两者的常量名集合相等。
+
+### 10.2 R5-B 聚合端口结论：射线 / 中继 / 核心
+
+R5-B 交接文档提到"射线 / 中继 / 核心"是否需要各自快照端口。开发三按 live source 核对后的结论：
+
+| 机制 | 是否存在实现 | 端口结论 |
+| --- | --- | --- |
+| **射线** | `mechanism/ray/Ray.java` 存在但**零引用**，且已列入 BUG-002 Phase 2 删除清单（见 §9.6） | **不需要端口**。若第二关将来真要实现"时滞射线"，须重新立项并补端口提案；**不得让聚合器用具体类旁路** |
+| **中继**（`relay_i` / `relay_ii`） | **不存在实现类**（`mechanism/**` 下无 relay 相关文件） | **暂无端口需求**；实现时另开卡补第 6 个 typed port |
+| **核心**（`core` 机关） | **不存在实现类** | 同上 |
+
+补充：`ResonanceStateSnapshot` 覆盖的是**固定区域共振**（`DORMANT` / `ARMED` / `LATCHED` 等状态），
+**不覆盖**中继或核心 —— 后两者是否复用共振状态机，须在其实现时单独评估，**不得假定已被覆盖**。
