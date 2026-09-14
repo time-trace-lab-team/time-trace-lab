@@ -27,19 +27,11 @@ public class DockingPlate implements GameObserver {
     /** 锁存位：单向 {@code false -> true}，只由 {@link #reset()} / {@link #restore} 归零。 */
     private boolean latched = false;
 
-    /** 兼容构造器：占用注册表与事件总线都取全局单例（Phase 2 删除单例后不再保留）。 */
-    public DockingPlate(String id, Vector2D position) {
-        this(id, position, DockingPlateRegistry.getInstance(), EventDispatcher.getInstance());
-    }
-
-    /** 注入占用注册表；事件总线仍取兼容单例。新代码请用四参构造器。 */
-    public DockingPlate(String id, Vector2D position, DockingPlateOccupancyPort occupancy) {
-        this(id, position, occupancy, EventDispatcher.getInstance());
-    }
-
     /**
-     * 完全注入（推荐，BUG-002-LIFECYCLE Phase 1）：占用注册表与事件总线都由关卡装配持有，
+     * 完全注入（BUG-002-LIFECYCLE）：占用注册表与事件总线都由关卡装配持有，
      * 同一实例内的板 ID 必须唯一，场景切换/重开时随装配一起丢弃。默认<b>非锁存</b>。
+     *
+     * <p>Phase 2 起<b>不再提供</b>取全局单例的兼容构造器。</p>
      */
     public DockingPlate(String id,
                         Vector2D position,

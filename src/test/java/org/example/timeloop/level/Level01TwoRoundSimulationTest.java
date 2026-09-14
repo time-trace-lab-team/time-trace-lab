@@ -72,13 +72,6 @@ class Level01TwoRoundSimulationTest {
     private static final int ROUTE_GUARD_TICKS = 3000;
     private static final int LEFT_PLATE_DWELL_TICKS = 200;
 
-    @BeforeEach
-    @AfterEach
-    void clearGlobalMechanismState() {
-        EventDispatcher.getInstance().clear();
-        DockingPlateRegistry.getInstance().clear();
-    }
-
     @Test
     void level01IsSolvableInTwoRoundsUnderFreeMove() {
         Sim sim = new Sim(Level01Footsteps.build());
@@ -189,10 +182,16 @@ class Level01TwoRoundSimulationTest {
             EntitySpawnInfo exitInfo = entity("L01_exit_00");
             DoorInfo doorInfo = levelData.getDoors().get(0);
 
-            this.leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos());
-            this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos());
-            this.door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds());
-            this.exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId());
+            // BUG-002-LIFECYCLE Phase 2：本模拟器持有自己的注册表与事件总线实例，不读全局单例。
+            DockingPlateRegistry registry = new DockingPlateRegistry();
+            EventDispatcher bus = new EventDispatcher();
+
+            this.leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos(), registry, bus);
+            this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos(), registry, bus);
+            this.door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds(),
+                    registry, bus);
+            this.exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId(),
+                    ExitTerminal.interactRadiusForTileSize(levelData.getTileSize()), bus);
 
             this.clock = new RoundClock((int) levelData.getDurationTicks(), levelData.getMaxRounds());
             this.echoQueue = new EchoQueue(levelData.getEchoLifeL());
