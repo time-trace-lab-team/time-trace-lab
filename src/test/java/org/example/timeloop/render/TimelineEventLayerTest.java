@@ -99,6 +99,56 @@ class TimelineEventLayerTest {
         });
     }
 
+    @Test
+    void drawsRecordedRayDelayAsHourglassAndPreservesLaterDockStyle() throws Exception {
+        onFxThread(() -> {
+            Canvas canvas = new Canvas(WIDTH, HEIGHT);
+            TimelineEventLayer layer = new TimelineEventLayer(() -> List.of(
+                    new TimelineVisualEvent(1, 60, new Vector2D(80.0, 60.0), TimelineEventKind.RAY_DELAY, 30),
+                    event(TimelineEventKind.DOCK_ENTER, 120.0, 60.0)), WorldTransform.identity());
+
+            layer.render(canvas.getGraphicsContext2D(), WIDTH, HEIGHT, 0.0);
+            WritableImage image = canvas.snapshot(null, null);
+            int background = image.getPixelReader().getArgb(0, 0);
+
+            assertTrue(paintedPixels(image, 73, 53, 87, 67, background) > 0,
+                    "RAY_DELAY 应绘制非颜色专属的交叉沙漏标记");
+            assertTrue(image.getPixelReader().getArgb(120, 60) != background,
+                    "射线事件后续的 DOCK_ENTER 仍必须按原来的实心菱形绘制");
+            assertEquals(RenderPalette.INTERACTIVE.toString(),
+                    image.getPixelReader().getColor(120, 60).toString(),
+                    "RAY_DELAY 不能把射线颜色泄漏到后续驻留节点");
+        });
+    }
+
+    @Test
+    void rayDelayReprojectsItsWorldPositionWhenViewportTransformChanges() throws Exception {
+        onFxThread(() -> {
+            AtomicReference<WorldTransform> transform = new AtomicReference<>(WorldTransform.identity());
+            TimelineEventLayer layer = new TimelineEventLayer(
+                    () -> List.of(new TimelineVisualEvent(1, 60,
+                            new Vector2D(48.0, 48.0), TimelineEventKind.RAY_DELAY, 0)), transform::get);
+
+            Canvas firstCanvas = new Canvas(WIDTH, HEIGHT);
+            layer.render(firstCanvas.getGraphicsContext2D(), WIDTH, HEIGHT, 0.0);
+            WritableImage first = firstCanvas.snapshot(null, null);
+            int firstBackground = first.getPixelReader().getArgb(0, 0);
+            assertTrue(paintedPixels(first, 40, 40, 56, 56, firstBackground) > 0,
+                    "初始 RAY_DELAY 应绘制在世界坐标 (48,48) 附近");
+
+            transform.set(new WorldTransform(0.5, 100.0, 20.0));
+            Canvas updatedCanvas = new Canvas(WIDTH, HEIGHT);
+            layer.render(updatedCanvas.getGraphicsContext2D(), WIDTH, HEIGHT, 0.0);
+            WritableImage updated = updatedCanvas.snapshot(null, null);
+            int updatedBackground = updated.getPixelReader().getArgb(0, 0);
+
+            assertTrue(paintedPixels(updated, 116, 36, 132, 52, updatedBackground) > 0,
+                    "缩放后 RAY_DELAY 应投影到世界点 (124,44) 附近");
+            assertEquals(0, paintedPixels(updated, 40, 40, 56, 56, updatedBackground),
+                    "动态变换后不得遗留旧位置的 RAY_DELAY");
+        });
+    }
+
     private static TimelineVisualEvent event(TimelineEventKind kind, double x, double y) {
         return new TimelineVisualEvent(1, 60, new Vector2D(x, y), kind, 0);
     }
