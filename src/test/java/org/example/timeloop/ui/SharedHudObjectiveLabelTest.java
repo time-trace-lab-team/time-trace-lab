@@ -53,7 +53,7 @@ class SharedHudObjectiveLabelTest {
             assertEquals(levelOne.text(), hud.getObjectiveText(), "第一关目标文本写进共享 HUD");
 
             Level02ObjectiveViewModel levelTwo =
-                    new Level02ObjectiveViewModel(1, 4, false, false, -1, false, -1, false);
+                    new Level02ObjectiveViewModel(1, 4, false, false, -1, false, -1, false, false);
             hud.render(L2_CONTEXT, GamePhase.PLAYING, levelTwo.text());
 
             assertEquals(levelTwo.text(), hud.getObjectiveText(), "第二关目标文本写进共享 HUD");
@@ -74,7 +74,7 @@ class SharedHudObjectiveLabelTest {
             assertTrue(hud.getObjectiveText().contains("左板"), "夹具前提：第一关文案提到左板");
 
             Level02ObjectiveViewModel levelTwo =
-                    new Level02ObjectiveViewModel(1, 4, false, false, -1, false, -1, false);
+                    new Level02ObjectiveViewModel(1, 4, false, false, -1, false, -1, false, false);
             hud.render(L2_CONTEXT, GamePhase.PLAYING, levelTwo.text());
 
             assertTrue(levelTwo.text().contains("门外板"), "夹具前提：第二关文案提到门外板");

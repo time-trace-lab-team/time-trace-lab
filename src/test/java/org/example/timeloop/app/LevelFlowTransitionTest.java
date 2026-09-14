@@ -184,7 +184,7 @@ class LevelFlowTransitionTest {
         // 机关与射线都回到初始态，不带上一局的残留。
         assertEquals(Ray.State.OFF, l2.rays().get(0).getState(), "重开后射线回到周期起点 OFF");
         for (String plateId : List.of(Level02Corridor.PLATE_GATE, Level02Corridor.PLATE_RELAY,
-                Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_CORE)) {
+                Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_SWITCH)) {
             assertFalse(l2.isPlateOccupied(plateId), "重开后 " + plateId + " 不得残留占用");
         }
         assertEquals(Level02Corridor.cellCenter(1, 13), positionOf(flow.renderViews()),

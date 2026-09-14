@@ -53,6 +53,7 @@ import org.example.timeloop.ui.Level02ObjectiveViewModel;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -67,18 +68,22 @@ import java.util.TreeSet;
  * 同一个「可推进、可投影的关卡」来接线；差别只在关卡数据与机关数量：</p>
  *
  * <ul>
- *   <li><b>5 块普通驻留板</b>（{@code L02_plate_*}）：占即开、离即关，<b>不锁存</b>、无开关变体；</li>
+ *   <li><b>4 块普通驻留板 + 1 个锁存开关</b>（{@code L02_plate_*}）：普通板占即开、离即关，<b>不锁存</b>；
+ *       {@code L02_plate_switch} 在关卡数据里是 {@code role=switch}，装配时按 L1 的写法传
+ *       {@code latching=true} —— 踩上即锁存、离开不释放，本轮末才归零；</li>
  *   <li><b>3 扇门</b>：{@code L02_door_gate} 需闸板、{@code L02_door_relay} 需中继板、
- *       {@code L02_door_exit} 需内板 + 主板 + 终结板同刻被占；</li>
+ *       {@code L02_door_exit} 需内板 + 主板 + 锁存开关同时成立（开关锁存后不占 actor，
+ *       因此解锁那一刻只需要内板 + 主板有人压着 —— 场上最多 2 残影 + 1 玩家，刚好够）；</li>
  *   <li><b>多门阻挡</b>：{@link #isPassable} 遍历本关<b>全部</b>门 —— 任一未解锁且挡在目标节点即不可通行
  *       （{@link Level01Assembly} 只有一扇门，故那边只需查一扇）；</li>
  *   <li><b>1 束射线</b>（{@code L02_ray_01}）：由 {@link RayFactory} 装配，每逻辑刻用共享
  *       {@code roundTick} 驱动，不自建计时器。</li>
  * </ul>
  *
- * <p>渲染投影契约：5 个 {@code PLATE}、{@code L02_door_gate} / {@code L02_door_relay} 两个
- * {@code DOOR}、终点格<b>只投影一个</b> {@code EXIT}（终点闸 {@code L02_door_exit} 与出口终端同格，
- * 该格的开关状态由 {@code EXIT.active = exit.isDoorUnlocked()} 表达，避免同格叠画门与终点）。</p>
+ * <p>渲染投影契约：4 个 {@code PLATE} + 1 个 {@code SWITCH}（锁存开关）、
+ * {@code L02_door_gate} / {@code L02_door_relay} 两个 {@code DOOR}、终点格<b>只投影一个</b> {@code EXIT}
+ * （终点闸 {@code L02_door_exit} 与出口终端同格，该格的开关状态由
+ * {@code EXIT.active = exit.isDoorUnlocked()} 表达，避免同格叠画门与终点）。</p>
  */
 public final class Level02Assembly {
 
@@ -89,6 +94,27 @@ public final class Level02Assembly {
     private static final Direction PLAYER_SPAWN_DIRECTION = Direction.UP;
     /** 残影写入机关时的 actor 前缀：`echo_<sourceRound>`（机制侧冻结约定）。 */
     private static final String ECHO_ACTOR_ID_PREFIX = "echo_";
+
+    /**
+     * 属于「终点闸组」的板：与终点闸同色系（{@code RenderPalette.INTERACTIVE} 琥珀）。
+     *
+     * <p>同色即同组，所以这三块板<b>不带</b>数字角标；差异只表示「这块板喂给终点闸 D3」。</p>
+     */
+    private static final Set<String> GATE_GROUP_PLATES = Set.of(
+            Level02Corridor.PLATE_INNER, Level02Corridor.PLATE_MAIN, Level02Corridor.PLATE_SWITCH);
+
+    /** 数字角标：只给开门组 —— 板与它作用的那扇门共用一个数字。 */
+    private static final Map<String, String> TAG_BY_PLATE = Map.of(
+            Level02Corridor.PLATE_GATE, "1",    // P1 → D1
+            Level02Corridor.PLATE_RELAY, "2");  // P2 → D2
+
+    /** D1 外闸的角标（与 {@link #TAG_BY_PLATE} 里的 P1 同号）。 */
+    private static final String TAG_DOOR_GATE = "1";
+    /** D2 内室门的角标（与 {@link #TAG_BY_PLATE} 里的 P2 同号）。 */
+    private static final String TAG_DOOR_RELAY = "2";
+
+    /** 开关表现变体（关卡数据 {@code role=switch}）：渲染投影成 {@code SWITCH}，{@code active} 取锁存位。 */
+    private static final Set<String> SWITCH_VARIANT_PLATES = Set.of(Level02Corridor.PLATE_SWITCH);
 
     /** 判定「是否已走到驻留机关中心」的容差（世界单位）。 */
     private static final double DOCK_CENTER_EPSILON = 1e-6;
@@ -106,13 +132,14 @@ public final class Level02Assembly {
     private final RecordingSession recording;
     private final ReplayPort replayPort;
 
-    /** 五块普通驻留板（顺序 = 渲染投影顺序）。 */
+    /** 五块驻留板（顺序 = 渲染投影顺序）：四块普通板 + 一个锁存开关。 */
     private final List<DockingPlate> plates;
     private final DockingPlate gatePlate;
     private final DockingPlate relayPlate;
     private final DockingPlate innerPlate;
     private final DockingPlate mainPlate;
-    private final DockingPlate corePlate;
+    /** 锁存开关 {@code L02_plate_switch}（关卡数据 {@code role=switch}）→ {@code latching=true}。 */
+    private final DockingPlate switchPlate;
 
     /** 三扇门（顺序 = 渲染投影顺序：闸门、内室门、终点闸）。 */
     private final List<Door> doors;
@@ -160,13 +187,13 @@ public final class Level02Assembly {
         this.occupancy = new DockingPlateRegistry();
         this.eventBus = new EventDispatcher();
 
-        // 五块板都是普通驻留板（dock_plate + autoDock=true，无 role=switch）→ 不传 latching。
+        // 四块普通板（占即开、离即关）；开关板按关卡数据的 role=switch 拿到 latching=true（本轮内锁存）。
         this.gatePlate = createPlate(Level02Corridor.PLATE_GATE);
         this.relayPlate = createPlate(Level02Corridor.PLATE_RELAY);
         this.innerPlate = createPlate(Level02Corridor.PLATE_INNER);
         this.mainPlate = createPlate(Level02Corridor.PLATE_MAIN);
-        this.corePlate = createPlate(Level02Corridor.PLATE_CORE);
-        this.plates = List.of(gatePlate, relayPlate, innerPlate, mainPlate, corePlate);
+        this.switchPlate = createPlate(Level02Corridor.PLATE_SWITCH);
+        this.plates = List.of(gatePlate, relayPlate, innerPlate, mainPlate, switchPlate);
 
         this.gateDoor = createDoor(Level02Corridor.DOOR_GATE);
         this.relayDoor = createDoor(Level02Corridor.DOOR_RELAY);
@@ -249,7 +276,9 @@ public final class Level02Assembly {
      * <p>第二关有五块板，本关用得到的字段是：外闸板（{@code L02_plate_gate}）对应
      * {@code outerPlateHeld}、{@code L02_plate_inner} 对应 {@code innerPlateHeld}、
      * {@code L02_plate_main} 对应 {@code mainPlateHeld}，闸门状态对应 {@code gateUnlocked}；
-     * 中继板 / 终结板的进度已经体现在「闸门是否解锁」与残影代际（{@code E<n>}）上。
+     * {@code L02_plate_switch} 是<b>锁存开关</b>，因此喂给 VM 的是 {@link DockingPlate#isLatched()}
+     * （「本轮是否已触发」），而不是「此刻是否有人站着」—— 锁存后即使人已离开，该条件依然成立。
+     * 中继板 / 开关的进度已经体现在「闸门是否解锁」与残影代际（{@code E<n>}）上。
      * 本方法只做只读投影，不推进任何状态，也不在 L1 的 VM 里做关卡分支。</p>
      */
     public Level02ObjectiveViewModel objectiveView() {
@@ -261,6 +290,7 @@ public final class Level02Assembly {
                 sourceRoundOrNone(innerPlate),
                 mainPlate.isOccupied(),
                 sourceRoundOrNone(mainPlate),
+                switchPlate.isLatched(),
                 exitDoor.isUnlocked());
     }
 
@@ -328,9 +358,12 @@ public final class Level02Assembly {
     }
 
     /**
-     * 该驻留板当前是否被占用（只读；走本装配自己的占用端口，与全局单例无关）。
+     * 该驻留板当前是否满足「门条件」（只读；走本装配自己的占用端口，与全局单例无关）。
      *
-     * <p>第二关五块板都是普通驻留板（不锁存），因此本方法就是「此刻是否有人（玩家 / 残影）站在上面」。</p>
+     * <p>四块普通板就是「此刻是否有人站着」；锁存开关（{@code L02_plate_switch}）按机制契约
+     * <b>把锁存位并入判定</b>：踩过之后即使人已离开，本方法仍返回 {@code true}。
+     * 要问「此刻是否真有人站在开关上」请用 {@code dockingPlate(id).getState()}，
+     * 要问「开关是否已触发」请用 {@code dockingPlate(id).isLatched()}。</p>
      */
     public boolean isPlateOccupied(String plateId) {
         Objects.requireNonNull(plateId, "plateId");
@@ -402,9 +435,14 @@ public final class Level02Assembly {
     /**
      * 只读渲染视图（零回写）。
      *
-     * <p>投影契约：5 个 {@code PLATE} + {@code L02_door_gate} / {@code L02_door_relay} 两个
+     * <p>投影契约：4 个 {@code PLATE}（P1 / P2 / P3 / P4）+ 1 个 {@code SWITCH}（锁存开关，
+     * {@code active = switchPlate.isLatched()}）+ {@code L02_door_gate} / {@code L02_door_relay} 两个
      * {@code DOOR} + 终点格一个 {@code EXIT}。终点闸 {@code L02_door_exit} 与出口终端同格，
      * 该格<b>不</b>再投影 {@code DOOR}（同格叠画会互相遮挡），开/关由 {@code EXIT.active} 表达。</p>
+     *
+     * <p>「闸链」符号投影：开门的板与它作用的那扇门共用数字角标（{@code PLATE_GATE}/D1 = 1、
+     * {@code PLATE_RELAY}/D2 = 2）；作用于终点闸的板（{@code GATE_GROUP_PLATES}，含锁存开关）
+     * 用终点闸同族色系；终点闸格只投影一个不带角标的 {@code EXIT}（同色即同组，不需要数字）。</p>
      */
     public RenderViews.Frame renderViews() {
         PlayerFrame player = lastFrame;
@@ -416,13 +454,22 @@ public final class Level02Assembly {
 
         List<RenderViews.Mechanism> mechanisms = new ArrayList<>();
         for (DockingPlate p : plates) {
+            boolean switchVariant = SWITCH_VARIANT_PLATES.contains(p.getId());
+            // 开关的 active 是「本轮是否已锁存」（不是「此刻是否有人站着」），与 L1 右板同义。
             mechanisms.add(new RenderViews.Mechanism(p.getId(), p.getPosition().x(),
-                    p.getPosition().y(), RenderViews.MechanismKind.PLATE, p.isOccupied()));
+                    p.getPosition().y(),
+                    switchVariant ? RenderViews.MechanismKind.SWITCH : RenderViews.MechanismKind.PLATE,
+                    switchVariant ? p.isLatched() : p.isOccupied(),
+                    TAG_BY_PLATE.get(p.getId()),
+                    GATE_GROUP_PLATES.contains(p.getId())));
         }
         mechanisms.add(new RenderViews.Mechanism(gateDoor.getId(), gateDoor.getPosition().x(),
-                gateDoor.getPosition().y(), RenderViews.MechanismKind.DOOR, gateDoor.isUnlocked()));
+                gateDoor.getPosition().y(), RenderViews.MechanismKind.DOOR, gateDoor.isUnlocked(),
+                TAG_DOOR_GATE, false));
         mechanisms.add(new RenderViews.Mechanism(relayDoor.getId(), relayDoor.getPosition().x(),
-                relayDoor.getPosition().y(), RenderViews.MechanismKind.DOOR, relayDoor.isUnlocked()));
+                relayDoor.getPosition().y(), RenderViews.MechanismKind.DOOR, relayDoor.isUnlocked(),
+                TAG_DOOR_RELAY, false));
+        // 终点闸与出口同格：仍然只投影一个 EXIT，不带角标。
         mechanisms.add(new RenderViews.Mechanism(exit.getId(), exit.getPosition().x(),
                 exit.getPosition().y(), RenderViews.MechanismKind.EXIT, exit.isDoorUnlocked()));
 
@@ -551,7 +598,7 @@ public final class Level02Assembly {
      * 多门通行判定：<b>遍历本关全部门</b> —— 只要有一扇门未解锁且挡在目标节点，该出口就不可通行。
      *
      * <p>{@link Level01Assembly#isPassable} 只查一扇门（第一关只有一扇）；第二关三扇门互不影响：
-     * 闸板只开外闸、中继板只开内室门、三块板同刻被占才开终点闸。</p>
+     * 闸板只开外闸、中继板只开内室门、内板 + 主板 + 锁存开关同时成立才开终点闸。</p>
      */
     private boolean isPassable(PathNode from, PathExit exitEdge, PathNode target) {
         Vector2D targetCenter = new Vector2D(target.center().x(), target.center().y());
@@ -711,8 +758,10 @@ public final class Level02Assembly {
 
     private DockingPlate createPlate(String plateId) {
         EntitySpawnInfo info = entity(plateId);
-        // 第二关五块板都是普通驻留板（关卡数据无 role=switch）→ 一律不锁存。
-        return new DockingPlate(info.getId(), info.getPos(), occupancy, eventBus);
+        // 与 L1 同构：关卡数据 role=switch → 本轮内锁存（踩上即锁存、离开不释放）。
+        // 不接线的话开关离开就弹起，终点闸在解锁那一刻会当场回锁，本关直接无解。
+        boolean latching = "switch".equals(info.getProperties().get("role"));
+        return new DockingPlate(info.getId(), info.getPos(), occupancy, eventBus, latching);
     }
 
     private Door createDoor(String doorId) {

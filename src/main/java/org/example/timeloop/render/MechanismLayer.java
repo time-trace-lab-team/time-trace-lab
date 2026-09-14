@@ -1,10 +1,14 @@
 package org.example.timeloop.render;
 
+import javafx.geometry.VPos;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.CycleMethod;
 import javafx.scene.paint.RadialGradient;
 import javafx.scene.paint.Stop;
+import javafx.scene.text.Font;
+import javafx.scene.text.FontWeight;
+import javafx.scene.text.TextAlignment;
 
 import java.util.Objects;
 import java.util.function.Supplier;
@@ -15,6 +19,10 @@ import java.util.function.Supplier;
  * <p>状态来自只读 {@link RenderViews.Frame}；渲染不写回机关状态。
  * 每个机关有自己的底色（板蓝、门红、终端琥珀），激活时满色并加光晕，
  * 未激活时退成灰蓝轮廓 —— 状态不只靠颜色区分。</p>
+ *
+ * <p>第二关「闸链」改版后驻留板分两组色系：作用于终点闸的板（{@link RenderViews.Mechanism#gateGroup()}）
+ * 用与终点闸同族的琥珀，其余仍为板蓝；带 {@link RenderViews.Mechanism#tag()} 的机关额外画一个
+ * 数字角标，把「板 ↔ 它作用的那扇门」关联起来。两者都只影响显示。</p>
  */
 public final class MechanismLayer implements RenderLayer {
 
@@ -47,11 +55,12 @@ public final class MechanismLayer implements RenderLayer {
             double cy = transform.toCanvasY(mechanism.y());
 
             switch (mechanism.kind()) {
-                case PLATE -> drawPlate(gc, cx, cy, size, mechanism.active());
+                case PLATE -> drawPlate(gc, cx, cy, size, mechanism.active(), mechanism.gateGroup());
                 case SWITCH -> drawSwitch(gc, cx, cy, size, mechanism.active());
                 case DOOR -> drawDoor(gc, cx, cy, size, mechanism.active());
                 case EXIT -> drawExit(gc, cx, cy, size, mechanism.active());
             }
+            drawTag(gc, cx, cy, size, mechanism);   // 有 tag 才画
         }
     }
 
@@ -64,15 +73,25 @@ public final class MechanismLayer implements RenderLayer {
         return () -> fixed;
     }
 
-    /** 驻留板：圆角方 + 内框；激活时蓝色实心带光晕。 */
-    private void drawPlate(GraphicsContext gc, double cx, double cy, double size, boolean active) {
+    /**
+     * 驻留板：圆角方 + 内框；激活时实心带光晕。
+     *
+     * <p>取色按组二选一（闸链改版）：{@code gateGroup=true} 的板（作用于终点闸的 P3 / P4）用与终点闸
+     * 同族的 {@link RenderPalette#INTERACTIVE} 琥珀；其余板用 {@link RenderPalette#PLATE} 蓝。
+     * 每组内部仍然只用色相区分「喂给哪扇门」，开/关仍由明度与光晕表达。</p>
+     */
+    private void drawPlate(GraphicsContext gc, double cx, double cy, double size,
+                           boolean active, boolean gateGroup) {
+        // 终点闸组用与终点闸同一族的琥珀色，一眼看出「这块板喂给谁」
+        Color base = gateGroup ? RenderPalette.INTERACTIVE : RenderPalette.PLATE;
+        Color edge = gateGroup ? Color.web("#ffe9b8") : RenderPalette.PLATE_EDGE;
         double s = size * 0.42;
         if (active) {
-            glow(gc, cx, cy, size * 1.6, RenderPalette.PLATE, 0.45);
+            glow(gc, cx, cy, size * 1.6, base, 0.45);
         }
-        gc.setFill(active ? RenderPalette.PLATE : fade(RenderPalette.PLATE, 0.18));
+        gc.setFill(active ? base : fade(base, 0.18));
         gc.fillRoundRect(cx - s, cy - s, s * 2, s * 2, 8, 8);
-        gc.setStroke(active ? RenderPalette.PLATE_EDGE : fade(RenderPalette.PLATE, 0.45));
+        gc.setStroke(active ? edge : fade(base, 0.45));
         gc.setLineWidth(4.0);
         gc.strokeRoundRect(cx - s, cy - s, s * 2, s * 2, 8, 8);
         if (active) {
@@ -80,6 +99,44 @@ public final class MechanismLayer implements RenderLayer {
             gc.setLineWidth(2.0);
             gc.strokeRoundRect(cx - s * 0.5, cy - s * 0.5, s, s, 4, 4);
         }
+    }
+
+    /**
+     * 数字角标：驻留板画在板心，门/出口画在本格右下角。无 {@code tag} 直接返回。
+     *
+     * <p>所有偏移都按 {@code size}（图层传入的图标尺寸）的比例算：角标中心最多到
+     * {@code cx + size × 0.30}、半径 {@code size × 0.20}，而 {@code size = tileSize × 0.8}，
+     * 因此角标必然落在本格（{@code tileSize}）内，不会盖到邻格。</p>
+     */
+    private void drawTag(GraphicsContext gc, double cx, double cy, double size,
+                         RenderViews.Mechanism m) {
+        if (m.tag() == null) {
+            return;
+        }
+        boolean badge = m.kind() == RenderViews.MechanismKind.DOOR
+                     || m.kind() == RenderViews.MechanismKind.EXIT;
+        Color base = m.gateGroup() ? RenderPalette.INTERACTIVE : RenderPalette.PLATE;
+        Color ink  = m.gateGroup() ? Color.web("#2b1f00")        : Color.web("#eaf3ff");
+
+        double bx = badge ? cx + size * 0.30 : cx;   // 角标贴本格右下
+        double by = badge ? cy + size * 0.30 : cy;
+        if (badge) {
+            gc.setFill(base);
+            gc.fillOval(bx - size * 0.20, by - size * 0.20, size * 0.40, size * 0.40);
+            gc.setStroke(RenderPalette.PLATE_EDGE);
+            gc.setLineWidth(1.4);
+            gc.strokeOval(bx - size * 0.20, by - size * 0.20, size * 0.40, size * 0.40);
+        } else {
+            gc.setFill(base.darker());
+            gc.fillOval(bx - size * 0.12, by - size * 0.12, size * 0.24, size * 0.24);
+        }
+        gc.setFill(ink);
+        gc.setFont(Font.font("Microsoft YaHei", FontWeight.BOLD, size * 0.34));
+        gc.setTextAlign(TextAlignment.CENTER);
+        gc.setTextBaseline(VPos.CENTER);
+        gc.fillText(m.tag(), bx, by);
+        gc.setTextAlign(TextAlignment.LEFT);
+        gc.setTextBaseline(VPos.BASELINE);
     }
 
     /**
