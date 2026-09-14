@@ -8,9 +8,18 @@
 
 ## 一、交付物
 
-1. **渲染列表（`Level01Assembly.renderViews()`）**：
-   - 开关对应的 `RenderViews.Mechanism` 用 `MechanismKind.SWITCH`（依赖开发一的枚举）；
-   - **移除**第一关的 `MechanismKind.DOOR` 条目（门不再有独立门体；闸门外观由 EXIT 的 `active` 表达）。
+1. **渲染列表（`Level01Assembly.renderViews()`）** —— 与开发一 render 对接卡（2026-09-14）**逐字一致**，
+   结构不变（`new RenderViews.Mechanism(id, x, y, kind, active)`）：
+
+   | 图层条目 | `kind` | `active` 来源 |
+   | --- | --- | --- |
+   | 左驻留板 | `PLATE` | `leftPlate.isOccupied()` |
+   | 右驻留板（开关） | **`SWITCH`**（依赖开发一新增枚举） | **`rightPlate.isLatched()`**（开发三新增读接口，见其卡 §2.3.1） |
+   | 门 | —— | **第一关不再投影 DOOR 条目**（`DOOR` 绘制分支保留给第二关起） |
+   | 终点（闸门） | `EXIT` | `exit.isDoorUnlocked()` |
+
+   - **禁止**用「当前占用」顶替开关的锁存 ON：玩家/残影离开后开关必须保持 ON 到轮末 `reset()`；
+   - 若开发三尚未交付 `isLatched()`，**等**，不要先用 `isOccupied()` 占位（会产生错误的视觉语义）。
 2. **`objectiveView()`**：字段不变；确认 `doorUnlocked` 语义为「闸门是否已解锁」，右板字段语义为「开关是否被激活」
    （必要时更新 javadoc，不动 `ObjectiveViewModel` 结构 —— 结构属 `ui/**`，开发三）。
 3. **`isPassable()`**：保留门的阻挡（现在挡的是**闸门自己那一格**，可见合理），
