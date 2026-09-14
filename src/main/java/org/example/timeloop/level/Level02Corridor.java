@@ -62,6 +62,22 @@ public final class Level02Corridor {
     public static final long R2_INNER_ARRIVAL = 276L;
     public static final long R1_MAIN_ARRIVAL = 684L;
 
+    // ---- L2-B：短射线走廊（裁决 §二「短射线走廊（保留）」；卡 §三）----
+    /** 射线机制 ID（`ray` 类型词，符合稳定 ID 规范）。 */
+    public static final String RAY_CORRIDOR = "L02_ray_01";
+    /** 竖直判定线所在世界 x（第 8/9 格之间，玩家沿主走廊往返时必然穿过）。 */
+    public static final double RAY_X = 9.0 * TILE_SIZE;
+    /** 预警起点（共享 roundTick 内的偏移）。 */
+    public static final long RAY_WARNING_START_TICK = 0L;
+    /** 预警时长：72 刻 = 1.2 s（README §三：1.0–1.4 s）。 */
+    public static final long RAY_WARNING_DURATION_TICKS = 72L;
+    /** 激活起点 = 预警终点。 */
+    public static final long RAY_ACTIVE_START_TICK = 72L;
+    /** 激活时长：60 刻 = 1.0 s（README §三：0.8–1.2 s）。 */
+    public static final long RAY_ACTIVE_DURATION_TICKS = 60L;
+    /** 判定宽度：0.20 × tileSize（README §三：0.18–0.25 × tileSize）。 */
+    public static final double RAY_HIT_WIDTH = 0.20 * TILE_SIZE;
+
     public static LevelData build() {
         return new LevelData(
                 TILE_SIZE,
@@ -118,6 +134,17 @@ public final class Level02Corridor {
         entities.add(new EntitySpawnInfo(PLATE_MAIN, "dock_plate", cellCenter(13, 11), NODE_PLATE_MAIN)
                 .putProp("autoDock", true));
         entities.add(new EntitySpawnInfo(EXIT, "exit_terminal", cellCenter(16, 11), NODE_EXIT));
+
+        // L2-B：一束低风险时滞射线，竖直跨在主走廊第 8/9 格之间（玩家去闸门必然穿过）。
+        // 端点只有机制语义；遮挡与绘制由 render（开发一）与 app 负责。
+        entities.add(new EntitySpawnInfo(RAY_CORRIDOR, "ray",
+                new Vector2D(RAY_X, 10.5 * TILE_SIZE), "L02_node_c9_r11")
+                .putProp("endX", RAY_X)
+                .putProp("endY", 12.5 * TILE_SIZE)
+                .putProp("warningStartTick", RAY_WARNING_START_TICK)
+                .putProp("warningDurationTicks", RAY_WARNING_DURATION_TICKS)
+                .putProp("activeStartTick", RAY_ACTIVE_START_TICK)
+                .putProp("activeDurationTicks", RAY_ACTIVE_DURATION_TICKS));
         return entities;
     }
 
