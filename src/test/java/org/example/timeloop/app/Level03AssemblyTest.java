@@ -35,7 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li><b>渲染投影</b>：4 块板（A/B/C 蓝底带 1/2/3 号）+ 2 个开关（S₂/S₃，琥珀胶囊）+
  *       3 扇门（各带同号角标）+ 1 个出口；终点格（{@code L03_door_exit} 与出口同格）<b>只</b>投影一个
  *       {@code EXIT}，不叠一个 {@code DOOR}，且终点组一律不带数字；</li>
- *   <li><b>射线随共享 {@code roundTick} 推进</b>：v3 的射线初相是 600（预警 528、周期 660）；</li>
+ *   <li><b>射线随共享 {@code roundTick} 推进</b>：射线周期 396（OFF 264 / 预警 72 / 激活 60），
+ *       绝对锚点仍是 预警起 528、激活起 600；</li>
  *   <li><b>{@code objectiveView()} 在真实玩法状态下不得抛异常</b>：玩家已进 E₂ 支路而门 A 早已回锁，
  *       是第三关必然出现的合法局面 —— 这里用<b>真驾驶</b>复现，而不是拼一个 VM 参数；</li>
  *   <li><b>官方解第一轮的顺序路线</b>（A → C → K）玩家真走到时三块板都必须占板（上一张任务卡的回归）；</li>
@@ -190,19 +191,24 @@ class Level03AssemblyTest {
             tick++;
         }
 
-        // 关键刻（v3 冻结 + 周期原点口径）逐点钉死，避免整段循环「恰好自洽」。
-        assertEquals(600L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = E₂ 抵达射线刻");
-        assertEquals(528L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点");
-        assertEquals(528L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 段长度（v3 设计文档：周期 660）");
-        assertEquals(660L, Level03Pursuit.RAY_CYCLE_TICKS,
-                "周期 = OFF 528 + 预警 72 + 激活 60");
-        assertEquals(0L, Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
-                "v3 的绝对刻与周期内刻一一对应（预警 528 / 激活 600 就是绝对刻）");
+        // 关键刻（当前冻结 + 周期原点口径）逐点钉死，避免整段循环「恰好自洽」。
+        assertEquals(264L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 段长度 528 减半 → 264");
+        assertEquals(264L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点 = OFF 段长度");
+        assertEquals(336L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = 264 + 72");
+        assertEquals(396L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = OFF 264 + 预警 72 + 激活 60");
+        assertEquals(264L, Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
+                "周期缩短后相位与绝对刻不再一一对应：原点 = 600 − 336");
+        assertEquals(528L, Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK,
+                "绝对预警起点必须仍是 528（教学锚点不随周期变化）");
+        assertEquals(600L, Level03Pursuit.RAY_ACTIVE_START_ABSOLUTE_TICK,
+                "绝对激活起点必须仍是 600");
+        assertEquals(Level03Pursuit.RAY_CROSS_TICK, Level03Pursuit.RAY_ACTIVE_START_ABSOLUTE_TICK,
+                "刻表锚点：E₂ 抵达射线那一刻恰好是 ACTIVE 起点（否则「必须下潜」不成立）");
         assertEquals(Level03Pursuit.RAY_ACTIVE_START_TICK, Level03Pursuit.RAY_CROSS_PHASE,
-                "刻表锚点 600 必须恰好落在 ACTIVE 起点（否则「必须下潜」不成立）");
+                "抵达刻在周期内的相位必须等于周期内激活起点");
         assertTrue(expectedRayActive(600L), "update(600) 必须落在 ACTIVE 段内（刻表前提）");
         assertFalse(expectedRayActive(599L), "update(599) 还在预警段，不是 ACTIVE");
-        assertFalse(expectedRayActive(660L), "刻 660 是下一周期起点，不再是 ACTIVE");
+        assertFalse(expectedRayActive(660L), "刻 660 是激活结束刻，不再是 ACTIVE");
         assertFalse(expectedRayActive(528L), "刻 528 是预警起点，不是 ACTIVE");
     }
 

@@ -244,7 +244,7 @@ public final class Level03Pursuit {
     public static final long DOOR_A_CROSS_TICK = SPAWN_TO_DOOR_A_TICKS;
     /** 第二轮 / 第三轮玩家抵达分岔口 J 的刻。 */
     public static final long FORK_ARRIVAL = DOOR_A_CROSS_TICK + DOOR_A_TO_FORK_TICKS;
-    /** E₂ 抵达射线的刻：射线此时<b>必须 ACTIVE</b>（＝ {@link #RAY_ACTIVE_START_TICK}）。 */
+    /** E₂ 抵达射线的刻：射线此时<b>必须 ACTIVE</b>（＝ {@link #RAY_ACTIVE_START_ABSOLUTE_TICK}）。 */
     public static final long RAY_CROSS_TICK = FORK_ARRIVAL + FORK_TO_RAY_TICKS;
     /** E₁ 抵达 C 板、门 C 开启的刻。 */
     public static final long PLATE_C_ARRIVAL = GATE_A_WINDOW_END + PLATE_A_TO_C_TICKS;
@@ -328,29 +328,54 @@ public final class Level03Pursuit {
     /**
      * 关闭（OFF）时长：一个周期里射线不发射的刻数。
      *
-     * <p>与「预警 + 激活」共同决定发射频率：周期 = OFF + 预警 + 激活。v3 设计文档冻结
-     * 「预警起 528、激活起 600、周期 660」，因此 OFF = 528。</p>
+     * <p>与「预警 + 激活」共同决定发射频率：周期 = OFF + 预警 + 激活 = 264 + 72 + 60 = 396。
+     * 关闭段由 528 减半到 264，射线发射间隔 11.0 s → 6.6 s（频率约 1.67×）；
+     * <b>预警 72 / 激活 60 不变</b>，两个教学锚点的<b>绝对刻</b>
+     * （{@link #RAY_WARNING_START_ABSOLUTE_TICK}=528、{@link #RAY_ACTIVE_START_ABSOLUTE_TICK}=600）
+     * 也保持不变 —— 缩短的只有「不发射的等待」。</p>
      */
-    public static final long RAY_OFF_DURATION_TICKS = 528L;
+    public static final long RAY_OFF_DURATION_TICKS = 264L;
     /** 预警时长：72 刻 ≥ 24–30 刻反应预算 + 6–10 刻输入缓冲（设定书 §6.4）。 */
     public static final long RAY_WARNING_DURATION_TICKS = 72L;
     /** 激活时长。 */
     public static final long RAY_ACTIVE_DURATION_TICKS = 60L;
-    /** 周期内预警起点（数值上等于 OFF 段长度）= 528；v3 里它同时就是绝对预警起点。 */
+    /**
+     * 周期内预警起点（数值上等于 OFF 段长度）= 264。
+     *
+     * <p>注意：周期缩短后它与绝对刻不再相等，绝对预警起点见
+     * {@link #RAY_WARNING_START_ABSOLUTE_TICK}。</p>
+     */
     public static final long RAY_WARNING_START_TICK = RAY_OFF_DURATION_TICKS;
-    /** 周期内激活起点 = 预警起点 + 预警时长 = 600（= E₂ 抵达射线的刻）。 */
+    /** 周期内激活起点 = 预警起点 + 预警时长 = 336。 */
     public static final long RAY_ACTIVE_START_TICK = RAY_WARNING_START_TICK + RAY_WARNING_DURATION_TICKS;
-    /** 一个完整周期 = OFF + 预警 + 激活 = 528 + 72 + 60 = 660；状态只由共享 {@code roundTick} 决定。 */
+    /** 一个完整周期 = OFF + 预警 + 激活 = 264 + 72 + 60 = 396；状态只由共享 {@code roundTick} 决定。 */
     public static final long RAY_CYCLE_TICKS = RAY_OFF_DURATION_TICKS
             + RAY_WARNING_DURATION_TICKS + RAY_ACTIVE_DURATION_TICKS;
     /**
      * 周期原点：使绝对刻 {@link #RAY_CROSS_TICK}（玩家抵达射线那一刻）恰好落在 ACTIVE 段内。
      *
      * <p>反推依据：{@code floorMod(RAY_CROSS_TICK − RAY_CYCLE_OFFSET_TICKS, RAY_CYCLE_TICKS)
-     * == RAY_ACTIVE_START_TICK}。v3 的绝对刻与周期内刻一一对应（预警起点 528、激活起点 600），
-     * 因此原点 = 600 − 600 = 0；写成差值形式是为了以后改锚点时自动跟着走。</p>
+     * == RAY_ACTIVE_START_TICK}。周期缩短到 396 后，相位与绝对刻不再一一对应，
+     * 原点 = 600 − 336 = 264；写成差值形式是为了以后改周期或改锚点时自动跟着走。</p>
      */
     public static final long RAY_CYCLE_OFFSET_TICKS = RAY_CROSS_TICK - RAY_ACTIVE_START_TICK;
+    /**
+     * 预警起点的<b>绝对刻</b>（周期内起点 + 周期原点）= 264 + 264 = 528。
+     *
+     * <p>教学锚点：该刻起屏幕上出现预警，正好是玩家走进 B 支路时；<b>改周期时它不变</b>。</p>
+     */
+    public static final long RAY_WARNING_START_ABSOLUTE_TICK =
+            RAY_WARNING_START_TICK + RAY_CYCLE_OFFSET_TICKS;
+    /**
+     * 激活起点的<b>绝对刻</b> = 336 + 264 = 600 = {@link #RAY_CROSS_TICK}。
+     *
+     * <p>教学锚点：E₂ 抵达射线那一刻必须恰好是 ACTIVE 起点，否则「必须按下 Space 下潜」不成立；<b>改周期时它不变</b>。</p>
+     */
+    public static final long RAY_ACTIVE_START_ABSOLUTE_TICK =
+            RAY_ACTIVE_START_TICK + RAY_CYCLE_OFFSET_TICKS;
+    /** 激活结束（回到 OFF）的<b>绝对刻</b> = 600 + 60 = 660。 */
+    public static final long RAY_ACTIVE_END_ABSOLUTE_TICK =
+            RAY_ACTIVE_START_ABSOLUTE_TICK + RAY_ACTIVE_DURATION_TICKS;
     /** 抵达射线时刻在周期内的相位（夹具前提：必须落在 [activeStart, activeStart+activeDuration)）。 */
     public static final long RAY_CROSS_PHASE =
             Math.floorMod(RAY_CROSS_TICK - RAY_CYCLE_OFFSET_TICKS, RAY_CYCLE_TICKS);

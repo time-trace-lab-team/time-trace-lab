@@ -208,11 +208,14 @@ class Level03PursuitGeometryTest {
     void rayPhaseMakesE2ArrivalFallInsideTheActiveWindow() {
         assertEquals(72L, Level03Pursuit.RAY_WARNING_DURATION_TICKS, "预警 72 刻");
         assertEquals(60L, Level03Pursuit.RAY_ACTIVE_DURATION_TICKS, "激活 60 刻");
-        assertEquals(600L, Level03Pursuit.RAY_ACTIVE_START_TICK, "激活起点 = E₂ 抵射线刻");
-        assertEquals(528L, Level03Pursuit.RAY_WARNING_START_TICK, "预警起点 = 600 − 72");
-        assertEquals(660L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = 528 + 72 + 60");
-        assertEquals(Level03Pursuit.RAY_CROSS_TICK, Level03Pursuit.RAY_ACTIVE_START_TICK,
-                "E₂ 抵达刻就是激活起点");
+        assertEquals(264L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 264 刻（528 减半）");
+        assertEquals(336L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = 264 + 72");
+        assertEquals(264L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点 = OFF 段长度");
+        assertEquals(396L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = 264 + 72 + 60");
+        assertEquals(Level03Pursuit.RAY_CROSS_TICK, Level03Pursuit.RAY_ACTIVE_START_ABSOLUTE_TICK,
+                "E₂ 抵达刻（600）就是绝对激活起点");
+        assertEquals(528L, Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK,
+                "绝对预警起点仍是 528（教学锚点不随周期变化）");
         long phase = Level03Pursuit.RAY_CROSS_PHASE;
         assertTrue(phase >= Level03Pursuit.RAY_ACTIVE_START_TICK
                         && phase < Level03Pursuit.RAY_ACTIVE_START_TICK

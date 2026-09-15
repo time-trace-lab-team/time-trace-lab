@@ -213,12 +213,11 @@ class Level03PursuitChainTest {
         assertEquals(Ray.State.ACTIVE, ray.getState(),
                 "E₂ 抵射线那一刻射线必须 ACTIVE（初相 = " + Level03Pursuit.RAY_CROSS_PHASE + "）");
         assertEquals(Ray.State.WARNING,
-                rayAt(Level03Pursuit.RAY_WARNING_START_TICK + 1).getState(),
+                rayAt(Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK + 1).getState(),
                 "预警段必须出现在抵达之前，玩家才有 72 刻反应时间");
-        assertEquals(Ray.State.OFF, rayAt(Level03Pursuit.RAY_WARNING_START_TICK - 1).getState(),
+        assertEquals(Ray.State.OFF, rayAt(Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK - 1).getState(),
                 "预警起点之前是 OFF");
-        assertEquals(Ray.State.OFF, rayAt(Level03Pursuit.RAY_ACTIVE_START_TICK
-                + Level03Pursuit.RAY_ACTIVE_DURATION_TICKS).getState(),
+        assertEquals(Ray.State.OFF, rayAt(Level03Pursuit.RAY_ACTIVE_END_ABSOLUTE_TICK).getState(),
                 "激活结束后回到 OFF（周期 " + Level03Pursuit.RAY_CYCLE_TICKS + "）");
     }
 
@@ -509,8 +508,7 @@ class Level03PursuitChainTest {
                 "第二轮玩家抵达射线的那一刻，射线必须是 ACTIVE（否则不必下潜）");
 
         if (strategy == Strategy.WAIT) {
-            return Math.max(Level03Pursuit.RAY_ACTIVE_START_TICK
-                            + Level03Pursuit.RAY_ACTIVE_DURATION_TICKS + remainingTicks,
+            return Math.max(Level03Pursuit.RAY_ACTIVE_END_ABSOLUTE_TICK + remainingTicks,
                     Level03Pursuit.PLATE_C_ARRIVAL + Level03Pursuit.DOOR_C_TO_PLATE_B_TICKS);
         }
 
