@@ -646,7 +646,7 @@ public class Level01Footsteps {
                 cellCenter(17, 8),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
         nodes.add(new PathNode(
-                "L01_node_plate_right",
+                "L01_node_c18_r8",
                 cellCenter(18, 8),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
         nodes.add(new PathNode(
@@ -747,7 +747,7 @@ public class Level01Footsteps {
                 cellCenter(22, 9),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT, PathNode.Dir.RIGHT)));
         nodes.add(new PathNode(
-                "L01_node_c23_r9",
+                "L01_node_plate_right",
                 cellCenter(23, 9),
                 EnumSet.of(PathNode.Dir.UP, PathNode.Dir.DOWN, PathNode.Dir.LEFT)));
         nodes.add(new PathNode(
@@ -1180,7 +1180,7 @@ public class Level01Footsteps {
         list.add(new EntitySpawnInfo(
                         "L01_plate_right",
                         "dock_plate",
-                        cellCenter(18, 8),
+                        cellCenter(23, 9),
                         "L01_node_plate_right")
                 .putProp("autoDock", true)
                 .putProp("role", "switch"));

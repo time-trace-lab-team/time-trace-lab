@@ -1,6 +1,7 @@
 package org.example.timeloop.render;
 
 import org.example.timeloop.core.Direction;
+import org.example.timeloop.core.AnimationState;
 import org.example.timeloop.core.MovementState;
 import org.example.timeloop.level.model.Vector2D;
 
@@ -87,10 +88,26 @@ public final class RenderViews {
                          double y,
                          Direction direction,
                          MovementState movementState,
-                         boolean phased) {
+                         boolean phased,
+                         AnimationState animation) {
+
+        /**
+         * 兼容既有投影：旧调用点没有权威帧姿态时，仅给出与既有移动状态一致的保守静态选择。
+         * 新 app 投影必须使用六参构造器，直接传入 {@code PlayerFrame.animationState()}。
+         */
+        public Player(double x,
+                      double y,
+                      Direction direction,
+                      MovementState movementState,
+                      boolean phased) {
+            this(x, y, direction, movementState, phased,
+                    movementState == MovementState.DOCKED ? AnimationState.DOCKED : AnimationState.MOVING);
+        }
+
         public Player {
             Objects.requireNonNull(direction, "direction");
             Objects.requireNonNull(movementState, "movementState");
+            Objects.requireNonNull(animation, "animation");
         }
     }
 
