@@ -72,7 +72,7 @@ public final class Level03Pursuit {
     /** 每格走行刻数（baseSpeed 2 px/tick、tileSize 48）。 */
     public static final long TICKS_PER_TILE = 24L;
 
-    public static final long DURATION_TICKS = 1800L;
+    public static final long DURATION_TICKS = 1260L;   // 21s × 60 刻/秒（项目方 2026-09-15 指定）
     public static final int MAX_ROUNDS = 3;
     public static final int ECHO_LIFE_L = 2;
 
@@ -92,8 +92,8 @@ public final class Level03Pursuit {
     public static final String[] MAP = {
             "############################", // 0
             "#............###..........##", // 1
-            "#..A##.......###....3.....##", // 2  A(3,2) / S₃(20,2)
-            "#...##.C.....###..........##", // 3  C(7,3)
+            "#.A.##.......###..........##", // 2  A(2,2)
+            "#...##C......###....3.....##", // 3  C(6,3) / 按钮 S₃(20,3)
             "#.....##.....#######.#######", // 4
             "##.#######.####.....b#######", // 5  门 B(20,5)：开关室唯一进口
             "#............##....#.#######", // 6
@@ -133,12 +133,12 @@ public final class Level03Pursuit {
     // ---------- ③ 机关所在格 {列, 行} ----------
 
     public static final int[] SPAWN_CELL = {2, 13};
-    public static final int[] CELL_PLATE_A = {3, 2};
-    public static final int[] CELL_PLATE_C = {7, 3};
+    public static final int[] CELL_PLATE_A = {2, 2};
+    public static final int[] CELL_PLATE_C = {6, 3};
     public static final int[] CELL_PLATE_K = {12, 7};
     public static final int[] CELL_PLATE_B = {23, 9};
     public static final int[] CELL_SWITCH_S2 = {21, 14};
-    public static final int[] CELL_SWITCH_S3 = {20, 2};
+    public static final int[] CELL_SWITCH_S3 = {20, 3};
     public static final int[] CELL_DOOR_A = {13, 10};
     public static final int[] CELL_FORK_J = {15, 10};
     public static final int[] CELL_DOOR_B = {20, 5};
@@ -164,11 +164,11 @@ public final class Level03Pursuit {
     // ---------- ⑤ 段长（几何 ⇒ 刻）----------
 
     /** 出生点 → A 板：14 格（BFS 实算）。 */
-    public static final long SPAWN_TO_PLATE_A_TICKS = 14 * TICKS_PER_TILE;
+    public static final long SPAWN_TO_PLATE_A_TICKS = 13 * TICKS_PER_TILE;
     /** A 板 → C 板：12 格（C 在 (12,3)，第 1 行走廊绕远：(4,3)(5,3) 是墙）。 */
     public static final long PLATE_A_TO_C_TICKS = 7 * TICKS_PER_TILE;
     /** C 板 → K 板：18 格。 */
-    public static final long PLATE_C_TO_K_TICKS = 9 * TICKS_PER_TILE;
+    public static final long PLATE_C_TO_K_TICKS = 10 * TICKS_PER_TILE;
 
     /** 出生点 → 门 A：14 格（与出生点→A 同长，玩家正好在门开那一刻抵达门外）。 */
     public static final long SPAWN_TO_DOOR_A_TICKS = 14 * TICKS_PER_TILE;
@@ -189,7 +189,7 @@ public final class Level03Pursuit {
     /** J → 门 B（向北再折东）：10 格。 */
     public static final long FORK_TO_DOOR_B_TICKS = 10 * TICKS_PER_TILE;
     /** 门 B → S₃（开关室里面）：3 格。 */
-    public static final long SWITCH_S3_TO_DOOR_B_TICKS = 3 * TICKS_PER_TILE;
+    public static final long SWITCH_S3_TO_DOOR_B_TICKS = 2 * TICKS_PER_TILE;
     /** 门 B → 门 C：6 格（沿第 20 列直下）。 */
     public static final long DOOR_B_TO_DOOR_C_TICKS = 6 * TICKS_PER_TILE;
     /** 门 C → 出口：9 格（东南回环）。 */
@@ -205,7 +205,7 @@ public final class Level03Pursuit {
      * <p>取 1 而不是 2：C 在 (12,3)、A→C 要 12 格，驻留 2 格会让门 C 窗口起刻落到 672，
      * 第二轮在门口空等 48 刻，连「等射线关闭」那条失败路线（迟 60 刻）都会被空等吃掉。</p>
      */
-    public static final int HOLD_A_TILES = 1;
+    public static final int HOLD_A_TILES = 2;
 
     /**
      * E₁ 在 C 板上驻留的格数 = 门 C 窗口宽度（18 格 = 432 刻）。
@@ -214,7 +214,7 @@ public final class Level03Pursuit {
      * 窗口从 E₁ 抵达 C 的刻 {@link #PLATE_C_ARRIVAL}(648) 一直到 {@link #PLATE_C_WINDOW_END}(1080)，
      * 中间要容下 E₂ 与 E₃ 两次穿越。</p>
      */
-    public static final int HOLD_C_TILES = 22;
+    public static final int HOLD_C_TILES = 20;
 
     // ---------- ⑥ 公平性常量 ----------
 
@@ -241,7 +241,7 @@ public final class Level03Pursuit {
     public static final long GATE_A_WINDOW_END = GATE_A_WINDOW_START + HOLD_A_TILES * TICKS_PER_TILE;
 
     /** 第二轮 / 第三轮玩家穿过门 A 的刻（= 门 A 窗口起点）。 */
-    public static final long DOOR_A_CROSS_TICK = GATE_A_WINDOW_START;
+    public static final long DOOR_A_CROSS_TICK = SPAWN_TO_DOOR_A_TICKS;
     /** 第二轮 / 第三轮玩家抵达分岔口 J 的刻。 */
     public static final long FORK_ARRIVAL = DOOR_A_CROSS_TICK + DOOR_A_TO_FORK_TICKS;
     /** E₂ 抵达射线的刻：射线此时<b>必须 ACTIVE</b>（＝ {@link #RAY_ACTIVE_START_TICK}）。 */
