@@ -72,7 +72,7 @@ public final class Level03Pursuit {
     /** 每格走行刻数（baseSpeed 2 px/tick、tileSize 48）。 */
     public static final long TICKS_PER_TILE = 24L;
 
-    public static final long DURATION_TICKS = 1200L;   // 21s × 60 刻/秒（项目方 2026-09-15 指定）
+    public static final long DURATION_TICKS = 1200L;   // 20s × 60 刻/秒（项目方 2026-09-15 指定）
     public static final int MAX_ROUNDS = 3;
     public static final int ECHO_LIFE_L = 2;
 
