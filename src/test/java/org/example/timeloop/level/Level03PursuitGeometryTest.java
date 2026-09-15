@@ -208,10 +208,10 @@ class Level03PursuitGeometryTest {
     void rayPhaseMakesE2ArrivalFallInsideTheActiveWindow() {
         assertEquals(72L, Level03Pursuit.RAY_WARNING_DURATION_TICKS, "预警 72 刻");
         assertEquals(60L, Level03Pursuit.RAY_ACTIVE_DURATION_TICKS, "激活 60 刻");
-        assertEquals(264L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 264 刻（528 减半）");
-        assertEquals(336L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = 264 + 72");
-        assertEquals(264L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点 = OFF 段长度");
-        assertEquals(396L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = 264 + 72 + 60");
+        assertEquals(132L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 132 刻（528→264→132 两次减半）");
+        assertEquals(204L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = 132 + 72");
+        assertEquals(132L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点 = OFF 段长度");
+        assertEquals(264L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = 132 + 72 + 60");
         assertEquals(Level03Pursuit.RAY_CROSS_TICK, Level03Pursuit.RAY_ACTIVE_START_ABSOLUTE_TICK,
                 "E₂ 抵达刻（600）就是绝对激活起点");
         assertEquals(528L, Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK,
