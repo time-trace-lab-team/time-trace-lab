@@ -1166,7 +1166,7 @@ public class Level01Footsteps {
         return nodes;
     }
 
-    /** 两块驻留板 + 终点终端。{@code pos} 必须与所引用节点的 worldPos 完全相同。 */
+    /** 两块驻留板 + 闸门终点。{@code pos} 必须与所引用节点的 worldPos 完全相同。 */
     private static List<EntitySpawnInfo> buildEntities() {
         List<EntitySpawnInfo> list = new ArrayList<>();
 
@@ -1182,13 +1182,14 @@ public class Level01Footsteps {
                         "dock_plate",
                         cellCenter(18, 8),
                         "L01_node_plate_right")
-                .putProp("autoDock", true));
+                .putProp("autoDock", true)
+                .putProp("role", "switch"));
 
         list.add(new EntitySpawnInfo(
                 "L01_exit_00",
                 "exit_terminal",
-                cellCenter(19, 8),
-                "L01_node_exit_terminal"));
+                cellCenter(18, 7),
+                "L01_node_c18_r7"));
 
         return list;
     }
@@ -1196,15 +1197,16 @@ public class Level01Footsteps {
     /**
      * 门：两块驻留板必须<b>同时</b>被占才会解锁。
      *
-     * <p>门放在 (18, 13)，不在任何必经路上 —— 锁着时只挡自己那一格，
-     * 三个目标点的最短路不受影响。它真正的职责是派发 DOOR_UNLOCKED 给终点，
-     * 外加作为「两块板是否已同时被占」的唯一视觉反馈（HUD 不显示板的状态）。</p>
+     * <p>门与终点终端同在 {@code L01_node_c18_r7} (18, 7)，即开关 (18, 8) 正上方一格
+     * （L01-GATE-MERGE-DEV3 §2.1）：闸门锁着时只挡自己那一格，不切断通往开关的第 8 行走廊，
+     * 也不在「出生点 → 左板」「出生点 → 开关」的割点上；与左板中心距离 673.71 &gt; 72，
+     * 因此「占着左板直接按 E」的单轮通关不成立。它真正的职责是派发 DOOR_UNLOCKED 给终点。</p>
      */
     private static List<DoorInfo> buildDoors() {
         List<DoorInfo> doors = new ArrayList<>();
         doors.add(new DoorInfo(
                 "L01_door_01",
-                cellCenter(18, 13),
+                cellCenter(18, 7),
                 false,
                 Set.of("L01_plate_left", "L01_plate_right")));
         return doors;

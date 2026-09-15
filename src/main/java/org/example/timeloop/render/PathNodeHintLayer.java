@@ -37,19 +37,26 @@ public final class PathNodeHintLayer implements RenderLayer {
     private final Supplier<RenderViews.Frame> frameSource;
     private final List<RenderViews.PathNodeMarker> nodes;
     private final double tileSize;
-    private final WorldTransform transform;
+    private final Supplier<WorldTransform> transformSource;
 
     public PathNodeHintLayer(Supplier<RenderViews.Frame> frameSource,
                              List<RenderViews.PathNodeMarker> nodes,
                              double tileSize,
                              WorldTransform transform) {
+        this(frameSource, nodes, tileSize, fixedTransform(transform));
+    }
+
+    public PathNodeHintLayer(Supplier<RenderViews.Frame> frameSource,
+                             List<RenderViews.PathNodeMarker> nodes,
+                             double tileSize,
+                             Supplier<WorldTransform> transformSource) {
         this.frameSource = Objects.requireNonNull(frameSource, "frameSource");
         this.nodes = List.copyOf(Objects.requireNonNull(nodes, "nodes"));
         if (!Double.isFinite(tileSize) || tileSize <= 0.0) {
             throw new IllegalArgumentException("tileSize 必须为正有限数");
         }
         this.tileSize = tileSize;
-        this.transform = Objects.requireNonNull(transform, "transform");
+        this.transformSource = Objects.requireNonNull(transformSource, "transformSource");
     }
 
     /**
@@ -77,6 +84,7 @@ public final class PathNodeHintLayer implements RenderLayer {
 
     @Override
     public void render(GraphicsContext gc, double worldW, double worldH, double alpha) {
+        WorldTransform transform = currentTransform();
         RenderViews.Player player = frameSource.get().player();
         double half = DIAMOND_SIZE_PX / 2.0;
         gc.setStroke(RenderPalette.INTERACTIVE);
@@ -98,5 +106,14 @@ public final class PathNodeHintLayer implements RenderLayer {
                     4);
         }
         gc.setGlobalAlpha(1.0);
+    }
+
+    private WorldTransform currentTransform() {
+        return Objects.requireNonNull(transformSource.get(), "PathNodeHintLayer transformSource 在 render 时返回 null");
+    }
+
+    private static Supplier<WorldTransform> fixedTransform(WorldTransform transform) {
+        WorldTransform fixed = Objects.requireNonNull(transform, "transform");
+        return () -> fixed;
     }
 }

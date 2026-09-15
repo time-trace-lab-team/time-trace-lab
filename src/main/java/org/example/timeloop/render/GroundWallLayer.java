@@ -6,6 +6,9 @@ import javafx.scene.paint.LinearGradient;
 import javafx.scene.paint.Stop;
 import org.example.timeloop.level.model.TileType;
 
+import java.util.Objects;
+import java.util.function.Supplier;
+
 /**
  * C5 地面与墙体图层。
  *
@@ -17,16 +20,21 @@ public final class GroundWallLayer implements RenderLayer {
 
     private final TileType[][] grid;
     private final double tileSize;
-    private final WorldTransform transform;
+    private final Supplier<WorldTransform> transformSource;
 
     public GroundWallLayer(TileType[][] grid, double tileSize, WorldTransform transform) {
+        this(grid, tileSize, fixedTransform(transform));
+    }
+
+    public GroundWallLayer(TileType[][] grid, double tileSize, Supplier<WorldTransform> transformSource) {
         this.grid = copyGrid(grid);
         this.tileSize = tileSize;
-        this.transform = transform;
+        this.transformSource = Objects.requireNonNull(transformSource, "transformSource");
     }
 
     @Override
     public void render(GraphicsContext gc, double worldW, double worldH, double alpha) {
+        WorldTransform transform = currentTransform();
         double cell = transform.scaled(tileSize);
         int rows = grid.length;
 
@@ -37,7 +45,7 @@ public final class GroundWallLayer implements RenderLayer {
                 if (!isWalkable(grid[r][c])) {
                     continue;
                 }
-                double x = x(c), y = y(r);
+                double x = x(c, transform), y = y(r, transform);
                 gc.setFill(RenderPalette.FLOOR_SHADES[Math.floorMod(c * 7 + r * 13, 5)]);
                 gc.fillRect(x, y, cell, cell);
 
@@ -59,7 +67,7 @@ public final class GroundWallLayer implements RenderLayer {
         for (int r = 0; r < rows; r++) {
             for (int c = 0; c < grid[r].length; c++) {
                 if (grid[r][c] == TileType.WALL && isVisibleWall(c, r)) {
-                    gc.fillRect(x(c) + offset, y(r) + offset, cell, cell);
+                    gc.fillRect(x(c, transform) + offset, y(r, transform) + offset, cell, cell);
                 }
             }
         }
@@ -72,7 +80,7 @@ public final class GroundWallLayer implements RenderLayer {
                 if (grid[r][c] != TileType.WALL || !isVisibleWall(c, r)) {
                     continue;
                 }
-                double x = x(c), y = y(r);
+                double x = x(c, transform), y = y(r, transform);
                 gc.setFill(new LinearGradient(0, y, 0, y + cell, false, CycleMethod.NO_CYCLE,
                         new Stop(0, RenderPalette.WALL_TOP),
                         new Stop(1, RenderPalette.WALL_TOP_DARK)));
@@ -90,7 +98,7 @@ public final class GroundWallLayer implements RenderLayer {
                 if (grid[r][c] != TileType.WALL) {
                     continue;
                 }
-                double x = x(c), y = y(r);
+                double x = x(c, transform), y = y(r, transform);
                 if (isWalkable(cellAt(c, r - 1))) {
                     gc.strokeLine(x + o, y + o, x + cell - o, y + o);
                 }
@@ -121,11 +129,20 @@ public final class GroundWallLayer implements RenderLayer {
         return grid[row][col];
     }
 
-    private double x(int col) {
+    private WorldTransform currentTransform() {
+        return Objects.requireNonNull(transformSource.get(), "GroundWallLayer transformSource 在 render 时返回 null");
+    }
+
+    private static Supplier<WorldTransform> fixedTransform(WorldTransform transform) {
+        WorldTransform fixed = Objects.requireNonNull(transform, "transform");
+        return () -> fixed;
+    }
+
+    private double x(int col, WorldTransform transform) {
         return transform.toCanvasX(col * tileSize);
     }
 
-    private double y(int row) {
+    private double y(int row, WorldTransform transform) {
         return transform.toCanvasY(row * tileSize);
     }
 

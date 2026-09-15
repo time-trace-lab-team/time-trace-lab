@@ -103,10 +103,12 @@ public final class ResonanceStateMachine implements ResonanceSnapshotPort {
     }
 
     /**
-     * 轮次边界或整局重开时清空所有轮内状态与边沿记忆。
+     * 轮次边界、整局重开或场景退出时清空所有轮内状态与边沿记忆。
      *
-     * <p>两个原因都从 {@link ResonanceState#DORMANT} 重新开始。轮次推进仍完全由开发 2
-     * 的共享时钟负责，本类不保存轮次计数。</p>
+     * <p>三个原因**都**从 {@link ResonanceState#DORMANT} 重新开始（本方法不按原因分支）；
+     * 语义由调用方区分：{@code ROUND_END} 用于普通轮末，{@code FULL_RESTART} 用于整局重开，
+     * {@code SCENE_EXIT} 用于退出关卡场景。轮次推进仍完全由开发 2 的共享时钟负责，
+     * 本类不保存轮次计数。</p>
      */
     public synchronized void reset(ResonanceResetReason reason) {
         Objects.requireNonNull(reason, "resonance.resetReason");

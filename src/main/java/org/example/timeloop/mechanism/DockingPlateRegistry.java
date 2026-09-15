@@ -7,21 +7,15 @@ import java.util.concurrent.ConcurrentHashMap;
  * 驻留板注册表（BUG-002-LIFECYCLE）。
  *
  * <p>实现 {@link DockingPlateOccupancyPort} 窄端口，供 {@link Door} 等消费者注入使用。
- * {@link #getInstance()} 是<b>兼容层</b>：Phase 2 将在 app 与测试全部迁移后删除全局单例；
- * 新代码一律通过 {@link #DockingPlateRegistry()} 构造独立实例，由关卡装配持有。</p>
+ * 权威形态是「每个关卡装配持有自己的实例」：同一实例内的驻留板 ID 必须唯一，跨实例同名 ID 互不冲突；
+ * 场景退出 / 整局重开时随装配一起释放，不再依赖任何全局清理。</p>
+ *
+ * <p><b>全局单例已在 BUG-002-LIFECYCLE Phase 2 删除</b>（静态单例访问器与全部兼容构造器均已移除）：
+ * 新代码一律通过 {@link #DockingPlateRegistry()} 构造独立实例。</p>
  */
 public final class DockingPlateRegistry implements DockingPlateOccupancyPort {
 
-    private static final DockingPlateRegistry INSTANCE = new DockingPlateRegistry();
     private final Map<String, DockingPlate> plates = new ConcurrentHashMap<>();
-
-    /**
-     * 兼容层单例（Phase 2 删除）。新代码请用 {@link #DockingPlateRegistry()}，
-     * 让实例随关卡装配创建与销毁。
-     */
-    public static DockingPlateRegistry getInstance() {
-        return INSTANCE;
-    }
 
     /** 每个关卡装配应持有自己的实例；同一实例内的板 ID 必须唯一。 */
     public DockingPlateRegistry() {}

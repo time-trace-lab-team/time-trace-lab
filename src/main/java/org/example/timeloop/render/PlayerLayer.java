@@ -2,6 +2,7 @@ package org.example.timeloop.render;
 
 import javafx.scene.canvas.GraphicsContext;
 
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -17,22 +18,30 @@ public final class PlayerLayer implements RenderLayer {
 
     private final Supplier<RenderViews.Frame> frameSource;
     private final double tileSize;
-    private final WorldTransform transform;
+    private final Supplier<WorldTransform> transformSource;
 
     public PlayerLayer(Supplier<RenderViews.Frame> frameSource, double tileSize, WorldTransform transform) {
+        this(frameSource, tileSize, fixedTransform(transform));
+    }
+
+    public PlayerLayer(Supplier<RenderViews.Frame> frameSource,
+                       double tileSize,
+                       Supplier<WorldTransform> transformSource) {
         this.frameSource = frameSource;
         this.tileSize = tileSize;
-        this.transform = transform;
+        this.transformSource = Objects.requireNonNull(transformSource, "transformSource");
     }
 
     @Override
     public void render(GraphicsContext gc, double worldW, double worldH, double alpha) {
+        WorldTransform transform = currentTransform();
         RenderViews.Player player = frameSource.get().player();
         double cx = transform.toCanvasX(player.x());
         double cy = transform.toCanvasY(player.y());
         double radius = transform.scaled(tileSize * BODY_RADIUS_FACTOR);
         PlayerVisualProjection.Style visual = PlayerVisualProjection.forPlayer(
                 player.movementState(), player.phased());
+        double bodyRadiusY = radius * visual.bodyHeightScale();
 
         gc.setGlobalAlpha(1.0);
 
@@ -44,11 +53,14 @@ public final class PlayerLayer implements RenderLayer {
         }
 
         gc.setFill(RenderPalette.PLAYER);
+        gc.setGlobalAlpha(visual.bodyAlpha());
         switch (visual.bodyShape()) {
-            case CIRCLE -> gc.fillOval(cx - radius, cy - radius, radius * 2.0, radius * 2.0);
-            case ROUNDED_SQUARE -> gc.fillRoundRect(cx - radius, cy - radius,
-                    radius * 2.0, radius * 2.0, radius * 0.9, radius * 0.9);
+            case CIRCLE -> gc.fillOval(cx - radius, cy - bodyRadiusY,
+                    radius * 2.0, bodyRadiusY * 2.0);
+            case ROUNDED_SQUARE -> gc.fillRoundRect(cx - radius, cy - bodyRadiusY,
+                    radius * 2.0, bodyRadiusY * 2.0, radius * 0.9, bodyRadiusY * 0.9);
         }
+        gc.setGlobalAlpha(1.0);
 
         double tick = radius * 1.4;
         double dx = directionX(player.direction(), tick);
@@ -71,6 +83,15 @@ public final class PlayerLayer implements RenderLayer {
             gc.setLineWidth(2.0);
             gc.strokeLine(cx, cy, cx + dx, cy + dy);
         }
+    }
+
+    private WorldTransform currentTransform() {
+        return Objects.requireNonNull(transformSource.get(), "PlayerLayer transformSource 在 render 时返回 null");
+    }
+
+    private static Supplier<WorldTransform> fixedTransform(WorldTransform transform) {
+        WorldTransform fixed = Objects.requireNonNull(transform, "transform");
+        return () -> fixed;
     }
 
     private static double directionX(org.example.timeloop.core.Direction direction, double length) {

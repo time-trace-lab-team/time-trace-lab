@@ -45,7 +45,9 @@ public record TimelineEvent(
         OCCUPANCY_RELEASED(20),
         DOCK_ENTERED(30),
         MECHANISM_STATE_CHANGED(40),
-        EXIT_REQUESTED(50);
+        EXIT_REQUESTED(50),
+    /** 时滞射线命中：玩家被减速（{@code reason} 携带 {@code delay=`<迟到刻>`}）。纯追加，不影响既有优先级顺序。 */
+    RAY_DELAY(60);
 
         private final int priority;
 

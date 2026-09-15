@@ -4,6 +4,7 @@ import javafx.scene.canvas.GraphicsContext;
 import org.example.timeloop.level.model.Vector2D;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Supplier;
 
 /**
@@ -18,15 +19,20 @@ public final class EchoTrailLayer implements RenderLayer {
     private static final double OLD_ECHO_ALPHA = 0.50;
 
     private final Supplier<RenderViews.Frame> frameSource;
-    private final WorldTransform transform;
+    private final Supplier<WorldTransform> transformSource;
 
     public EchoTrailLayer(Supplier<RenderViews.Frame> frameSource, WorldTransform transform) {
+        this(frameSource, fixedTransform(transform));
+    }
+
+    public EchoTrailLayer(Supplier<RenderViews.Frame> frameSource, Supplier<WorldTransform> transformSource) {
         this.frameSource = frameSource;
-        this.transform = transform;
+        this.transformSource = Objects.requireNonNull(transformSource, "transformSource");
     }
 
     @Override
     public void render(GraphicsContext gc, double worldW, double worldH, double alpha) {
+        WorldTransform transform = currentTransform();
         gc.setLineWidth(2.0);
         List<RenderViews.EchoTrail> echoes = frameSource.get().echoes();
 
@@ -50,5 +56,14 @@ public final class EchoTrailLayer implements RenderLayer {
             gc.setLineDashes();
         }
         gc.setGlobalAlpha(1.0);
+    }
+
+    private WorldTransform currentTransform() {
+        return Objects.requireNonNull(transformSource.get(), "EchoTrailLayer transformSource 在 render 时返回 null");
+    }
+
+    private static Supplier<WorldTransform> fixedTransform(WorldTransform transform) {
+        WorldTransform fixed = Objects.requireNonNull(transform, "transform");
+        return () -> fixed;
     }
 }

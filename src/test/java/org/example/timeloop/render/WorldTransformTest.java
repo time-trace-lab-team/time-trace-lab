@@ -63,4 +63,89 @@ class WorldTransformTest {
         assertThrows(IllegalArgumentException.class,
                 () -> new WorldTransform(1.0, Double.POSITIVE_INFINITY, 0.0));
     }
+
+    @Test
+    void fitKeepsOneToOneWorldAtViewportOrigin() {
+        WorldTransform transform = WorldTransform.fit(100.0, 100.0, 100.0, 100.0);
+
+        assertTransform(transform, 1.0, 0.0, 0.0);
+    }
+
+    @Test
+    void fitScalesMatchingAspectRatioWithoutLetterboxing() {
+        WorldTransform transform = WorldTransform.fit(100.0, 50.0, 400.0, 200.0);
+
+        assertTransform(transform, 4.0, 0.0, 0.0);
+    }
+
+    @Test
+    void fitCentersWorldHorizontallyInWiderViewport() {
+        WorldTransform transform = WorldTransform.fit(100.0, 100.0, 300.0, 100.0);
+
+        assertTransform(transform, 1.0, 100.0, 0.0);
+        assertEquals(100.0, transform.originX(), EPS);
+        assertEquals(100.0, 300.0 - transform.toCanvasX(100.0), EPS);
+    }
+
+    @Test
+    void fitCentersWorldVerticallyInTallerViewport() {
+        WorldTransform transform = WorldTransform.fit(100.0, 100.0, 100.0, 300.0);
+
+        assertTransform(transform, 1.0, 0.0, 100.0);
+        assertEquals(100.0, transform.originY(), EPS);
+        assertEquals(100.0, 300.0 - transform.toCanvasY(100.0), EPS);
+    }
+
+    @Test
+    void fitContainsLevelOneWorldInsideStandardViewport() {
+        WorldTransform transform = WorldTransform.fit(1_344.0, 768.0, 960.0, 576.0);
+
+        assertTransform(transform, 960.0 / 1_344.0, 0.0,
+                (576.0 - 768.0 * (960.0 / 1_344.0)) / 2.0);
+        assertEquals(0.0, transform.toCanvasX(0.0), EPS);
+        assertEquals(960.0, transform.toCanvasX(1_344.0), EPS);
+        assertEquals(transform.toCanvasY(0.0), 576.0 - transform.toCanvasY(768.0), EPS);
+    }
+
+    @Test
+    void fitRoundTripsWorldCoordinates() {
+        WorldTransform transform = WorldTransform.fit(1_344.0, 768.0, 1_200.0, 500.0);
+
+        assertEquals(381.25, transform.toWorldX(transform.toCanvasX(381.25)), EPS);
+        assertEquals(617.5, transform.toWorldY(transform.toCanvasY(617.5)), EPS);
+    }
+
+    @Test
+    void fitContainsAnExtremeAspectRatioWithSymmetricLetterboxing() {
+        WorldTransform transform = WorldTransform.fit(1.0, 10_000.0, 10_000.0, 1.0);
+
+        assertEquals(0.0001, transform.scale(), EPS);
+        assertEquals(transform.originX(), 10_000.0 - transform.toCanvasX(1.0), EPS);
+        assertEquals(0.0, transform.originY(), EPS);
+        assertEquals(1.0, transform.toCanvasY(10_000.0), EPS);
+    }
+
+    @Test
+    void fitRejectsEveryNonPositiveOrNonFiniteDimension() {
+        double[] invalidDimensions = {
+                0.0,
+                -1.0,
+                Double.NaN,
+                Double.POSITIVE_INFINITY,
+                Double.NEGATIVE_INFINITY
+        };
+
+        for (double invalid : invalidDimensions) {
+            assertThrows(IllegalArgumentException.class, () -> WorldTransform.fit(invalid, 100.0, 100.0, 100.0));
+            assertThrows(IllegalArgumentException.class, () -> WorldTransform.fit(100.0, invalid, 100.0, 100.0));
+            assertThrows(IllegalArgumentException.class, () -> WorldTransform.fit(100.0, 100.0, invalid, 100.0));
+            assertThrows(IllegalArgumentException.class, () -> WorldTransform.fit(100.0, 100.0, 100.0, invalid));
+        }
+    }
+
+    private static void assertTransform(WorldTransform transform, double scale, double originX, double originY) {
+        assertEquals(scale, transform.scale(), EPS);
+        assertEquals(originX, transform.originX(), EPS);
+        assertEquals(originY, transform.originY(), EPS);
+    }
 }

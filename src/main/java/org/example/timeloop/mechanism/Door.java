@@ -23,23 +23,9 @@ public class Door implements GameObserver {
     private final GameEventBus bus;
     private State state = State.LOCKED;
 
-    /** 兼容构造器：占用注册表与事件总线都取全局单例（Phase 2 删除单例后不再保留）。 */
-    public Door(String id, Vector2D position, Set<String> requiredPlateIds) {
-        this(id, position, requiredPlateIds,
-                DockingPlateRegistry.getInstance(), EventDispatcher.getInstance());
-    }
-
-    /** 注入占用注册表；事件总线仍取兼容单例。新代码请用五参构造器。 */
-    public Door(String id,
-                Vector2D position,
-                Set<String> requiredPlateIds,
-                DockingPlateOccupancyPort occupancy) {
-        this(id, position, requiredPlateIds, occupancy, EventDispatcher.getInstance());
-    }
-
     /**
-     * 完全注入（推荐，BUG-002-LIFECYCLE Phase 1）：门只通过窄端口查询板占用，
-     * 不再直接依赖注册表具体类或全局单例。
+     * 完全注入（BUG-002-LIFECYCLE）：门只通过窄端口查询板占用，
+     * 不再直接依赖注册表具体类或全局单例。Phase 2 起<b>不再提供</b>兼容构造器。
      */
     public Door(String id,
                 Vector2D position,

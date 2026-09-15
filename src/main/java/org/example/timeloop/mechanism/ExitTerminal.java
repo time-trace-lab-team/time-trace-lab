@@ -15,10 +15,13 @@ public class ExitTerminal implements GameObserver {
     public static final double INTERACT_RADIUS_TILES = 1.5;
 
     /**
-     * 兼容构造器使用的默认半径：1 × tileSize（第一关 tileSize = 48）。
+     * 兼容下限半径：1 × tileSize（第一关 tileSize = 48）。关卡应优先按
+     * {@code 1.5 × tileSize} 显式传入（第一关 = 72，见 {@link #interactRadiusForTileSize(double)}）；
+     * 本常量只保证「半径不小于 1 格」这一硬下限。
      *
-     * <p>这是<b>硬下限</b>：第一关右驻留板中心 (8,5) 与出口终端 (9,5) 相距恰好 1 格；
-     * 半径小于 1 格会迫使玩家离开驻留板才能按 E，而离开即释放占用、门重新上锁 → 关卡无解。</p>
+     * <p>硬下限的由来（L01-GATE-MERGE 后按实际数据订正）：第一关关卡的开关在 (18, 8)、
+     * 闸门终点在 (18, 7)，两者相距恰好 1 格；半径小于 1 格会迫使玩家离开开关才能按 E，
+     * 而离开即释放占用、门重新上锁 → 关卡无解。旧注释引用的 (8,5)/(9,5) 是地图改造前的坐标，已失效。</p>
      */
     public static final double DEFAULT_INTERACT_RADIUS = 48.0;
 
@@ -30,20 +33,13 @@ public class ExitTerminal implements GameObserver {
     private boolean doorUnlocked = false;
     private boolean triggered = false;
 
-    /** 兼容构造器：半径取 {@link #DEFAULT_INTERACT_RADIUS}（1 × tileSize），总线取兼容单例。 */
-    public ExitTerminal(String id, Vector2D position, String associatedDoorId) {
-        this(id, position, associatedDoorId, DEFAULT_INTERACT_RADIUS, EventDispatcher.getInstance());
-    }
-
     /**
+     * 完全注入（BUG-002-LIFECYCLE）：事件总线由关卡装配持有。Phase 2 起<b>不再提供</b>兼容构造器；
+     * 半径请由关卡按 {@link #interactRadiusForTileSize(double)} 显式传入。
+     *
      * @param interactRadius 宽容交互半径（世界单位）；关卡应按 {@code 1.5 × tileSize} 传入
      *                       （第一关 = 72，见 {@link #interactRadiusForTileSize(double)}）
      */
-    public ExitTerminal(String id, Vector2D position, String associatedDoorId, double interactRadius) {
-        this(id, position, associatedDoorId, interactRadius, EventDispatcher.getInstance());
-    }
-
-    /** 完全注入（推荐，BUG-002-LIFECYCLE Phase 1）：事件总线由关卡装配持有。 */
     public ExitTerminal(String id,
                         Vector2D position,
                         String associatedDoorId,

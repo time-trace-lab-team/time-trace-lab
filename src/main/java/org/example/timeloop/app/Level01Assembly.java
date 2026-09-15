@@ -106,6 +106,8 @@ public final class Level01Assembly {
     private PlayerFrame lastFrame;
     private long lastTick = -1;
     private boolean firstMovementStarted;
+    /** 已卸载：{@link #stop()} 之后不再推进、不再消费事件（切关时由 {@link LevelFlow} 调用）。 */
+    private boolean stopped;
 
     public Level01Assembly() {
         this.levelData = Level01Footsteps.build();
@@ -120,7 +122,7 @@ public final class Level01Assembly {
 
         this.clock = new RoundClock(Math.toIntExact(levelData.getDurationTicks()), levelData.getMaxRounds());
         this.echoQueue = new EchoQueue(levelData.getEchoLifeL());
-        this.recording = new RecordingSession(clock, echoQueue);
+        this.recording = new RecordingSession(clock, echoQueue, LevelFlow.LevelId.LEVEL_01.title());
         this.replayPort = new ReplayPort(clock, recording);
 
         EntitySpawnInfo leftInfo = entity("L01_plate_left");
@@ -133,7 +135,11 @@ public final class Level01Assembly {
         this.occupancy = new DockingPlateRegistry();
         this.eventBus = new EventDispatcher();
         this.leftPlate = new DockingPlate(leftInfo.getId(), leftInfo.getPos(), occupancy, eventBus);
-        this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos(), occupancy, eventBus);
+        // L01-GATE-MERGE：右板是「开关」表现变体（关卡数据 role=switch）→ 启用本轮内锁存。
+        // 不接线的话游戏里开关离开就弹起，与 render 契约「active = 本轮锁存」不符。
+        boolean rightLatching = "switch".equals(rightInfo.getProperties().get("role"));
+        this.rightPlate = new DockingPlate(rightInfo.getId(), rightInfo.getPos(), occupancy, eventBus,
+                rightLatching);
         this.door = new Door(doorInfo.getId(), doorInfo.getPosition(), doorInfo.getRequiredPlateIds(),
                 occupancy, eventBus);
         this.exit = new ExitTerminal(exitInfo.getId(), exitInfo.getPos(), door.getId(),
@@ -142,6 +148,9 @@ public final class Level01Assembly {
 
     /** 进入第一关会话：BOOT → … → READY → 复位玩家 → 开本轮缓冲 → PLAYING。 */
     public void start() {
+        if (stopped) {
+            return;
+        }
         clock.transition(GamePhase.MENU);
         clock.transition(GamePhase.LEVEL_SELECT);
         clock.transition(GamePhase.READY);
@@ -171,6 +180,9 @@ public final class Level01Assembly {
      * READY → PLAYING 与轮初复位，语义与 {@link #start()} 的末段保持一致。</p>
      */
     public void restart() {
+        if (stopped) {
+            return;
+        }
         if (clock.phase() == GamePhase.RESULT) {
             // RESULT 只允许转移去 MENU / LEVEL_SELECT，不能直接回 READY。
             clock.transition(GamePhase.MENU);
@@ -255,7 +267,14 @@ public final class Level01Assembly {
         return Optional.empty();
     }
 
-    /** 该驻留板当前是否被占用（只读；走本装配自己的占用端口，与全局单例无关）。 */
+    /**
+     * 该驻留板当前是否被占用（只读；走本装配自己的占用端口，与全局单例无关）。
+     *
+     * <p><b>开关变体（{@code role=switch}）语义扩展</b>：L01-GATE-MERGE 后右板是锁存开关，
+     * 本方法对它返回「**占用 ∨ 本轮已锁存**」——人离开后仍为 {@code true}，直到轮末 {@code reset()}。
+     * 要问「现在是否有人站在上面」请用 {@code DockingPlate.getState()/getOccupantId()}，
+     * 要问「开关是否已开启」请用 {@code DockingPlate.isLatched()}。</p>
+     */
     public boolean isPlateOccupied(String plateId) {
         Objects.requireNonNull(plateId, "plateId");
         return occupancy.isOccupied(plateId);
@@ -264,7 +283,7 @@ public final class Level01Assembly {
     /** 推进一个逻辑刻：输入 → autoDock 决策 → 巡行/驻留 → 记录帧 → 事件 → 时钟推进。 */
     public void tick(InputIntent input) {
         Objects.requireNonNull(input, "input");
-        if (!clock.isPlaying()) {
+        if (stopped || !clock.isPlaying()) {
             return;
         }
         // 第一轮先显示完整时间并接收输入；首个方向输入出现前不写帧、不推进 roundTick。
@@ -335,13 +354,15 @@ public final class Level01Assembly {
                 : new RenderViews.Player(player.x(), player.y(), player.direction(),
                         player.movementState(), player.isPhaseDodging());
 
+        // L01-GATE-MERGE 投影契约（开发一 render 对接卡）：
+        // 左板 = PLATE/占用；右板 = SWITCH/**本轮锁存**（不是「当前是否有人站着」）；
+        // 第一关不再投影独立 DOOR —— 闸门与终点同格，开/关由 EXIT 的 active（exit.isDoorUnlocked()）表达；
+        // MechanismKind.DOOR 绘制分支保留给第二关起使用。
         List<RenderViews.Mechanism> mechanisms = List.of(
                 new RenderViews.Mechanism(leftPlate.getId(), leftPlate.getPosition().x(),
                         leftPlate.getPosition().y(), RenderViews.MechanismKind.PLATE, leftPlate.isOccupied()),
                 new RenderViews.Mechanism(rightPlate.getId(), rightPlate.getPosition().x(),
-                        rightPlate.getPosition().y(), RenderViews.MechanismKind.PLATE, rightPlate.isOccupied()),
-                new RenderViews.Mechanism(door.getId(), door.getPosition().x(),
-                        door.getPosition().y(), RenderViews.MechanismKind.DOOR, door.isUnlocked()),
+                        rightPlate.getPosition().y(), RenderViews.MechanismKind.SWITCH, rightPlate.isLatched()),
                 new RenderViews.Mechanism(exit.getId(), exit.getPosition().x(),
                         exit.getPosition().y(), RenderViews.MechanismKind.EXIT, exit.isDoorUnlocked()));
 
@@ -366,11 +387,39 @@ public final class Level01Assembly {
      * <p>BUG-002-LIFECYCLE Phase 1：不再触碰全局单例 —— 实例随装配一起被 GC，
      * 因此同一 JVM 内可以有多个装配，互不干扰，测试也不需要再手工清理全局状态。</p>
      */
+    /** 结算只读投影（通关或终局失败后可用；未结算时为空）。 */
+    public java.util.Optional<org.example.timeloop.replay.LevelResult> result() {
+        return recording.result();
+    }
+
     public void cleanup() {
         leftPlate.dispose();
         rightPlate.dispose();
         door.dispose();
         exit.dispose();
+    }
+
+    /**
+     * 卸载本关（{@link LevelFlow} 在第一关通关、切换到第二关之前调用）。
+     *
+     * <p>两件事必须同时发生，缺一就会出现「两关同时推进」：</p>
+     * <ol>
+     *   <li>停止逻辑推进：{@code stopped = true} → {@link #tick} / {@link #restart} 立即返回，
+     *       即使还有残留引用（旧图层、旧回调）本关也不会再推进一个逻辑刻；</li>
+     *   <li>释放事件消费：{@link #cleanup()} 把板/门/出口从本装配的事件总线注销，
+     *       卸载后的事件不会再改动本关状态。</li>
+     * </ol>
+     *
+     * <p>默认（未调用本方法）行为与本方法引入前完全一致：既有第一关测试不受影响。</p>
+     */
+    public void stop() {
+        stopped = true;
+        cleanup();
+    }
+
+    /** 本关是否已卸载（{@link #stop()} 之后恒为 true）。 */
+    public boolean isStopped() {
+        return stopped;
     }
 
     // ---------- 内部 ----------

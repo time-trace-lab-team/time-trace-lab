@@ -287,31 +287,33 @@ W1/W4 已在 `mechanism/**`、`level/**` 及开发三测试范围内按本规格
 
 ---
 
-## 9. 注册表与事件总线的生命周期（BUG-002-LIFECYCLE Phase 1）
+## 9. 注册表与事件总线的生命周期（BUG-002-LIFECYCLE Phase 1 + Phase 2）
 
-> 依据：PM 裁决 `BUG-002-注册表与事件总线生命周期-PM裁决.md` §六。日期 2026-09-12。
+> 依据：PM 裁决 `BUG-002-注册表与事件总线生命周期-PM裁决.md` §六；Phase 2 任务卡
+> `BUG-002-LIFECYCLE-Phase2-任务卡-开发三.md`；射线条目经 `L02-门房与双残影-PM裁决.md` §六 修订。
+> 日期 2026-09-12（Phase 1）／**2026-09-14（Phase 2：单例已删除）**。
 
-### 9.1 实例归属
+### 9.1 实例归属（Phase 2 起：不存在全局单例）
 
-- `DockingPlateRegistry` 与 `EventDispatcher` 的**权威形态是"每个关卡装配持有自己的实例"**；
+- `DockingPlateRegistry` 与 `EventDispatcher` 的**唯一形态是"每个关卡装配持有自己的实例"**；
   同一实例内的驻留板 ID 必须唯一，**跨实例同名 ID 互不冲突**。
-- `getInstance()` 只是**兼容层**（Phase 1 保留），Phase 2 在 app 与测试全部迁移后删除。
+- **静态单例访问器与全部"取单例"的兼容构造器已在 Phase 2 删除**（`DockingPlate` / `Door` / `ExitTerminal`
+  只剩注入构造器），因此"有的板注册到单例、有的注册到实例"的分裂状态**在类型层面已不可能出现**。
 
 ### 9.2 注入优先（强制）
 
-- 新代码**一律使用注入构造器**：
-  - `DockingPlate(id, position, DockingPlateOccupancyPort, GameEventBus)`
+- 唯一可用的构造器即注入形态：
+  - `DockingPlate(id, position, DockingPlateOccupancyPort, GameEventBus)`（开关变体另有 `+boolean latching`）
   - `Door(id, position, requiredPlateIds, DockingPlateOccupancyPort, GameEventBus)`
   - `ExitTerminal(id, position, associatedDoorId, interactRadius, GameEventBus)`
 - 消费者（`Door` 等）只依赖窄端口 `DockingPlateOccupancyPort`，**不得**直接引用 `DockingPlateRegistry`。
-- 不允许长期并存"有的板注册到单例、有的注册到实例"的分裂状态。
 
 ### 9.3 场景退出 / 重开时必须释放的引用
 
 | 时机 | 必须做的动作 |
 | --- | --- |
 | 普通轮末 | `DockingPlate.reset()` + `Door.reset()` + `ExitTerminal.reset()`（现有轮末事务） |
-| 整局重开 / 场景退出 | 释放装配持有的注册表与总线实例（不再依赖全局 `clear()`）；机关 `dispose()` 反注册 |
+| 整局重开 / 场景退出 | 释放装配持有的注册表与总线实例（**不再存在任何全局清理入口**）；机关 `dispose()` 反注册 |
 | 关卡装配销毁 | 旧实例不得被 Canvas / listener / 缓存继续持有（与 `RecordingSession` 契约同款要求） |
 
 ### 9.4 Door 计数口径（与 §5.1 第 6 条一致）
@@ -319,19 +321,186 @@ W1/W4 已在 `mechanism/**`、`level/**` 及开发三测试范围内按本规格
 `Door` 通过 `DockingPlateOccupancyPort.isOccupied(plateId)` 判定，**不区分占用者身份**；
 残影占板与当前玩家占板在门条件上等价。
 
-### 9.5 Phase 2 前置结论（开发三已核）
+### 9.5 Phase 2 前置结论与执行结果
 
-`DockingPlate.Snapshot`、`MechanismSnapshot`、`AutoDockSnapshotPort` 及其测试
-**均不引用注册表或事件总线单例**（`git grep "DockingPlateRegistry|getInstance()"` 在
-`src/main/java/.../{snapshot,mechanism/autodock,replay}` 下为空）。
-因此 **Phase 2 删除单例不会破坏快照族**。
+- 结论（Phase 1 已核，Phase 2 复用）：`DockingPlate.Snapshot`、`MechanismSnapshot`、`AutoDockSnapshotPort`
+  的**生产代码不引用**注册表或事件总线单例；其**测试**曾在 `snapshot/**`、`level/**`、`app/**` 中出现
+  全局清理调用，已在 Phase 2（及一次性的 `app/**` 清理）中全部迁移为每用例独立实例。
+- **Phase 2 执行清单（已完成）**：删除 `DockingPlateRegistry` 与 `EventDispatcher` 的静态单例访问器；
+  删除 `DockingPlate`（2 个）、`Door`（2 个）、`ExitTerminal`（2 个）兼容构造器；
+  迁移 `level/Level01TwoRoundSimulationTest`、`snapshot/MechanismSnapshotTest` 到独立实例。
 
-**Phase 2 删除清单**：`DockingPlateRegistry.getInstance()`、`EventDispatcher.getInstance()`
-以及所有"取单例"的兼容构造器；另需先处理零引用的 `mechanism/ray/Ray.java`（见 §9.6）。
+### 9.6 `mechanism/ray/Ray.java` 登记（**改为保留**）
 
-### 9.6 零引用死代码登记
+- `mechanism/ray/RayManager.java`：**已删除**（零生产引用）。
+- `mechanism/ray/Ray.java`：**保留**。`L02-门房与双残影-PM裁决.md` **§六 已作废**「Phase 2 删除 Ray.java」一条：
+  第二关 L2-B 需要真实的时滞射线，Ray 从"零引用死代码"转为"有待接线需求"。
+- **因 Phase 2 删除单例，Ray 已在本批改为注入形态**（构造器接收 `GameEventBus`，不再取全局单例）；
+  「共享 `roundTick` 驱动 + 关卡接线 + 相位/减速语义」仍属 **L2-B**。
+- R5-B §10.2 的结论继续成立：**射线不需要快照端口**（无持久状态），聚合器不得为其加具体类旁路。
 
-- `mechanism/ray/RayManager.java`：**已随本次删除**（零生产引用，与 `PhaseManager` 同类处理）。
-- `mechanism/ray/Ray.java`：删除 `RayManager` 后**已无任何引用者**（仅自引用）。它是 README 第五节的
-  "时滞射线"机制实现，第二关需要它，故**暂不删除**；但它仍通过兼容单例注册事件，
-  **Phase 2 删除单例前必须先决定"接线"还是"删除"**，否则会编译失败。
+---
+
+## 10. 共振复位边界与 R5-B 聚合端口结论（R5-B 冻结，2026-09-13）
+
+> 依据：`R5-B-聚合接口冻结-PM裁决.md` §四、§五。本节只冻结语义，不含实现细节。
+
+### 10.1 `ResonanceResetReason` 三值语义
+
+| 取值 | 触发时机 | 结果 |
+| --- | --- | --- |
+| `ROUND_END` | 普通轮末（非最终轮） | 轮内状态与边沿记忆全部清空，下一轮从 `DORMANT` 开始 |
+| `FULL_RESTART` | 整局从第一轮重新开始 | 同左（清除全部共振轮内状态） |
+| `SCENE_EXIT` | 退出关卡场景 | 同左（放弃本会话） |
+
+三条不变量：
+
+1. **三个原因的实现行为完全一致** —— `ResonanceStateMachine.reset(reason)` 不按原因分支
+   （只 `requireNonNull` + 清态）。区分的意义在**调用方语义**：聚合器与 app **不再**把
+   "场景退出"降级映射成 `FULL_RESTART`。
+2. **枚举按名字序列化、无 ordinal 依赖** —— 全仓 `ResonanceResetReason` 引用点极少
+   （枚举定义、`reset` 的 `requireNonNull`、javadoc、测试），**无 `ordinal()` / `values()` 用法**，
+   因此新增 `SCENE_EXIT` 是源码兼容变更。
+3. **取值集合与 `AutoDockResetReason` 对齐**（均为 `{ROUND_END, FULL_RESTART, SCENE_EXIT}`），
+   并有测试断言两者的常量名集合相等。
+
+### 10.2 R5-B 聚合端口结论：射线 / 中继 / 核心
+
+R5-B 交接文档提到"射线 / 中继 / 核心"是否需要各自快照端口。开发三按 live source 核对后的结论：
+
+| 机制 | 是否存在实现 | 端口结论 |
+| --- | --- | --- |
+| **射线** | `mechanism/ray/Ray.java` 存在但**零引用**，且已列入 BUG-002 Phase 2 删除清单（见 §9.6） | **不需要端口**。若第二关将来真要实现"时滞射线"，须重新立项并补端口提案；**不得让聚合器用具体类旁路** |
+| **中继**（`relay_i` / `relay_ii`） | **不存在实现类**（`mechanism/**` 下无 relay 相关文件） | **暂无端口需求**；实现时另开卡补第 6 个 typed port |
+| **核心**（`core` 机关） | **不存在实现类** | 同上 |
+
+补充：`ResonanceStateSnapshot` 覆盖的是**固定区域共振**（`DORMANT` / `ARMED` / `LATCHED` 等状态），
+**不覆盖**中继或核心 —— 后两者是否复用共振状态机，须在其实现时单独评估，**不得假定已被覆盖**。
+
+---
+
+## 11. 锁存开关与快照字段冻结（L01-GATE-MERGE，2026-09-14）
+
+> 依据：PM 裁决 `L01-门与终点合并-PM裁决.md`（含 §十/§十一 追加裁决）+ 项目方 2026-09-14 冻结确认。
+> 本节记录**已落地并被冻结**的接口，不再是提案。
+> 分支：`feature/content-l01-gate-merge`（开发三）。
+
+### 11.1 闸门终点节点
+
+| 项 | 冻结值 |
+| --- | --- |
+| 稳定 ID | **`L01_node_c18_r7`** |
+| 世界坐标 | **(888.0, 360.0)**（格 (18,7)，tileSize 48） |
+| 与开关 `L01_plate_right` (18,8) 距离 | 48（**1 格**，可读性 + 站在开关上即可按 E） |
+| 与左驻留板 `L01_plate_left` (216,312) 距离 | **673.71 > 72**（防「占着左板直接按 E」的单轮通关） |
+| 割点检查 | 删掉该节点后 `spawn→左板`、`spawn→开关` 仍连通（非割点） |
+| 门与出口 | `L01_door_01` 与 `L01_exit_00` **同格同节点**；原终点节点 `L01_node_exit_terminal` 保留未删 |
+
+### 11.2 开关变体（`role=switch`）的锁存语义
+
+- 实现位置：**`DockingPlate` 的变体状态**（不新建机关类）；5 参构造 `DockingPlate(id, position, occupancy, bus, latching)`，4 参构造等价 `latching = false`。
+- 触发：`tryEnter` 成功即置 `latched = true`，**复用 `PLATE_ENTERED`，不新增事件类型**；残影可触发。
+- **离开不清锁存**；**残影淘汰（`ECHO_DISAPPEARED`）也不清锁存**（只释放占用）。
+- 单向：本轮内只 `false → true`，重复触发幂等；锁存不阻止再次踩上。
+- 复位：`reset()` 归零（普通轮末 / `FULL_RESTART` / 场景退出共用）；app 的 `restart()` 与轮末事务均已调用 `reset()`。
+- 只读查询：**`isLatched()`**（供 `RenderViews.MechanismKind.SWITCH.active`）。
+
+### 11.3 `isOccupied()` 的语义扩展（**PM 已认可**）
+
+`DockingPlate.isOccupied()` = `state == OCCUPIED || latched`。理由与边界：
+
+1. `Door` 只依赖 `DockingPlateOccupancyPort.isOccupied(plateId)`，且**行为不得修改**；锁存若不并入本判定，玩家离开开关的瞬间门会重新上锁。
+2. 因此本扩展**只对开关变体**有可观察影响；普通驻留板语义不变。
+3. 「此刻是否有人站着」= `getState()`；「开关是否已触发」= `isLatched()`；**渲染不得用 `isOccupied()` 代替锁存 ON**。
+4. 原提案中「改 `DockingPlateRegistry` 一行」的方案因**不在本卡允许路径内**而未采用；替代方案即本节。
+
+### 11.4 快照字段（**冻结**）
+
+```java
+public interface Snapshot {
+    default boolean isLatched() { return false; }        // 新增，默认值保证既有实现可编译
+}
+public record StateSnapshot(String mechanismId, State state,
+                            String occupantId, int occupantSourceRound,
+                            boolean latched) implements Snapshot { }   // 第 5 个分量
+```
+
+| 项 | 冻结值 |
+| --- | --- |
+| 字段 | **`DockingPlate.StateSnapshot.latched`**（`boolean`） |
+| `reset()` | `false`（OFF） |
+| `restore()` | 取快照值；无锁存位的旧快照（4 参兼容构造器）等价 `false` |
+| 交叉不变量 | `latched ⟹ latching`；与 `state` **独立**（`(UNOCCUPIED, latched=true)` 是常态）；本轮单调 `false→true`；与 `reentryBlockedAtTick` 无耦合 |
+| **不改** | `validateState(...)` 无需改动 |
+| **不加** | `AutoDockStateSnapshot.DockSnapshot` **不加** `latched`（避免第二个真相源） |
+| 开发二待办 | `snapshot/MechanismSnapshot` 的装配处（L62–64）改为透传 `snapshot.isLatched()`，并补 3 条往返测试 |
+
+---
+
+## 12. 第二关判定链与参数（L2-A，2026-09-14）
+
+> 依据：`L02-门房与双残影-PM裁决.md` §十一（官方解改为「R1 不进房」）+ **§十三.2（几何修正）**。
+> 实现：`level/Level02Corridor.java`（开发三，卡 `L02-A-DEV3`）。
+
+### 12.1 机关与判定链
+
+| 机关 | ID | 判定 | 作用 |
+| --- | --- | --- | --- |
+| 门外板 | `L02_plate_door` (6,6) | — | **普通驻留板**：占即开、离即关，**不锁存** |
+| 房门 | `L02_door_room` (5,6) | `{L02_plate_door}` | 锁着时挡房门那一格；**房间唯一入口**（不设旁路） |
+| 内板 | `L02_plate_inner` (5,5) | — | 房内 |
+| 主驻留板 | `L02_plate_main` (13,11) | — | 房外主任务板 |
+| 终点闸门 | `L02_door_exit` (16,11) | `{L02_plate_inner, L02_plate_main}` | **与出口同格**；两块板同刻被占才解锁 |
+| 出口 | `L02_exit_00` (16,11) | — | `associatedDoorId = L02_door_exit` |
+
+### 12.2 参数
+
+`durationTicks = 1200`（20 s）、`maxRounds = 4`、`echoLifeL = 2`；正式通关在**第 3 轮**，第 4 轮只作容错。
+
+### 12.3 几何与刻表（§十三.2 修正后；24 刻/格）
+
+| 段 | 格数 | 刻 |
+| --- | ---: | ---: |
+| 出生点 (2,11) → 门外板 (6,6) | 9 | **216**（窗口起点 a） |
+| 窗口 `(a, b)` | — | **(216, 396)**，时长 **180** |
+| 出生点 → 房门南邻点 (5,7) | 7 | **168**（早于窗口 48 刻，可等待） |
+| 跨门刻 | — | **252**（= a+36；两侧余量 36 / 144 ≥ 30） |
+| 上内板刻 | — | **276** |
+| 门外板 → 主驻留板 | 12 | 288（396 离开 → **684** 到主板） |
+| 出生点 → 主驻留板 / 闸门 | 11 / 14 | 264 / **336** |
+| 内板 (5,5) ↔ 闸门 (16,11)（欧氏） | 12.53 | **601.44**（> 72） |
+| R3 解锁刻 | — | **684** |
+
+**R2 路线节点集合** = {(5,11),(5,10),(5,9),(5,8),(5,7),(5,6)房门,(5,5)内板}，与门外板节点 (6,6) **不相交**。
+
+### 12.4 约束集合（以裁决 §十一.4 与 §十三 为准）
+
+1. **1′ 锁门只挡房间**：删房门节点后 `spawn→门外板 / 主驻留板 / 闸门` 仍连通；**房间内不要求连通**；
+2. **2** 闸门与内板距离 > 72（实测 601.44）；
+3. **3′** 窗口时长 ≥ 「房门内侧邻点 → 内板」走行刻 + 余量：180 ≥ 24 + 30；
+4. **5**（L2-B）射线不得覆盖压力板驻留点；
+5. **6 进房即承诺**：R2 玩家进房后到轮末无法离开（门外板一松，房门同刻回锁）；
+6. **7** 门外板与主驻留板不得相邻（实测 8.60 格 ≥ 3）；
+7. **房间不设旁路**：房门是唯一入口（这是本关教学点，也是 §十三.2 几何解耦的前提）。
+
+### 12.5 与第一关的关键语义差异（防后人混淆）
+
+| | 第一关 | 第二关 |
+| --- | --- | --- |
+| 右板 / 门外板 | **锁存开关**（`role=switch`）：踩上即 ON，离开仍 ON 到轮末 | **普通驻留板**：占即开、**离即关** |
+| 门的作用 | 闸门本体（与终点同格），玩家不穿过 | **房间入口**，必须被穿过（单人穿不过 → 需要残影窗口） |
+| 通关轮次 | 第 2 轮 | **第 3 轮**（两残影同刻压两块板） |
+
+### 12.6 L2-B 射线段（2026-09-14）
+
+- **关卡数据**：一条 `ray` 实体 `L02_ray_01`，竖直判定线 `x = 9.0 × tileSize`（第 8/9 格之间），
+  端点 `(432, 504) → (432, 600)`，跨在主走廊上 —— 玩家去闸门的去程**必然穿过**（裁决 §二「短射线走廊（保留）」）。
+- **周期**：预警 72 刻（1.2 s）、激活 60 刻（1.0 s）→ 周期 132 刻；判定宽度 `0.20 × tileSize`；
+  均在 README §三 区间内，并满足「预警 ≥ 反应预算 + 输入缓冲」「激活 ≥ 穿越 1 格 + 成功余量」。
+- **装配与驱动**：`mechanism/ray/RayFactory` 按**注入的 `GameEventBus`** 构建（源码零全局单例），
+  只由 `updateAll(rays, roundTick)` 用**共享 `roundTick`** 驱动，不自建计时器；
+  **无快照端口**（射线无持久状态，R5-B §10.2 结论保留），聚合器不得为其加具体类旁路。
+- **约束 5**：判定线到三块压力板驻留点的距离均 > 1 格（测试逐 tick 遍历整个激活期断言）。
+- **边界**：减速结算（`MovementState.SLOWED`）与相位豁免（`ActorPhase.PHASED`）属**移动层**
+  （开发一 `core/**` / `entity/**` + PM 的 app 接线）；本批只提供射线数据、周期与几何判定，
+  **不写任何减速状态、不新增机关/事件类型**。

@@ -3,11 +3,15 @@ package org.example.timeloop.app;
 import org.example.timeloop.core.Direction;
 import org.example.timeloop.core.input.InputIntent;
 import org.example.timeloop.core.input.LogicalKey;
-import org.example.timeloop.mechanism.DockingPlateRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -66,10 +70,6 @@ class Level01AssemblyLifecycleTest {
         assertFalse(b.isPlateOccupied("L01_plate_left"), "B 不受 A 的占用影响");
         assertFalse(b.isPlateOccupied("L01_plate_right"));
 
-        // app 不应再写入全局注册表单例（两套装配都不写）
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"));
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_right"));
-
         // B 独立推进：它的时钟自己在走，不被 A 影响
         long bTickBefore = b.hudContext().roundTick();
         drive(b, 0, LogicalKey.DIR_DOWN, 30);
@@ -79,15 +79,41 @@ class Level01AssemblyLifecycleTest {
         b.cleanup();
     }
 
+    /**
+     * app 层不得引用任何全局单例 —— BUG-002-LIFECYCLE 的架构不变量。
+     *
+     * <p><b>为什么改成静态扫描</b>（PM 复核，2026-09-14）：本用例原先把
+     * {@code DockingPlateRegistry.getInstance().isOccupied(...)} 当断言，Phase 2 删除单例后无法编译；
+     * 中间一版改成「B 的 {@code drainEvents()} 为空」，但那是**永远通过的假绿**——
+     * {@code Level01Assembly.events} 只承载**本装配玩家自己的驻留决策**
+     * （`events.addAll(decision.events())`），B 不驱动就恒为空，无论两条装配是否共享总线。
+     * 「两套装配互不串扰」这条运行时性质已由 {@link #twoAssembliesDoNotSharePlateOccupancy()} 真正覆盖。
+     * 因此这里回到原本的意图（app 不碰全局状态），改用**能失败**的形式：直接扫描 app 源码。</p>
+     */
     @Test
-    void appDoesNotTouchGlobalEventDispatcher() {
-        Level01Assembly a = new Level01Assembly();
-        a.start();
-        drive(a, 0, LogicalKey.DIR_DOWN, 40);
+    void appSourcesDoNotReferenceGlobalSingletons() throws IOException {
+        Path appSources = Path.of("src", "main", "java", "org", "example", "timeloop", "app");
+        assertTrue(Files.isDirectory(appSources),
+                "找不到 app 源码目录（测试工作目录应为项目根）：" + appSources.toAbsolutePath());
 
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_left"));
-        assertFalse(DockingPlateRegistry.getInstance().isOccupied("L01_plate_right"));
-        a.cleanup();
+        List<String> offenders;
+        try (Stream<Path> files = Files.walk(appSources)) {
+            offenders = files
+                    .filter(path -> path.toString().endsWith(".java"))
+                    .filter(path -> {
+                        try {
+                            return Files.readString(path).contains("getInstance");
+                        } catch (IOException e) {
+                            throw new UncheckedIOException(e);
+                        }
+                    })
+                    .map(Path::toString)
+                    .sorted()
+                    .toList();
+        }
+
+        assertTrue(offenders.isEmpty(),
+                "app/** 不得引用全局单例 getInstance()：" + offenders);
     }
 
     // ---------- 工具 ----------

@@ -190,6 +190,37 @@ class ResonanceStateMachineTest {
         assertEquals(first.createSnapshot(), second.createSnapshot());
     }
 
+    /**
+     * R5-B 冻结（PM 2026-09-13 裁决 §四）：`SCENE_EXIT` 与 `FULL_RESTART` 都必须清空轮内状态，
+     * 两个原因彼此独立、不得互相冒充；且 `ResonanceResetReason` 的取值集合必须与
+     * `AutoDockResetReason` 对齐 —— 这是"聚合器不再做原因降级映射"的前提。
+     */
+    @Test
+    void sceneExitAndFullRestartBothClearInRoundStateWithoutConfusingEachOther() {
+        ResonanceStateMachine armed = new ResonanceStateMachine(30);
+        armed.observe(context(10, 2), true, List.of(echo(1)));
+        assertEquals(ResonanceState.ARMED, armed.createSnapshot().state(),
+                "前提：ARMED 状态下清空语义才有可验之处");
+        armed.reset(ResonanceResetReason.SCENE_EXIT);
+        assertCleared(armed.createSnapshot());
+
+        ResonanceStateMachine latched = latchedMachine();
+        assertTrue(latched.isLatched(), "前提：锁存态存在");
+        latched.reset(ResonanceResetReason.FULL_RESTART);
+        assertCleared(latched.createSnapshot());
+
+        org.junit.jupiter.api.Assertions.assertNotEquals(
+                ResonanceResetReason.SCENE_EXIT, ResonanceResetReason.FULL_RESTART,
+                "SCENE_EXIT 与 FULL_RESTART 必须是两个独立原因");
+        assertEquals(
+                java.util.Arrays.stream(
+                                org.example.timeloop.mechanism.autodock.AutoDockResetReason.values())
+                        .map(Enum::name).collect(java.util.stream.Collectors.toSet()),
+                java.util.Arrays.stream(ResonanceResetReason.values())
+                        .map(Enum::name).collect(java.util.stream.Collectors.toSet()),
+                "ResonanceResetReason 的取值集合必须与 AutoDockResetReason 对齐");
+    }
+
     private static ResonanceStateMachine latchedMachine() {
         ResonanceStateMachine resonance = new ResonanceStateMachine(30);
         EchoState e1 = echo(1);

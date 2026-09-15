@@ -94,6 +94,11 @@ public final class EchoQueue {
      * 当前轮参与行动的残影，按来源轮次升序（较旧在前）。
      * 活跃判定：{@code 1 <= currentRound - sourceRound <= L}，与公式一致。
      *
+     * <p><b>同刻争抢胜者规则（L02-A-DEV2）</b>：装配层必须<b>保持本返回顺序</b>应用各残影
+     * 在同一 tick 的事件。当两条残影在同一刻争抢同一块板时，<b>较旧残影（sourceRound 小）
+     * 先写入、胜出</b>；较新残影随后写入但争抢失败（机关侧先到先得，不覆盖既有占用）。
+     * 这是确定性规则，不依赖任何集合迭代顺序。</p>
+     *
      * @param currentRound 当前轮次
      * @return 只读列表，长度不超过 {@link #CAPACITY}
      */
