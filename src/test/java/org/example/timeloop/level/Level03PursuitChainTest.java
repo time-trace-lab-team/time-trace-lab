@@ -215,10 +215,12 @@ class Level03PursuitChainTest {
         assertEquals(Ray.State.WARNING,
                 rayAt(Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK + 1).getState(),
                 "预警段必须出现在抵达之前，玩家才有 72 刻反应时间");
-        assertEquals(Ray.State.OFF, rayAt(Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK - 1).getState(),
-                "预警起点之前是 OFF");
-        assertEquals(Ray.State.OFF, rayAt(Level03Pursuit.RAY_ACTIVE_END_ABSOLUTE_TICK).getState(),
-                "激活结束后回到 OFF（周期 " + Level03Pursuit.RAY_CYCLE_TICKS + "）");
+        assertEquals(Ray.State.ACTIVE,
+                rayAt(Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK - 1).getState(),
+                "第三关无 OFF 段：预警起点前一刻仍是上一周期的激活段");
+        assertEquals(Ray.State.WARNING,
+                rayAt(Level03Pursuit.RAY_ACTIVE_END_ABSOLUTE_TICK).getState(),
+                "激活结束后直接回到预警（无 OFF 段；周期 " + Level03Pursuit.RAY_CYCLE_TICKS + "）");
     }
 
     @Test
