@@ -93,18 +93,18 @@ public final class Level03Pursuit {
             "############################", // 0
             "#............###..........##", // 1
             "#..A##.......###....3.....##", // 2  A(3,2) / S₃(20,2)
-            "#...##......C###..........##", // 3  C(12,3)
+            "#...##.C.....###..........##", // 3  C(7,3)
             "#.....##.....#######.#######", // 4
             "##.#######.####.....b#######", // 5  门 B(20,5)：开关室唯一进口
             "#............##....#.#######", // 6
-            "#.....#......##....#.#....##", // 7
+            "#.....#.....K##....#.#....##", // 7  K(12,7)
             "#............##....#.#....##", // 8
             "###.#######.###....#.#.B..##", // 9  B 板(23,9)
             "#............a.J.###.#....##", // 10 门 A(13,10) / 分岔 J(15,10)
             "##.#######.####....Rc..#####", // 11 射线(19,11) 竖跨走廊 / 门 C(20,11)
             "#.....##.....##...##.#....##", // 12
-            "#.S...##.....##2..##.#....##", // 13 出生点(2,13) / S₂(15,13)
-            "#.....#K.....##...##......x#", // 14 K 板(7,14) / 出口(26,14)
+            "#.S...##.....##...##.#....##", // 13 出生点(2,13)
+            "#.....#......##...##.2....x#", // 14 S₂(21,14) / 出口(26,14)
             "############################", // 15
     };
 
@@ -116,7 +116,7 @@ public final class Level03Pursuit {
     public static final String PLATE_K = "L03_plate_k";
     public static final String PLATE_B = "L03_plate_b";
 
-    /** S₂ 开关：E₂ 支路入口，踩上即锁存（{@code role=switch}）。 */
+    /** S₂：第二轮那个黄色按钮改成的<b>驻留板</b>（外观按驻留板投，见 Level03Assembly.SWITCH_IDS），位置在东南回环上。 */
     public static final String SWITCH_S2 = "L03_plate_s2";
     /** S₃ 开关：东北开关室里，锁在门 B 后面，踩上即锁存（{@code role=switch}）。 */
     public static final String SWITCH_S3 = "L03_plate_s3";
@@ -134,10 +134,10 @@ public final class Level03Pursuit {
 
     public static final int[] SPAWN_CELL = {2, 13};
     public static final int[] CELL_PLATE_A = {3, 2};
-    public static final int[] CELL_PLATE_C = {12, 3};
-    public static final int[] CELL_PLATE_K = {7, 14};
+    public static final int[] CELL_PLATE_C = {7, 3};
+    public static final int[] CELL_PLATE_K = {12, 7};
     public static final int[] CELL_PLATE_B = {23, 9};
-    public static final int[] CELL_SWITCH_S2 = {15, 13};
+    public static final int[] CELL_SWITCH_S2 = {21, 14};
     public static final int[] CELL_SWITCH_S3 = {20, 2};
     public static final int[] CELL_DOOR_A = {13, 10};
     public static final int[] CELL_FORK_J = {15, 10};
@@ -166,18 +166,22 @@ public final class Level03Pursuit {
     /** 出生点 → A 板：14 格（BFS 实算）。 */
     public static final long SPAWN_TO_PLATE_A_TICKS = 14 * TICKS_PER_TILE;
     /** A 板 → C 板：12 格（C 在 (12,3)，第 1 行走廊绕远：(4,3)(5,3) 是墙）。 */
-    public static final long PLATE_A_TO_C_TICKS = 12 * TICKS_PER_TILE;
+    public static final long PLATE_A_TO_C_TICKS = 7 * TICKS_PER_TILE;
     /** C 板 → K 板：18 格。 */
-    public static final long PLATE_C_TO_K_TICKS = 18 * TICKS_PER_TILE;
+    public static final long PLATE_C_TO_K_TICKS = 9 * TICKS_PER_TILE;
 
     /** 出生点 → 门 A：14 格（与出生点→A 同长，玩家正好在门开那一刻抵达门外）。 */
     public static final long SPAWN_TO_DOOR_A_TICKS = 14 * TICKS_PER_TILE;
     /** 门 A → 分岔口 J：2 格。 */
     public static final long DOOR_A_TO_FORK_TICKS = 2 * TICKS_PER_TILE;
     /** J → S₂（向南）：3 格。 */
-    public static final long FORK_TO_SWITCH_S2_TICKS = 3 * TICKS_PER_TILE;
+    public static final long FORK_TO_SWITCH_S2_TICKS = 10 * TICKS_PER_TILE;
+    /** J → 时滞射线（沿 E₂ 走廊，不经 S₂）：9 格。 */
+    public static final long FORK_TO_RAY_TICKS = 9 * TICKS_PER_TILE;
+    /** 门 C → S₂（东南回环上、第三轮去出口的路上）：4 格。 */
+    public static final long DOOR_C_TO_SWITCH_S2_TICKS = 4 * TICKS_PER_TILE;
     /** S₂ → 时滞射线：6 格。 */
-    public static final long SWITCH_S2_TO_RAY_TICKS = 6 * TICKS_PER_TILE;
+    public static final long SWITCH_S2_TO_RAY_TICKS = 5 * TICKS_PER_TILE;
     /** 射线 → 门 C：1 格。 */
     public static final long RAY_TO_DOOR_C_TICKS = 1 * TICKS_PER_TILE;
     /** 门 C → B 板：5 格。 */
@@ -210,7 +214,7 @@ public final class Level03Pursuit {
      * 窗口从 E₁ 抵达 C 的刻 {@link #PLATE_C_ARRIVAL}(648) 一直到 {@link #PLATE_C_WINDOW_END}(1080)，
      * 中间要容下 E₂ 与 E₃ 两次穿越。</p>
      */
-    public static final int HOLD_C_TILES = 18;
+    public static final int HOLD_C_TILES = 22;
 
     // ---------- ⑥ 公平性常量 ----------
 
@@ -240,10 +244,8 @@ public final class Level03Pursuit {
     public static final long DOOR_A_CROSS_TICK = GATE_A_WINDOW_START;
     /** 第二轮 / 第三轮玩家抵达分岔口 J 的刻。 */
     public static final long FORK_ARRIVAL = DOOR_A_CROSS_TICK + DOOR_A_TO_FORK_TICKS;
-    /** E₂ 抵达 S₂ 开关的刻（踩上即锁存，出口闸的第一个条件）。 */
-    public static final long SWITCH_S2_ARRIVAL = FORK_ARRIVAL + FORK_TO_SWITCH_S2_TICKS;
     /** E₂ 抵达射线的刻：射线此时<b>必须 ACTIVE</b>（＝ {@link #RAY_ACTIVE_START_TICK}）。 */
-    public static final long RAY_CROSS_TICK = SWITCH_S2_ARRIVAL + SWITCH_S2_TO_RAY_TICKS;
+    public static final long RAY_CROSS_TICK = FORK_ARRIVAL + FORK_TO_RAY_TICKS;
     /** E₁ 抵达 C 板、门 C 开启的刻。 */
     public static final long PLATE_C_ARRIVAL = GATE_A_WINDOW_END + PLATE_A_TO_C_TICKS;
     /** E₂ 抵达门 C 门口的刻（纯几何：射线 → 门 C 1 格）。 */
@@ -273,6 +275,8 @@ public final class Level03Pursuit {
             + SWITCH_S3_TO_DOOR_B_TICKS + DOOR_B_TO_DOOR_C_TICKS;
     /** 第三轮玩家抵达出口的刻。 */
     public static final long EXIT_ARRIVAL = DOOR_C_CROSS_TICK + DOOR_C_TO_EXIT_TICKS;
+    /** 第三轮玩家在东南回环上踩到 S₂ 的刻（出口闸的第一个条件；S₂ 已不在 E₂ 支路）。 */
+    public static final long SWITCH_S2_ARRIVAL = DOOR_C_CROSS_TICK + DOOR_C_TO_SWITCH_S2_TICKS;
 
     // ---------- ⑧ 窗口刻与公平性反推 ----------
 

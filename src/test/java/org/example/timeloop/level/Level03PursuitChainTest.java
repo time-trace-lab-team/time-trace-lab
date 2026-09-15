@@ -67,7 +67,7 @@ class Level03PursuitChainTest {
         Run second = runSecondRound(Strategy.PHASE);
         assertTrue(second.doorAOpenedByEcho, "第二轮门 A 由 E₁ 打开");
         assertTrue(second.crossedDoorA, "第二轮必须在 E₁ 的门 A 窗口内穿门");
-        assertTrue(second.switchS2LatchedByPlayer, "第二轮玩家必须踩上 S₂（出口闸第 1 个条件）");
+        assertFalse(second.switchS2LatchedByPlayer, "S₂ 已不在 E₂ 支路上（第二轮不碰它）");
         assertTrue(second.rayActiveAtArrival, "第二轮抵达射线时射线必须 ACTIVE（否则不必下潜）");
         assertEquals(Level03Pursuit.DOOR_C_CROSS_BY_E2_TICK, second.doorCCrossTick,
                 "E₂ 穿门 C 的刻");
@@ -98,23 +98,26 @@ class Level03PursuitChainTest {
     // ---------- 公平性：两条失败路线 ----------
 
     /**
-     * 受击路线的后果（本版实测口径）：A→C 12 格 ⇒ 门 C 到 648 才开，E₂ 在门口空等 24 刻，
-     * 把 30 刻的受击迟到抵掉大半，净迟只有 6 刻 —— 仍然落在门 C 窗口（1080）之内。
+     * 受击路线的后果：C 在 (7,3) ⇒ A→C 7 格、门 C 在 528 就开，E₂ 抵达门口（624）时门早已开着、
+     * 不再空等，因此受击的 30 刻迟到全额生效 —— 第三轮赶不上门 C 窗口。
      */
     @Test
-    void hitByTheRayInRoundTwoStillFitsTheDoorCWindow() {
+    void hitByTheRayInRoundTwoMissesDoorCInRoundThree() {
         Run second = runSecondRound(Strategy.HIT);
         assertTrue(second.hitByRay, "夹具前提：第二轮确实被射线命中");
         assertEquals(Level03Pursuit.LAGGED_B_ARRIVAL, second.bArrival,
-                "被命中后到 B 的刻必须等于真实减速算出来的刻（净迟 "
-                        + (Level03Pursuit.LAGGED_B_ARRIVAL - Level03Pursuit.PLATE_B_ARRIVAL) + " 刻）");
+                "被命中后到 B 的刻必须等于真实减速算出来的刻（迟 "
+                        + Level03Pursuit.HIT_DELAY_TICKS + " 刻）");
+        assertTrue(second.bArrival > Level03Pursuit.LATEST_USEFUL_B_ARRIVAL,
+                "被命中后到 B 必须晚于「B 板仍有用」的最晚刻");
 
         Run third = runThirdRound(second.bArrival, true, true, true, true, null);
-        assertTrue(third.doorBOpened, "门 B 由 E₂ 打开");
-        assertTrue(third.crossedDoorB, "E₃ 穿过门 B");
-        assertEquals(Level03Pursuit.LATE_DOOR_C_ARRIVAL, third.doorCCrossTick, "受击路线到门 C 的刻");
-        assertTrue(third.doorCOpenForE3, "净迟 6 刻仍在余量 24 之内 → 门 C 还开着");
-        assertTrue(third.cleared, "因此本版受击路线仍能通关");
+        assertTrue(third.doorBOpened, "门 B 最终还是会开，只是开得太晚");
+        assertTrue(third.crossedDoorB, "E₃ 还是穿过了门 B");
+        assertEquals(Level03Pursuit.LATE_DOOR_C_ARRIVAL, third.doorCCrossTick, "迟到路线到门 C 的刻");
+        assertFalse(third.doorCOpenForE3, "门 C 窗口已经关了");
+        assertTrue(third.doorCClosedAtArrival, "失败原因必须能从画面判断：到门 C 时门已关");
+        assertFalse(third.cleared, "被命中的第二轮必须导致第三轮无法通关");
     }
 
     @Test
@@ -367,12 +370,6 @@ class Level03PursuitChainTest {
                     return run;
                 }
             }
-            if (tick == Level03Pursuit.SWITCH_S2_ARRIVAL) {
-                assertFalse(round.door(Level03Pursuit.DOOR_C).isUnlocked(),
-                        "S₂ 在门 C 之前，此刻门 C 还锁着（E₂ 必须先踩 S₂ 再走射线）");
-                run.switchS2LatchedByPlayer =
-                        round.plate(Level03Pursuit.SWITCH_S2).tryEnter("player", 2, tick);
-            }
             if (tick == Level03Pursuit.RAY_CROSS_TICK) {
                 run.rayActiveAtArrival = round.rays.get(0).getState() == Ray.State.ACTIVE;
             }
@@ -433,10 +430,6 @@ class Level03PursuitChainTest {
                 }
             }
             RayFactory.updateAll(round.rays, tick);
-            if (withE2 && tick == Level03Pursuit.SWITCH_S2_ARRIVAL && withS2) {
-                assertTrue(round.plate(Level03Pursuit.SWITCH_S2).tryEnter("echo_2", 2, tick),
-                        "E₂ 回放踩 S₂");
-            }
             if (withE2 && tick == e2BArrival) {
                 assertTrue(round.plate(Level03Pursuit.PLATE_B).tryEnter("echo_2", 2, tick),
                         "E₂ 回放在抵 B 刻压住 B 板");
@@ -466,6 +459,11 @@ class Level03PursuitChainTest {
             if (tick == switchS3Tick) {
                 run.switchS3LatchedByPlayer =
                         round.plate(Level03Pursuit.SWITCH_S3).tryEnter("player", 0, tick);
+            }
+            if (withS2 && tick == Level03Pursuit.SWITCH_S2_ARRIVAL) {
+                // S₂ 现在在门 C 之后的东南回环上：第三轮玩家去出口的路上踩一下（锁存）
+                run.switchS2LatchedByPlayer =
+                        round.plate(Level03Pursuit.SWITCH_S2).tryEnter("player", 0, tick);
             }
             if (tick == doorCCrossTick) {
                 run.doorCCrossTick = tick;

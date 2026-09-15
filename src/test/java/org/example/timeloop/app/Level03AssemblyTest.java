@@ -91,8 +91,8 @@ class Level03AssemblyTest {
                 case EXIT -> exits++;
             }
         }
-        assertEquals(4, plates, "A / C / K / B 四块驻留板");
-        assertEquals(2, switches, "S₂ / S₃ 两个锁存开关投影成 SWITCH（琥珀胶囊）");
+        assertEquals(5, plates, "A / C / K / B 四块普通板 + S₂（锁存但按驻留板外观投）");
+        assertEquals(1, switches, "只有 S₃ 投影成 SWITCH（琥珀胶囊）");
         assertEquals(3, doors, "门 A / 门 B / 门 C 三扇普通门");
         assertEquals(1, exits, "终点格只投影一个 EXIT");
 
@@ -100,10 +100,10 @@ class Level03AssemblyTest {
                 Level03Pursuit.PLATE_C, Level03Pursuit.PLATE_K)) {
             assertEquals(RenderViews.MechanismKind.PLATE, kindById.get(plateId), plateId + " 应投影成 PLATE");
         }
-        for (String switchId : List.of(Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3)) {
-            assertEquals(RenderViews.MechanismKind.SWITCH, kindById.get(switchId),
-                    switchId + " 应投影成 SWITCH");
-        }
+        assertEquals(RenderViews.MechanismKind.SWITCH, kindById.get(Level03Pursuit.SWITCH_S3),
+                "S₃ 应投影成 SWITCH（胶囊）");
+        assertEquals(RenderViews.MechanismKind.PLATE, kindById.get(Level03Pursuit.SWITCH_S2),
+                "S₂ 是驻留板外观（琥珀方块），不得画成胶囊按钮");
         for (String doorId : List.of(Level03Pursuit.DOOR_A, Level03Pursuit.DOOR_B, Level03Pursuit.DOOR_C)) {
             assertEquals(RenderViews.MechanismKind.DOOR, kindById.get(doorId), doorId + " 应投影成 DOOR");
         }
