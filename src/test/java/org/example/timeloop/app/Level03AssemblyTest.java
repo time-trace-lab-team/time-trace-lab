@@ -35,7 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li><b>渲染投影</b>：4 块板（A/B/C 蓝底带 1/2/3 号）+ 2 个开关（S₂/S₃，琥珀胶囊）+
  *       3 扇门（各带同号角标）+ 1 个出口；终点格（{@code L03_door_exit} 与出口同格）<b>只</b>投影一个
  *       {@code EXIT}，不叠一个 {@code DOOR}，且终点组一律不带数字；</li>
- *   <li><b>射线随共享 {@code roundTick} 推进</b>：射线周期 396（OFF 264 / 预警 72 / 激活 60），
+ *   <li><b>射线随共享 {@code roundTick} 推进</b>：射线周期 264（OFF 132 / 预警 72 / 激活 60），
  *       绝对锚点仍是 预警起 528、激活起 600；</li>
  *   <li><b>{@code objectiveView()} 在真实玩法状态下不得抛异常</b>：玩家已进 E₂ 支路而门 A 早已回锁，
  *       是第三关必然出现的合法局面 —— 这里用<b>真驾驶</b>复现，而不是拼一个 VM 参数；</li>
@@ -192,12 +192,12 @@ class Level03AssemblyTest {
         }
 
         // 关键刻（当前冻结 + 周期原点口径）逐点钉死，避免整段循环「恰好自洽」。
-        assertEquals(264L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 段长度 528 减半 → 264");
-        assertEquals(264L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点 = OFF 段长度");
-        assertEquals(336L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = 264 + 72");
-        assertEquals(396L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = OFF 264 + 预警 72 + 激活 60");
-        assertEquals(264L, Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
-                "周期缩短后相位与绝对刻不再一一对应：原点 = 600 − 336");
+        assertEquals(132L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 段长度 264 再减半 → 132");
+        assertEquals(132L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点 = OFF 段长度");
+        assertEquals(204L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = 132 + 72");
+        assertEquals(264L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = OFF 132 + 预警 72 + 激活 60");
+        assertEquals(396L, Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
+                "周期缩短后相位与绝对刻不再一一对应：原点 = 600 − 204");
         assertEquals(528L, Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK,
                 "绝对预警起点必须仍是 528（教学锚点不随周期变化）");
         assertEquals(600L, Level03Pursuit.RAY_ACTIVE_START_ABSOLUTE_TICK,
@@ -255,14 +255,17 @@ class Level03AssemblyTest {
         Level03ObjectiveViewModel atFork = a.objectiveView();   // 修掉假不变量前：这里抛 IllegalArgumentException
         assertFalse(atFork.doorAOpen(), "门 A 已回锁");
         assertTrue(atFork.inEcho2Branch(), "玩家确实已经在 E₂ 支路里");
-        assertFalse(atFork.rayActive(), "刻 384 射线尚未 ACTIVE");
+        // 不断言刻 384 的射线状态：它随周期调参而变（周期 264 时该刻相位 252 落在 ACTIVE 段），
+        // 而本用例的主旨是「这一局面下 objectiveView 仍然合法」，射线状态由下面「推进到 ACTIVE」一段覆盖。
 
-        // 再推进到射线 ACTIVE 那一刻：提示切成「按 Space 下潜」，投影仍然合法。
+        // 再推进到「玩家抵达射线」那一刻：提示切成「按 Space 下潜」，投影仍然合法。
         // 装配先 updateAll(roundTick) 再 advance，因此刻 600 的 update 结果在刻 601 才可见。
-        while (!a.isRayActive()) {
+        // 不写成 while(!isRayActive())——周期调密后该刻之前可能已有 ACTIVE 窗口（与射线判定无关）。
+        while (a.hudContext().roundTick() < 601L) {
             a.tick(InputIntent.empty(tick++));
         }
-        assertEquals(601L, a.hudContext().roundTick(), "射线在刻 601 才可观察到 ACTIVE");
+        assertTrue(a.isRayActive(), "刻 601 射线必须是 ACTIVE（刻表锚点 600）");
+        assertEquals(601L, a.hudContext().roundTick(), "刻 600 的 update 在刻 601 可观察");
         Level03ObjectiveViewModel atRay = a.objectiveView();
         assertTrue(atRay.rayActive(), "刻 601 射线 ACTIVE");
         assertTrue(atRay.inEcho2Branch(), "玩家仍在 E₂ 支路");
