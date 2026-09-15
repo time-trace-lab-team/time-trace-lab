@@ -37,13 +37,17 @@ import java.util.Set;
  * K 板从 (10,13) 挪到 {@link #CELL_PLATE_K}(7,14)；(6,14) 补一面墙，
  * 于是 K 板格只剩「向右」一个出口 —— 玩家进去就只能停在那里压到轮末。</p>
  *
- * <p><b>为什么 (4,3)(5,3) 必须打通</b>：C 挪到 (12,3) 后 A→C 的最短距离从 9 格变成 12 格
- * （第 1 行走廊绕远），门 C 窗口起刻会从 600 落到 672。<b>后果不是「变难」，而是公平性塌掉</b>：
- * 第二轮玩家在刻 624 就抵达门 C 门口，本来要空等到 672；而射线命中只让他迟 30 刻（到 654），
- * 空等把这些迟到的刻全部吃掉 —— 于是「受击」与「正解」在门 C 的表现完全一样，
- * 「被射线打中就过不了关」这条教学就不成立了（等射线关闭迟 60 刻时也只差 12 刻，仍过得了）。
- * 把 (4,3)(5,3) 打通让 A→C 压回 10 格（这是 (12,3) 这个格子理论上能达到的最短距离），
- * 再把 A 板驻留压到 1 格，窗口起刻就回到 600，七条公平性不等式<b>一条都不用改</b>。</p>
+ * <p><b>门 C 窗口与第二轮的空等（v3 重排后的既有事实，公平性断言按此写）</b>：C 在 (12,3)，
+ * A→C 要 12 格（第 1 行走廊绕远），因此门 C 要到刻 {@link #PLATE_C_ARRIVAL}(648) 才开；
+ * 而 E₂ 在刻 {@link #E2_DOOR_C_ARRIVAL}(624) 就抵达门口，会空等 {@link #E2_DOOR_C_WAIT_TICKS}(24) 刻。
+ * 这 24 刻会抵掉后续路线的一部分迟到量，所以公平性按<b>净迟到</b>算：</p>
+ * <ul>
+ *   <li>受击（迟 30）：净迟 6 刻 → 穿门 C 于 {@link #LATE_DOOR_C_ARRIVAL}(1062)，仍在窗口末
+ *       {@link #PLATE_C_WINDOW_END}(1080) <b>之内</b> —— 本版里「被射线打中」不再必然失败；</li>
+ *   <li>等射线关闭（迟 60）：净迟 36 刻 → 穿门 C 于 {@link #WAIT_DOOR_C_ARRIVAL}(1092)，
+ *       已晚于窗口末 → <b>仍然失败</b>；</li>
+ *   <li>正解：余量 {@link #SUCCESS_MARGIN_TICKS}(24) 刻。</li>
+ * </ul>
  *
  * <p><b>为什么 S₂ / S₃ 必须是锁存开关而不是普通板</b>：出口闸的条件是「三块同时成立」，
  * 但 S₂ 是 E₂ 在刻 {@link #SWITCH_S2_ARRIVAL} 路过踩一下就继续往门 C 走、S₃ 是 E₃ 在刻
@@ -89,7 +93,7 @@ public final class Level03Pursuit {
             "############################", // 0
             "#............###..........##", // 1
             "#..A##.......###....3.....##", // 2  A(3,2) / S₃(20,2)
-            "#...........C###..........##", // 3  C(12,3)（(4,3)(5,3) 打通，见类注释）
+            "#...##......C###..........##", // 3  C(12,3)
             "#.....##.....#######.#######", // 4
             "##.#######.####.....b#######", // 5  门 B(20,5)：开关室唯一进口
             "#............##....#.#######", // 6
@@ -161,16 +165,8 @@ public final class Level03Pursuit {
 
     /** 出生点 → A 板：14 格（BFS 实算）。 */
     public static final long SPAWN_TO_PLATE_A_TICKS = 14 * TICKS_PER_TILE;
-    /**
-     * A 板 → C 板：10 格。
-     *
-     * <p>C 板挪到 (12,3) 之后，A→C 的最短距离本来是 12 格（走第 1 行绕远），
-     * 于是「门 C 窗口」会晚到刻 672 才开 —— 而第二轮玩家在刻 624 就到门 C 门口，
-     * <b>48 刻的空等会把射线命中那 30 刻的惩罚整个吃掉</b>，「受击必失败」这条公平性就不成立了
-     * （见类注释「为什么 (4,3)(5,3) 必须打通」）。因此把 (4,3)、(5,3) 两格打开，
-     * 让 A→C 压回 10 格，窗口起刻回到 600。</p>
-     */
-    public static final long PLATE_A_TO_C_TICKS = 10 * TICKS_PER_TILE;
+    /** A 板 → C 板：12 格（C 在 (12,3)，第 1 行走廊绕远：(4,3)(5,3) 是墙）。 */
+    public static final long PLATE_A_TO_C_TICKS = 12 * TICKS_PER_TILE;
     /** C 板 → K 板：18 格。 */
     public static final long PLATE_C_TO_K_TICKS = 18 * TICKS_PER_TILE;
 
@@ -202,21 +198,19 @@ public final class Level03Pursuit {
      * 第二轮玩家与第三轮玩家都在窗口一开始的刻抵达门外（他们是被门挡住的，门一开就走，
      * 不需要反应时间，因此 24 刻足够；每轮只有一个当前玩家要穿门 A，残影回放不产生移动）。</p>
      *
-     * <p><b>为什么是 1 而不是 2</b>：C 板挪到 (12,3) 后 A→C 变长，若仍驻留 2 格，
-     * 门 C 窗口起刻会落到 624，正好把第二轮「受击迟 30 刻」的差异吃掉（见
-     * {@link #PLATE_A_TO_C_TICKS}）。压到 1 格后窗口起刻回到设计文档的 600，
-     * 七条公平性不等式一条都不用改。</p>
+     * <p>取 1 而不是 2：C 在 (12,3)、A→C 要 12 格，驻留 2 格会让门 C 窗口起刻落到 672，
+     * 第二轮在门口空等 48 刻，连「等射线关闭」那条失败路线（迟 60 刻）都会被空等吃掉。</p>
      */
     public static final int HOLD_A_TILES = 1;
 
     /**
-     * E₁ 在 C 板上驻留的格数 = 门 C 窗口宽度（19 格 = 456 刻）。
+     * E₁ 在 C 板上驻留的格数 = 门 C 窗口宽度（18 格 = 432 刻）。
      *
      * <p>由「E₂ 必须先过门 C 才能拿到 B 板」与「E₃ 必须在同一窗口内二次穿过门 C」共同确定：
-     * 窗口从 E₁ 抵达 C 的刻 {@link #PLATE_C_ARRIVAL}(600) 一直到 {@link #PLATE_C_WINDOW_END}(1056)，
-     * 中间要容下 E₂ 的 624 与 E₃ 的 1032 两次穿越。</p>
+     * 窗口从 E₁ 抵达 C 的刻 {@link #PLATE_C_ARRIVAL}(648) 一直到 {@link #PLATE_C_WINDOW_END}(1080)，
+     * 中间要容下 E₂ 与 E₃ 两次穿越。</p>
      */
-    public static final int HOLD_C_TILES = 19;
+    public static final int HOLD_C_TILES = 18;
 
     // ---------- ⑥ 公平性常量 ----------
 
@@ -239,7 +233,7 @@ public final class Level03Pursuit {
 
     /** 出生点 → A 板抵达刻（= A 板开始占用 = E₁ 开门 A 的刻 = 玩家穿门 A 的刻）。 */
     public static final long GATE_A_WINDOW_START = SPAWN_TO_PLATE_A_TICKS;
-    /** A 板驻留窗口结束：E₁ 在刻 384 离开 A，门 A 回锁。 */
+    /** A 板驻留窗口结束：E₁ 在刻 360 离开 A，门 A 回锁。 */
     public static final long GATE_A_WINDOW_END = GATE_A_WINDOW_START + HOLD_A_TILES * TICKS_PER_TILE;
 
     /** 第二轮 / 第三轮玩家穿过门 A 的刻（= 门 A 窗口起点）。 */
@@ -252,8 +246,18 @@ public final class Level03Pursuit {
     public static final long RAY_CROSS_TICK = SWITCH_S2_ARRIVAL + SWITCH_S2_TO_RAY_TICKS;
     /** E₁ 抵达 C 板、门 C 开启的刻。 */
     public static final long PLATE_C_ARRIVAL = GATE_A_WINDOW_END + PLATE_A_TO_C_TICKS;
-    /** E₂ 穿过门 C 的刻（门 C 在刻 {@link #PLATE_C_ARRIVAL} 已经开着，E₂ 不必空等）。 */
-    public static final long DOOR_C_CROSS_BY_E2_TICK = RAY_CROSS_TICK + RAY_TO_DOOR_C_TICKS;
+    /** E₂ 抵达门 C 门口的刻（纯几何：射线 → 门 C 1 格）。 */
+    public static final long E2_DOOR_C_ARRIVAL = RAY_CROSS_TICK + RAY_TO_DOOR_C_TICKS;
+    /**
+     * E₂ 实际穿过门 C 的刻 = max(门口抵达刻, 门 C 开启刻)。
+     *
+     * <p>A→C 12 格之后门 C 要到 {@link #PLATE_C_ARRIVAL}(648) 才开，而 E₂ 在 624 就到门口，
+     * 因此 E₂ 会空等 {@link #E2_DOOR_C_WAIT_TICKS}(24) 刻。这 24 刻会抵掉后来每条路线的一部分
+     * 迟到量，因此受击 / 等待的后果要按「净迟到」算（见 {@link #LAGGED_B_ARRIVAL}）。</p>
+     */
+    public static final long DOOR_C_CROSS_BY_E2_TICK = Math.max(E2_DOOR_C_ARRIVAL, PLATE_C_ARRIVAL);
+    /** E₂ 在门 C 门口的空等刻数（0 表示门已经开着）。 */
+    public static final long E2_DOOR_C_WAIT_TICKS = DOOR_C_CROSS_BY_E2_TICK - E2_DOOR_C_ARRIVAL;
     /** E₂ 抵达 B 板的刻（= 第三轮门 B 开启刻）。 */
     public static final long PLATE_B_ARRIVAL = DOOR_C_CROSS_BY_E2_TICK + DOOR_C_TO_PLATE_B_TICKS;
     /** 门 B 开启刻（E₂ 压上 B 板的那一该）。 */
@@ -275,23 +279,36 @@ public final class Level03Pursuit {
     /** 门 C 关闭刻：正解（E₃）穿过门 C 后还须留 {@link #SUCCESS_MARGIN_TICKS} 刻余量。 */
     public static final long PLATE_C_WINDOW_END = DOOR_C_CROSS_TICK + SUCCESS_MARGIN_TICKS;
     /**
-     * E₁ 抵达 K 板的刻：E₁ 离开 C 后走 13 格到 K 并驻留到轮末，出口闸的第三个条件由此满足。
+     * E₁ 抵达 K 板的刻：E₁ 离开 C 后走 18 格到 K 并驻留到轮末，出口闸的第三个条件由此满足。
      *
-     * <p>注意 K 板满足刻（1368）晚于玩家抵达出口的刻（{@link #EXIT_ARRIVAL}＝1248）——玩家要在出口
+     * <p>K 板满足刻晚于玩家抵达出口的刻（{@link #EXIT_ARRIVAL}）——玩家要在出口
      * <b>等</b>到那一刻再按 {@code E}。这是设计意图（外区控制线绕得远），不是缺陷。</p>
      */
     public static final long PLATE_K_ARRIVAL = PLATE_C_WINDOW_END + PLATE_C_TO_K_TICKS;
 
-    /** B 板仍有用的最晚抵达刻 = 正解抵达刻 + 余量（再晚就会让 E₃ 错过门 C 窗口）。 */
-    public static final long LATEST_USEFUL_B_ARRIVAL = PLATE_B_ARRIVAL + SUCCESS_MARGIN_TICKS;
-    /** 受击路线的 B 抵达刻。 */
-    public static final long LAGGED_B_ARRIVAL = PLATE_B_ARRIVAL + HIT_DELAY_TICKS;
-    /** 等待路线的 B 抵达刻。 */
-    public static final long WAIT_FOR_OFF_B_ARRIVAL = PLATE_B_ARRIVAL + WAIT_FOR_OFF_DELAY_TICKS;
-    /** 受击路线穿过门 C 的刻（必须晚于门 C 关闭刻）。 */
-    public static final long LATE_DOOR_C_ARRIVAL = DOOR_C_CROSS_TICK + HIT_DELAY_TICKS;
+    /** E₃ 从「门 B 开启」走到「穿过门 C」的刻数（S₃ → 折回门 B → 直下门 C = 3+3+6 = 12 格）。 */
+    public static final long E3_DOOR_B_TO_DOOR_C_TICKS = SWITCH_S3_TO_DOOR_B_TICKS
+            + SWITCH_S3_TO_DOOR_B_TICKS + DOOR_B_TO_DOOR_C_TICKS;
+
+    /** B 板仍有用的最晚抵达刻：再晚 E₃ 就赶不上门 C 窗口（= 门 C 关闭刻 − 余量 − E₃ 后段）。 */
+    public static final long LATEST_USEFUL_B_ARRIVAL =
+            PLATE_C_WINDOW_END - SUCCESS_MARGIN_TICKS - E3_DOOR_B_TO_DOOR_C_TICKS;
+    /**
+     * 受击路线的 B 抵达刻。
+     *
+     * <p>迟到量按「净迟到」算：E₂ 在门 C 门口的空等会先抵掉 {@link #E2_DOOR_C_WAIT_TICKS} 刻
+     * （受击迟 30 − 空等 24 = 净迟 6），因此实测是 774 而不是 768 + 30 = 798。</p>
+     */
+    public static final long LAGGED_B_ARRIVAL = Math.max(E2_DOOR_C_ARRIVAL + HIT_DELAY_TICKS,
+            PLATE_C_ARRIVAL) + DOOR_C_TO_PLATE_B_TICKS;
+    /** 等待路线的 B 抵达刻（净迟 60 − 24 = 36）。 */
+    public static final long WAIT_FOR_OFF_B_ARRIVAL = Math.max(
+            E2_DOOR_C_ARRIVAL + WAIT_FOR_OFF_DELAY_TICKS, PLATE_C_ARRIVAL)
+            + DOOR_C_TO_PLATE_B_TICKS;
+    /** 受击路线穿过门 C 的刻（门 C 关闭刻 1080；实测 1062，仍在窗口内）。 */
+    public static final long LATE_DOOR_C_ARRIVAL = LAGGED_B_ARRIVAL + E3_DOOR_B_TO_DOOR_C_TICKS;
     /** 等待路线穿过门 C 的刻（必须晚于门 C 关闭刻）。 */
-    public static final long WAIT_DOOR_C_ARRIVAL = DOOR_C_CROSS_TICK + WAIT_FOR_OFF_DELAY_TICKS;
+    public static final long WAIT_DOOR_C_ARRIVAL = WAIT_FOR_OFF_B_ARRIVAL + E3_DOOR_B_TO_DOOR_C_TICKS;
 
     // ---------- ⑨ 时滞射线（竖跨 E₂ 走廊一格：x 固定、y 跨一格）----------
 

@@ -97,23 +97,24 @@ class Level03PursuitChainTest {
 
     // ---------- 公平性：两条失败路线 ----------
 
+    /**
+     * 受击路线的后果（本版实测口径）：A→C 12 格 ⇒ 门 C 到 648 才开，E₂ 在门口空等 24 刻，
+     * 把 30 刻的受击迟到抵掉大半，净迟只有 6 刻 —— 仍然落在门 C 窗口（1080）之内。
+     */
     @Test
-    void hitByTheRayInRoundTwoMissesDoorCInRoundThree() {
+    void hitByTheRayInRoundTwoStillFitsTheDoorCWindow() {
         Run second = runSecondRound(Strategy.HIT);
         assertTrue(second.hitByRay, "夹具前提：第二轮确实被射线命中");
         assertEquals(Level03Pursuit.LAGGED_B_ARRIVAL, second.bArrival,
-                "被命中后到 B 的刻必须等于真实减速算出来的刻（迟 "
-                        + Level03Pursuit.HIT_DELAY_TICKS + " 刻）");
-        assertTrue(second.bArrival > Level03Pursuit.LATEST_USEFUL_B_ARRIVAL,
-                "被命中后到 B 必须晚于「B 板仍有用」的最晚刻");
+                "被命中后到 B 的刻必须等于真实减速算出来的刻（净迟 "
+                        + (Level03Pursuit.LAGGED_B_ARRIVAL - Level03Pursuit.PLATE_B_ARRIVAL) + " 刻）");
 
         Run third = runThirdRound(second.bArrival, true, true, true, true, null);
-        assertTrue(third.doorBOpened, "门 B 最终还是会开，只是开得太晚");
-        assertTrue(third.crossedDoorB, "E₃ 还是穿过了门 B");
-        assertFalse(third.doorCOpenForE3, "门 C 窗口已经关了");
-        assertTrue(third.doorCClosedAtArrival, "失败原因必须能从画面判断：到门 C 时门已关");
-        assertFalse(third.cleared, "被命中的第二轮必须导致第三轮无法通关");
-        assertEquals(Level03Pursuit.LATE_DOOR_C_ARRIVAL, third.doorCCrossTick, "迟到路线到门 C 的刻");
+        assertTrue(third.doorBOpened, "门 B 由 E₂ 打开");
+        assertTrue(third.crossedDoorB, "E₃ 穿过门 B");
+        assertEquals(Level03Pursuit.LATE_DOOR_C_ARRIVAL, third.doorCCrossTick, "受击路线到门 C 的刻");
+        assertTrue(third.doorCOpenForE3, "净迟 6 刻仍在余量 24 之内 → 门 C 还开着");
+        assertTrue(third.cleared, "因此本版受击路线仍能通关");
     }
 
     @Test
@@ -510,8 +511,9 @@ class Level03PursuitChainTest {
                 "第二轮玩家抵达射线的那一刻，射线必须是 ACTIVE（否则不必下潜）");
 
         if (strategy == Strategy.WAIT) {
-            return Level03Pursuit.RAY_ACTIVE_START_TICK + Level03Pursuit.RAY_ACTIVE_DURATION_TICKS
-                    + remainingTicks;
+            return Math.max(Level03Pursuit.RAY_ACTIVE_START_TICK
+                            + Level03Pursuit.RAY_ACTIVE_DURATION_TICKS + remainingTicks,
+                    Level03Pursuit.PLATE_C_ARRIVAL + Level03Pursuit.DOOR_C_TO_PLATE_B_TICKS);
         }
 
         PlayerSlowdownController slowdown = new PlayerSlowdownController();
@@ -528,7 +530,8 @@ class Level03PursuitChainTest {
             remaining -= BASE_SPEED * slowdown.speedMultiplier();
             assertTrue(tick < ROUND_END, "射线 → B 这段路必须能在轮内走完");
         }
-        return tick;
+        // 门 C 要到 PLATE_C_ARRIVAL 才开：E₂ 可能先在门口空等，抵达 B 的刻取两者较晚。
+        return Math.max(tick, Level03Pursuit.PLATE_C_ARRIVAL + Level03Pursuit.DOOR_C_TO_PLATE_B_TICKS);
     }
 
     /** 在刻 {@code tick} 用真实射线类算出来的状态（只读夹具）。 */

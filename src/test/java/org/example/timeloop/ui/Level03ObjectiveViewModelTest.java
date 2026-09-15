@@ -45,7 +45,7 @@ class Level03ObjectiveViewModelTest {
         String text = new Fixture().round(1).build().text();
         assertTrue(text.contains("第 1 轮"), text);
         assertTrue(text.contains("A → C → K"), text);
-        assertTrue(text.contains("19"), "C 板要驻留 19 格（v3 窗口）: " + text);
+        assertTrue(text.contains("18"), "C 板要驻留 18 格（v3 窗口）: " + text);
     }
 
     @Test
@@ -93,7 +93,7 @@ class Level03ObjectiveViewModelTest {
         Level03ObjectiveViewModel view = new Fixture().round(2).build();
         assertTrue(view.tierOne().contains("S₂ + S₃ + K"), view.tierOne());
         assertTrue(view.tierTwo().contains("S₂"), view.tierTwo());
-        assertTrue(view.tierThreeRoute().contains("K(1488)"), view.tierThreeRoute());
+        assertTrue(view.tierThreeRoute().contains("K(1512)"), view.tierThreeRoute());
         assertTrue(view.tierThreeRoute().contains("S₂(456)"), view.tierThreeRoute());
         assertTrue(view.tierThreeRoute().contains("S₃(816)"), view.tierThreeRoute());
         assertTrue(view.tierThreeRoute().contains("门C(1032)"), view.tierThreeRoute());
