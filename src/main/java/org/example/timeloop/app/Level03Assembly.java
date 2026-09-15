@@ -61,7 +61,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * 第三关「追赶过去」装配（集成层，纯 Java，不依赖 JavaFX）。
+ * 第三关「追赶过去」装配（集成层，纯 Java，不依赖 JavaFX）· <b>重排 v3</b>。
  *
  * <p>与 {@link Level01Assembly} / {@link Level02Assembly} 同一套生命周期与只读投影
  * （{@code start / tick / restart / stop / cleanup / phase / isFinalPhase / hudContext / drainEvents /
@@ -70,22 +70,25 @@ import java.util.TreeSet;
  * 差别只在关卡数据与机关数量。关卡数值<b>全部来自{@link Level03Pursuit}</b>（权威常量，本类不复制任何刻表）：</p>
  *
  * <ul>
- *   <li><b>4 块普通驻留板</b>（{@code L03_plate_a/c/d/b}）：{@code Level03Pursuit.build()} 里都没有
- *       {@code role=switch}，因此 {@link #createPlate} 一律拿到 {@code latching=false} —— 占即开、离即关，
- *       与第二关四块普通板同义（本关没有锁存开关，所以<b>没有</b>任何 {@code role} 分支）；</li>
- *   <li><b>4 扇门</b>：门 A←A 板、门 B←B 板、门 C←C 板，终点供能闸 {@code L03_door_exit} 与出口<b>同格</b>
- *       且只要求 D 板（{@code ExitTerminal} 只能被一扇 Door 武装，这是「D 板为出口供能」的实现方式）；
- *       D 板只供能、不直接通关：仍须当前玩家在半径内按 {@code E}；</li>
- *   <li><b>1 束射线</b>（{@code L03_ray_b}）：由 {@link RayFactory} 装配，每逻辑刻用共享 {@code roundTick}
- *       驱动，不自建计时器；命中结算与 {@link Level02Assembly} 逐字一致（只对当前玩家、用移动后位置、
+ *   <li><b>4 块普通驻留板</b>（{@code L03_plate_a / _c / _k / _b}）：关卡数据里都没有
+ *       {@code role=switch}，因此 {@link #createPlate} 一律拿到 {@code latching=false} ——
+ *       占即开、离即关，与第二关的普通板同义；</li>
+ *   <li><b>2 个锁存开关</b>（{@code L03_plate_s2 / _s3}）：关卡数据带 {@code role=switch}，
+ *       踩上即锁存到轮末。出口闸需要它们与 K 板同时成立，而两者都是「路过踩一下就走」，
+ *       不锁存就永远凑不齐三个条件（见 {@link Level03Pursuit} 类注释）；</li>
+ *   <li><b>4 扇门</b>：门 A←A 板、门 B←B 板、门 C←C 板，终点供能闸 {@code L03_door_exit} 与出口
+ *       <b>同格</b>且要求 <b>{S₂, S₃, K} 三块同时成立</b>（{@code ExitTerminal} 只能被一扇 Door 武装，
+ *       这是「三块板给出口供能」的实现方式）；供能只解锁，不直接通关：仍须当前玩家在半径内按 {@code E}；</li>
+ *   <li><b>1 束射线</b>（{@code L03_ray_b}）：v3 是<b>竖向</b>竖跨 E₂ 走廊一格（x 固定、y 跨一格），
+ *       由 {@link RayFactory} 装配，每逻辑刻用共享 {@code roundTick} 驱动，不自建计时器；
+ *       命中结算与 {@link Level02Assembly} 逐字一致（只对当前玩家、用移动后位置、
  *       {@code PHASED} 直接豁免、同 {@code (rayId, activeCycle)} 只写一次减速与一条 {@code RAY_DELAY} 记录）。</li>
  * </ul>
  *
- * <p>渲染投影契约：4 个 {@code PLATE} + {@code L03_door_a/b/c} 三个 {@code DOOR} + 终点格<b>只投影一个</b>
- * {@code EXIT}（终点供能闸 {@code L03_door_exit} 与出口同格，该格的开/关由 {@code EXIT.active =
- * exit.isDoorUnlocked()} 表达，避免同格叠画门与终点）。本关没有组色与数字角标需求，
- * 因此 {@code tag} 一律 {@code null}、{@code gateGroup} 一律 {@code false}
- * （{@link RenderViews.Mechanism} 的 5 参兼容构造器）。</p>
+ * <p>渲染投影契约：6 个板/开关（A/C/B 蓝底带同号数字，K 与 S₂/S₃ 属终点组琥珀、不带数字）+
+ * {@code L03_door_a/b/c} 三个 {@code DOOR}（各带与板同号的角标）+ 终点格<b>只投影一个</b>
+ * {@code EXIT}（{@code active = exit.isDoorUnlocked()}，不加角标）。终点供能闸 {@code L03_door_exit}
+ * 与出口同格，该格<b>不再</b>投影 {@code DOOR}（同格叠画会互相遮挡）。</p>
  */
 public final class Level03Assembly {
 
@@ -98,19 +101,18 @@ public final class Level03Assembly {
     private static final String ECHO_ACTOR_ID_PREFIX = "echo_";
 
     /**
-     * B 支路（{@code Branch B}）的格子集合：玩家一旦身处其中，就会接触 {@code L03_ray_b} 射线。
+     * E₂ 支路的格子集合（J 以南 + 到射线的那条走廊）：玩家一旦身处其中，就正在走第二轮那条支路、
+     * 也就是唯一会接触 {@code L03_ray_b} 的路段。
      *
-     * <p><b>依据</b>（{@link Level03Pursuit} 的冻结空间关系）：{@code Level03Pursuit.MAP} 的第 17 列
-     * （行 3..10）是全图唯一的一条竖廊，它从分岔口 {@code J(17,10)} 沿第 17 列向上、在 {@code (17,5)}
-     * 被射线横跨，再折到 {@code (16,3)} 的 B 板 —— 即设定书里的「B 板支路：门A → 分岔口 J → 射线 → B 板」。
-     * 第 17 列的行 3..8 两侧都是墙（只有格内的竖廊可走），因此「在第 17 列行 3..10 上」或「站在 B 板格
-     * {@code (16,3)} 上」两者合起来<b>恰好</b>是 B 支路，不多不少；主通道（J 向右折线）只在 J 与支路相交，
-     * 除 J 之外不会落入本集合。</p>
+     * <p><b>依据</b>（{@link Level03Pursuit} 的冻结空间关系）：分岔口 {@code J(15,10)} 以南是
+     * S₂ 开关 {@code (15,13)} 与通往射线 {@code (19,11)} 的走廊（第 11-13 行、第 15-19 列）；
+     * 第三轮的 E₃ 主线从 J <b>向北</b>走（第 15-18 列第 5-10 行），与本集合只在 J 与射线格相交。
+     * 因此「在 J 或 J 以南的内区」恰好是「E₂ 支路」，不多不少。</p>
      *
-     * <p>集合由 {@link Level03Pursuit#nodeId} 生成，不手抄节点 ID 字符串；元素是<b>节点 ID</b>，
-     * 因而投影时可用「路径节点 ID 相等」判定，不需要浮点坐标比较。</p>
+     * <p>集合由 {@link Level03Pursuit#nodeId} 与 {@link Level03Pursuit#isOpen} 生成，不手抄节点 ID；
+     * 元素是<b>节点 ID</b>，投影时用「路径节点 ID 相等」判定，不需要浮点坐标比较。</p>
      */
-    private static final Set<String> BRANCH_B_NODE_IDS = branchBNodeIds();
+    private static final Set<String> ECHO2_BRANCH_NODE_IDS = echo2BranchNodeIds();
 
     /** 判定「是否已走到驻留机关中心」的容差（世界单位）。 */
     private static final double DOCK_CENTER_EPSILON = 1e-6;
@@ -128,12 +130,14 @@ public final class Level03Assembly {
     private final RecordingSession recording;
     private final ReplayPort replayPort;
 
-    /** 四块普通驻留板（顺序 = 渲染投影顺序）。本关没有锁存开关。 */
+    /** 四块普通驻留板 + 两个锁存开关（顺序 = 渲染投影顺序）。 */
     private final List<DockingPlate> plates;
     private final DockingPlate plateA;
     private final DockingPlate plateB;
     private final DockingPlate plateC;
-    private final DockingPlate plateD;
+    private final DockingPlate plateK;
+    private final DockingPlate switchS2;
+    private final DockingPlate switchS3;
 
     /** 四扇门（顺序 = 渲染投影顺序：门 A、门 B、门 C、终点供能闸）。 */
     private final List<Door> doors;
@@ -183,12 +187,15 @@ public final class Level03Assembly {
         this.occupancy = new DockingPlateRegistry();
         this.eventBus = new EventDispatcher();
 
-        // 四块普通板（关卡数据里都没有 role=switch → latching=false，占即开、离即关）。
+        // 四块普通板（关卡数据里都没有 role=switch → latching=false，占即开、离即关）
+        // + 两个锁存开关（role=switch → latching=true，踩上即锁存到轮末）。
         this.plateA = createPlate(Level03Pursuit.PLATE_A);
         this.plateB = createPlate(Level03Pursuit.PLATE_B);
         this.plateC = createPlate(Level03Pursuit.PLATE_C);
-        this.plateD = createPlate(Level03Pursuit.PLATE_D);
-        this.plates = List.of(plateA, plateB, plateC, plateD);
+        this.plateK = createPlate(Level03Pursuit.PLATE_K);
+        this.switchS2 = createPlate(Level03Pursuit.SWITCH_S2);
+        this.switchS3 = createPlate(Level03Pursuit.SWITCH_S3);
+        this.plates = List.of(plateA, plateB, plateC, plateK, switchS2, switchS3);
 
         this.doorA = createDoor(Level03Pursuit.DOOR_A);
         this.doorB = createDoor(Level03Pursuit.DOOR_B);
@@ -273,15 +280,18 @@ public final class Level03Assembly {
      * <ul>
      *   <li>{@code currentRound} / {@code maxRounds} 直接取共享时钟；
      *       {@code firstEchoFinalRound = (currentRound == maxRounds)} —— E₁ 的最后有效轮（设定书 §9.2）；</li>
-     *   <li>{@code doorAOpen = plateA.isOccupied()}：问的是「<b>此刻</b>门 A 是否被打开」。
-     *       本关四块板都是普通板（{@code latching=false}），因此「板此刻被占」与
-     *       {@code doorA.isUnlocked()} 的锁存语义<b>等价</b>；这里刻意取板（而不是 {@code Door} 的内部锁存位），
-     *       与渲染投影 {@code PLATE.active} 用同一个事实源，避免「板亮着而提示说门关着」；</li>
-     *   <li>{@code inBranchB}：当前玩家所在路径节点是否属于 {@link #BRANCH_B_NODE_IDS}
-     *       （第 17 列行 3..10 + B 板格 {@code (16,3)}，见该常量的 javadoc）；</li>
-     *   <li>{@code rayActive}：该刻射线 {@code L03_ray_b} 是否 {@link Ray.State#ACTIVE}；</li>
-     *   <li>{@code doorBOpen = plateB.isOccupied()}、{@code doorCOpen = plateC.isOccupied()}、
-     *       {@code exitPowered = plateD.isOccupied()}（终点供能闸只要求 D 板）。</li>
+     *   <li>{@code doorAOpen = plateA.isOccupied()}、{@code doorBOpen = plateB.isOccupied()}、
+     *       {@code doorCOpen = plateC.isOccupied()}：问的是「<b>此刻</b>门是否被打开」。
+     *       三块板都是普通板（{@code latching=false}），因此「板此刻被占」与 {@code Door} 的锁存语义
+     *       <b>等价</b>；这里刻意取板（而不是 {@code Door} 的内部状态），与渲染投影 {@code PLATE.active}
+     *       用同一个事实源，避免「板亮着而提示说门关着」；</li>
+     *   <li>{@code switchS2On / switchS3On = 开关.isOccupied()}：开关是锁存变体，
+     *       {@code isOccupied()} 已经并入锁存位（踩上即锁存到轮末），因此这一个读法同时覆盖
+     *       「此刻有人站着」与「本轮已兑现」；</li>
+     *   <li>{@code plateKHeld = plateK.isOccupied()}（出口闸的第三个条件）、
+     *       {@code exitUnlocked = exit.isDoorUnlocked()}（三条件同时成立、出口终端已武装）；</li>
+     *   <li>{@code inEcho2Branch}：当前玩家所在路径节点是否属于 {@link #ECHO2_BRANCH_NODE_IDS}；</li>
+     *   <li>{@code rayActive}：该刻射线 {@code L03_ray_b} 是否 {@link Ray.State#ACTIVE}。</li>
      * </ul>
      */
     public Level03ObjectiveViewModel objectiveView() {
@@ -290,11 +300,14 @@ public final class Level03Assembly {
                 clock.maxRounds(),
                 clock.currentRound() == clock.maxRounds(),
                 plateA.isOccupied(),
-                inBranchB(),
+                inEcho2Branch(),
                 isRayActive(),
+                switchS2.isOccupied(),
+                switchS3.isOccupied(),
+                plateK.isOccupied(),
                 plateB.isOccupied(),
                 plateC.isOccupied(),
-                plateD.isOccupied());
+                exit.isDoorUnlocked());
     }
 
     public GamePhase phase() {
@@ -372,13 +385,13 @@ public final class Level03Assembly {
     }
 
     /**
-     * 当前玩家是否身处 B 支路（见 {@link #BRANCH_B_NODE_IDS}）。
+     * 当前玩家是否身处 E₂ 支路（见 {@link #ECHO2_BRANCH_NODE_IDS}）。
      *
      * <p>判定用「玩家当前路径节点 ID」（由世界坐标四舍五入到最近的格，再换成
      * {@link Level03Pursuit#nodeId}），而不是浮点容差比较：节点 ID 是关卡数据里的稳定标识。</p>
      */
-    public boolean inBranchB() {
-        return BRANCH_B_NODE_IDS.contains(currentNodeId());
+    public boolean inEcho2Branch() {
+        return ECHO2_BRANCH_NODE_IDS.contains(currentNodeId());
     }
 
     /**
@@ -462,11 +475,12 @@ public final class Level03Assembly {
      * 把板与「它作用的那扇门」用<b>同一个序号</b>关联起来（自开局起静态显示，不随玩法状态变化）。
      *
      * <p>与第二关同一套视觉语言：<b>开门组</b>（蓝，板心写数字、门在本格右下角带同号角标）；
-     * <b>终点组</b>（琥珀）<b>不带数字</b> —— 同色即同组，终点闸也不加角标。</p>
+     * <b>终点组</b>（琥珀，含 S₂/S₃ 两个开关与 K 板）<b>不带数字</b> —— 同色即同组，
+     * 出口与终点闸也不加角标（与设计图 v3 一致）。</p>
      *
      * <pre>
      * 1 = A 板 → 门 A      2 = B 板 → 门 B      3 = C 板 → 门 C
-     * D 板 → 出口供能闸：终点组，靠琥珀色识别，不标号
+     * K 板 + S₂/S₃ → 出口供能闸：终点组，靠琥珀色识别，不标号
      * </pre>
      */
     private static final Map<String, String> TAG_BY_PLATE = Map.of(
@@ -480,21 +494,25 @@ public final class Level03Assembly {
             Level03Pursuit.DOOR_B, "2",
             Level03Pursuit.DOOR_C, "3");
 
-    /** 作用于出口供能闸的板（D）：与出口同色系（琥珀，终点组）。 */
-    private static final Set<String> GATE_GROUP_PLATES = Set.of(Level03Pursuit.PLATE_D);
+    /** 终点组的板（K）与两个开关（S₂/S₃）：与出口同色系（琥珀，终点组）。 */
+    private static final Set<String> GATE_GROUP_PLATES = Set.of(
+            Level03Pursuit.PLATE_K, Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3);
+
+    /** 锁存开关的 ID 集合：渲染上投影成 {@code SWITCH}（胶囊），而不是圆角方块。 */
+    private static final Set<String> SWITCH_IDS = Set.of(
+            Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3);
 
     /**
      * 只读渲染视图（零回写）。
      *
-     * <p>投影契约：4 个 {@code PLATE}（A / B / C / D，{@code active} = 此刻是否被占；A/B/C 带序号 1–3，
-     * D 属终点组不标号）+ {@code L03_door_a} / {@code L03_door_b} / {@code L03_door_c} 三个 {@code DOOR}
+     * <p>投影契约：6 个板/开关（A / B / C 蓝底、板心带序号 1–3；K 与 S₂/S₃ 属终点组琥珀、不标号，
+     * 其中 S₂/S₃ 投影成 {@code SWITCH} 胶囊）+ {@code L03_door_a/b/c} 三个 {@code DOOR}
      * （{@code active} = 是否解锁，各带与板同号的角标）+ 终点格一个 {@code EXIT}
      * （{@code active} = {@code exit.isDoorUnlocked()}，终点组颜色、<b>不加角标</b>）。终点供能闸
      * {@code L03_door_exit} 与出口同格，该格<b>不</b>再投影 {@code DOOR}（同格叠画会互相遮挡）。</p>
      *
      * <p><b>序号与组色自开局起就在</b>：它们是静态投影，不看任何玩法状态，玩家一进关就能看出
-     * 「哪块板管哪扇门」。机关顺序与 {@link #plates} / {@link #doors} 的声明顺序一致：
-     * 板 A、板 B、板 C、板 D、门 A、门 B、门 C、出口。</p>
+     * 「哪块板管哪扇门」。机关顺序与 {@link #plates} / {@link #doors} 的声明顺序一致。</p>
      */
     public RenderViews.Frame renderViews() {
         PlayerFrame player = lastFrame;
@@ -507,14 +525,18 @@ public final class Level03Assembly {
         List<RenderViews.Mechanism> mechanisms = new ArrayList<>();
         for (DockingPlate p : plates) {
             mechanisms.add(new RenderViews.Mechanism(p.getId(), p.getPosition().x(),
-                    p.getPosition().y(), RenderViews.MechanismKind.PLATE, p.isOccupied(),
+                    p.getPosition().y(),
+                    SWITCH_IDS.contains(p.getId())
+                            ? RenderViews.MechanismKind.SWITCH
+                            : RenderViews.MechanismKind.PLATE,
+                    p.isOccupied(),
                     TAG_BY_PLATE.get(p.getId()),
                     GATE_GROUP_PLATES.contains(p.getId())));
         }
         for (Door d : doors) {
             if (Level03Pursuit.DOOR_EXIT.equals(d.getId())) {
                 // 终点供能闸与出口同格：不投影 DOOR，开/关由下面那个 EXIT 的 active 表达；
-                // 它的序号 4 由 EXIT 自己带（与 D 板同号）。
+                // 终点组（S₂/S₃/K/出口）一律不带角标。
                 continue;
             }
             mechanisms.add(new RenderViews.Mechanism(d.getId(), d.getPosition().x(),
@@ -610,18 +632,22 @@ public final class Level03Assembly {
     // ---------- 内部 ----------
 
     /**
-     * 构造 B 支路节点集合（见 {@link #BRANCH_B_NODE_IDS} 的依据）。
+     * 构造 E₂ 支路节点集合（见 {@link #ECHO2_BRANCH_NODE_IDS} 的依据）。
      *
-     * <p>用 {@link Level03Pursuit#nodeId} 生成，地图改版时集合跟着关卡常量走；若某格不再是地板，
-     * 它本来就不会有节点，集合里多出的 ID 永不匹配玩家节点，因此不会误判。</p>
+     * <p>用 {@link Level03Pursuit#nodeId} + {@link Level03Pursuit#isOpen} 生成：分岔口 J 所在列到射线
+     * 所在列、J 以南的所有可走格，再加上 J 自己。地图改版时集合跟着关卡常量走；不是地板的格本来
+     * 就没有节点，多出的 ID 永不匹配玩家节点，因此不会误判。</p>
      */
-    private static Set<String> branchBNodeIds() {
+    private static Set<String> echo2BranchNodeIds() {
         Set<String> ids = new LinkedHashSet<>();
-        int col = Level03Pursuit.CELL_FORK_J[0];
-        for (int row = Level03Pursuit.CELL_PLATE_B[1]; row <= Level03Pursuit.CELL_FORK_J[1]; row++) {
-            ids.add(Level03Pursuit.nodeId(col, row));
+        ids.add(Level03Pursuit.NODE_J);
+        for (int col = Level03Pursuit.CELL_FORK_J[0]; col <= Level03Pursuit.CELL_RAY[0]; col++) {
+            for (int row = Level03Pursuit.CELL_FORK_J[1] + 1; row < Level03Pursuit.GRID_ROWS; row++) {
+                if (Level03Pursuit.isOpen(col, row)) {
+                    ids.add(Level03Pursuit.nodeId(col, row));
+                }
+            }
         }
-        ids.add(Level03Pursuit.NODE_PLATE_B);
         return Set.copyOf(ids);
     }
 
@@ -686,8 +712,8 @@ public final class Level03Assembly {
     /**
      * 多门通行判定：<b>遍历本关全部门</b> —— 只要有一扇门未解锁且挡在目标节点，该出口就不可通行。
      *
-     * <p>第三关四扇门互不影响：A 板只开门 A、B 板只开门 B、C 板只开门 C、D 板只为终点供能闸
-     * （{@code L03_door_exit} 与出口同格）供能。若漏掉终点供能闸这一扇，玩家就能在不供能的情况下
+     * <p>第三关四扇门互不影响：A 板只开门 A、B 板只开门 B、C 板只开门 C、出口闸要 S₂ + S₃ + K
+     * （{@code L03_door_exit} 与出口同格）。若漏掉终点供能闸这一扇，玩家就能在三条件不成立时
      * 站到出口格上。</p>
      */
     private boolean isPassable(PathNode from, PathExit exitEdge, PathNode target) {

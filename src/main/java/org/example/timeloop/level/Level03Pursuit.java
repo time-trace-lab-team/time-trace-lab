@@ -13,32 +13,35 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * 第三关《追赶过去》关卡数据（开发三 / L03-DEV3）。
+ * 第三关《追赶过去》关卡数据（开发三 / L03-DEV3）· <b>重排 v3</b>。
  *
- * <p><b>三条路线</b>（设定书 §3.1）：</p>
+ * <p><b>判定链</b>（v3 冻结）：门 A ← A 板；门 C ← C 板；门 B ← B 板；
+ * <b>出口闸 ← {S₂, S₃, K}</b>（三块板同时满足才给出口供能）。</p>
+ *
+ * <p><b>三条路线</b>：</p>
  * <ul>
- *   <li><b>外侧控制路线</b>（门 A 之外，西侧竖廊）：出生点 → {@link #PLATE_A} → {@link #PLATE_C}
- *       → {@link #PLATE_D}。第一轮玩家与后续第一残影 {@code E₁} 走这条线；</li>
- *   <li><b>B 板支路</b>：{@link #DOOR_A} → 分岔口 {@link #NODE_J} → {@link #RAY_B} → {@link #PLATE_B}。
- *       第二轮玩家与第三轮第二残影 {@code E₂} 走这条线；</li>
- *   <li><b>最终主通道</b>：{@link #DOOR_A} → {@link #NODE_J} → {@link #DOOR_B} → {@link #DOOR_C}
- *       → {@link #EXIT}。第三轮当前玩家走这条线，<b>不经过射线</b>。</li>
+ *   <li><b>外侧控制线</b>（第一轮玩家与后续 E₁）：出生点 → A 板 → C 板 → <b>K 板</b>（原 D 的位置，
+ *       核心激活驻留板，E₁ 压到轮末）。第一轮录下的 A/C/K 三个驻留窗口就是后面两轮的「时间资源」；</li>
+ *   <li><b>E₂ 支路</b>（第二轮玩家 = 第三轮 E₂）：门 A → 分岔 J → 向南 → <b>S₂ 开关</b> → 相位下潜过
+ *       时滞射线 → 门 C → 驻留 B 板到轮末；</li>
+ *   <li><b>E₃ 主线</b>（第三轮玩家）：门 A → J → 向北 → 在门 B 外等 E₂ 开门 → 穿门 B → 进东北开关室
+ *       踩 <b>S₃ 开关</b> → 折回 → 穿门 C → 东南回环 → 出口按 {@code E}。</li>
  * </ul>
  *
- * <p><b>冻结的空间关系</b>（设定书 §3.2）：门 A(13,10) 是内区唯一入口（第 13 列分隔墙上唯一的缺口）；
- * A/C/D 全在门 A 之外的外区；门 A 与射线不重叠、也不遮挡射线；B 支路（第 17 列竖廊 + 折到 (16,3)）
- * 与主通道（J 向右的折线：门 B(21,7) → 门 C(23,9) → 出口(25,6)）<b>只在分岔口 J(17,10) 相交</b>；
- * 射线格 (17,5) 的左右邻格都是墙，因此它只横跨 B 支路一格；门 A / 门 B / 门 C / 射线<b>都没有旁路</b>。</p>
+ * <p><b>v3 相对上一版的变化</b>：地图整块重排（地板 239/448 = 53%）；内区入口仍是门 A(13,10)（中央竖门
+ * 位置保留、左侧一字未改）；分岔口从 (17,10) 移到 {@link #CELL_FORK_J}(15,10)；射线从横向 (17,5) 改成
+ * <b>竖向</b> {@link #CELL_RAY}(19,11)（竖跨 E₂ 走廊一格，上下两侧都是墙）；D 板改名 {@link #PLATE_K} 并
+ * 从「单独给出口供能」变成「与两个开关一起给出口供能」；新增两个<b>锁存开关</b>（关卡数据
+ * {@code role=switch}）{@link #SWITCH_S2}(15,13) 与 {@link #SWITCH_S3}(20,2)；C 板窗口从 6 格拉到 19 格。</p>
  *
- * <p><b>终点供能的实现方式</b>：{@code ExitTerminal} 在引擎里只能被一扇 {@code Door} 的
- * {@code DOOR_UNLOCKED} 武装（{@code associatedDoorId} 必须是 {@code door} 类型），因此「D 板为出口供能」
- * 落成 {@link #DOOR_EXIT}：它与出口<b>同格</b>、只要求 {@link #PLATE_D}，不新增机关类型/事件类型，
- * 也不改任何公共契约（与第一关、第二关「终点闸与出口同格」同构）。D 板只供能，<b>不直接通关</b>：
- * 仍须当前玩家在半径内按 {@code E}（设定书 §4.1）。</p>
+ * <p><b>为什么 S₂ / S₃ 必须是锁存开关而不是普通板</b>：出口闸的条件是「三块同时成立」，
+ * 但 S₂ 是 E₂ 在刻 {@link #SWITCH_S2_ARRIVAL} 路过踩一下就继续往门 C 走、S₃ 是 E₃ 在刻
+ * {@link #SWITCH_S3_ARRIVAL} 踩一下就折回，两者都不可能在刻 {@link #PLATE_K_ARRIVAL}（K 板被压住的那一刻）
+ * 还留在原地。开关的「踩上即锁存到轮末」正是为这种「一次性兑现」设计的（与第一关开关同语义）。</p>
  *
  * <p><b>刻表怎么来的</b>：24 刻/格（2 世界单位/刻 × 48）。段长 → 路线刻 → 窗口刻 → 公平性刻，
- * 常量按此依赖顺序声明（Java 静态初始化禁止前向引用）；五个公平性不等式（设定书 §6.4）由
- * {@code Level03PursuitGeometryTest} 逐条断言。</p>
+ * 常量按此依赖顺序声明（Java 静态初始化禁止前向引用）；七条公平性不等式（设计文档「公平性」一节）
+ * 由 {@code Level03PursuitGeometryTest} 逐条断言。</p>
  */
 public final class Level03Pursuit {
 
@@ -59,52 +62,54 @@ public final class Level03Pursuit {
     public static final int ECHO_LIFE_L = 2;
 
     /**
-     * 地形（28×16 · 地板 260 格 = 58%）。{@code S}=出生点；机关与门都落在可走格上（与第一、二关同一做法）；
+     * 地形（28×16 · 地板 239 格 = 53%）。{@code S}=出生点；机关与门都落在可走格上；
      * 字母只是给设计图对照用的标记，引擎一律按 {@code 非 '#' = 可走} 处理。
      *
      * <pre>
-     * 第 1-12 列   外区：北西厅 A(3,2) / 北东厅 C(10,2) / 南西厅 S(2,13) / 南东厅 D(10,13)
+     * 第 1-12 列   外区：北西厅 A(3,2) / 北东厅 C(10,2) / 南西厅 S(2,13) / 南东厅 K(10,13)
      * 第 13 列     分隔墙：只有门 A 那一格 (13,10) 是通的 —— 内区唯一入口
-     * 第 14-26 列  内区：B 支路（第 17 列，J(17,10) 向上经射线(17,5) 折到 B(16,3)）
-     *              + 主通道（J 向右折线：门 B(21,7) → 门 C(23,9) → 出口(25,6)）
-     *              + 侧室全是死路（I_N / I_W / 南侧大房 / 右缘凹室），不构成旁路
+     * 第 14-27 列  内区：
+     *              西侧竖廊（第 15-18 列，从 J(15,10) 向北到开关室、向南到 S₂(15,13)）
+     *              + 东北开关室（S₃(20,2)，唯一进口是门 B(20,5)）
+     *              + 东室（B 板(23,9)）+ 东南回环（门 C(20,11) → 出口(26,14)）
      * </pre>
-     *
-     * <p><b>为什么这样摆</b>：11 个功能格任意三点不共线（横/竖/斜）—— 旧图 A/C/B 同在第 2 行、
-     * 门 A/J/门 B/门 C/出口 同在第 10 行，排成一条线；新图走成锯齿：B 掉到第 3 行、门 B 上到第 7 行、
-     * 门 C 下到第 9 行、出口再上到第 6 行，射线独占第 5 行、D 板在第 13 行。射线格左右两侧都是墙，
-     * 因此射线只横跨 B 支路一格。</p>
      */
     public static final String[] MAP = {
             "############################", // 0
-            "#............#....#....#...#", // 1
-            "#..A##....C..#....#....#...#", // 2  A(3,2) / C(10,2)
-            "#...##.......#..B......#...#", // 3  B(16,3)
-            "#.....##.....####.#....##..#", // 4
-            "##.#######.###..#R#....##..#", // 5  射线(17,5)：左右邻格 (16,5)/(18,5) 都是墙
-            "#............#..#.#######x.#", // 6  出口 + 供能闸(25,6)
-            "#.....#......#..#.#..b..#..#", // 7  门 B(21,7)
-            "#............#....#.###.#..#", // 8
-            "###.#######.##..#...###c...#", // 9  门 C(23,9)
-            "#............a...JJ....#####", // 10 门 A(13,10) / 分岔口 J(17,10)
-            "##.#######.####.##.#########", // 11
-            "#.....##.....#.............#", // 12
-            "#.S...##..D..#.............#", // 13 出生点(2,13) / D 板(10,13)
-            "#............#.............#", // 14
+            "#............###..........##", // 1
+            "#..A##....C..###....3.....##", // 2  A(3,2) / C(10,2) / S₃(20,2)
+            "#...##.......###..........##", // 3
+            "#.....##.....#######.#######", // 4
+            "##.#######.####.....b#######", // 5  门 B(20,5)：开关室唯一进口
+            "#............##....#.#######", // 6
+            "#.....#......##....#.#....##", // 7
+            "#............##....#.#....##", // 8
+            "###.#######.###....#.#.B..##", // 9  B 板(23,9)
+            "#............a.J.###.#....##", // 10 门 A(13,10) / 分岔 J(15,10)
+            "##.#######.####....Rc..#####", // 11 射线(19,11) 竖跨走廊 / 门 C(20,11)
+            "#.....##.....##...##.#....##", // 12
+            "#.S...##..K..##2..##.#....##", // 13 出生点(2,13) / K 板(10,13) / S₂(15,13)
+            "#............##...##......x#", // 14 出口(26,14)
             "############################", // 15
     };
 
     // ---------- ② 稳定 ID（必须通过 StableIdValidator）----------
 
     public static final String PLATE_A = "L03_plate_a";
-    public static final String PLATE_B = "L03_plate_b";
     public static final String PLATE_C = "L03_plate_c";
-    public static final String PLATE_D = "L03_plate_d";
+    /** 核心激活驻留板（v2 的 D 板，v3 换位改名）：与两个开关一起给出口供能。 */
+    public static final String PLATE_K = "L03_plate_k";
+    public static final String PLATE_B = "L03_plate_b";
+
+    /** S₂ 开关：E₂ 支路入口，踩上即锁存（{@code role=switch}）。 */
+    public static final String SWITCH_S2 = "L03_plate_s2";
+    /** S₃ 开关：东北开关室里，锁在门 B 后面，踩上即锁存（{@code role=switch}）。 */
+    public static final String SWITCH_S3 = "L03_plate_s3";
 
     public static final String DOOR_A = "L03_door_a";
     public static final String DOOR_B = "L03_door_b";
     public static final String DOOR_C = "L03_door_c";
-    /** 终点供能闸：与出口同格，只要求 D 板（{@code ExitTerminal} 只能被 Door 武装）。 */
+    /** 终点供能闸：与出口同格，要求 {@code {S₂, S₃, K}} 三块同时成立。 */
     public static final String DOOR_EXIT = "L03_door_exit";
 
     public static final String RAY_B = "L03_ray_b";
@@ -115,14 +120,16 @@ public final class Level03Pursuit {
     public static final int[] SPAWN_CELL = {2, 13};
     public static final int[] CELL_PLATE_A = {3, 2};
     public static final int[] CELL_PLATE_C = {10, 2};
-    public static final int[] CELL_PLATE_D = {10, 13};
-    public static final int[] CELL_PLATE_B = {16, 3};
+    public static final int[] CELL_PLATE_K = {10, 13};
+    public static final int[] CELL_PLATE_B = {23, 9};
+    public static final int[] CELL_SWITCH_S2 = {15, 13};
+    public static final int[] CELL_SWITCH_S3 = {20, 2};
     public static final int[] CELL_DOOR_A = {13, 10};
-    public static final int[] CELL_FORK_J = {17, 10};
-    public static final int[] CELL_DOOR_B = {21, 7};
-    public static final int[] CELL_DOOR_C = {23, 9};
-    public static final int[] CELL_EXIT = {25, 6};
-    public static final int[] CELL_RAY = {17, 5};
+    public static final int[] CELL_FORK_J = {15, 10};
+    public static final int[] CELL_DOOR_B = {20, 5};
+    public static final int[] CELL_DOOR_C = {20, 11};
+    public static final int[] CELL_EXIT = {26, 14};
+    public static final int[] CELL_RAY = {19, 11};
 
     // ---------- ④ 关键路径节点 ----------
 
@@ -130,7 +137,9 @@ public final class Level03Pursuit {
     public static final String NODE_PLATE_A = nodeIdOf(CELL_PLATE_A);
     public static final String NODE_PLATE_B = nodeIdOf(CELL_PLATE_B);
     public static final String NODE_PLATE_C = nodeIdOf(CELL_PLATE_C);
-    public static final String NODE_PLATE_D = nodeIdOf(CELL_PLATE_D);
+    public static final String NODE_PLATE_K = nodeIdOf(CELL_PLATE_K);
+    public static final String NODE_SWITCH_S2 = nodeIdOf(CELL_SWITCH_S2);
+    public static final String NODE_SWITCH_S3 = nodeIdOf(CELL_SWITCH_S3);
     public static final String NODE_DOOR_A = nodeIdOf(CELL_DOOR_A);
     public static final String NODE_J = nodeIdOf(CELL_FORK_J);
     public static final String NODE_DOOR_B = nodeIdOf(CELL_DOOR_B);
@@ -139,56 +148,59 @@ public final class Level03Pursuit {
 
     // ---------- ⑤ 段长（几何 ⇒ 刻）----------
 
-    /** 出生点 → A 板：14 格（BFS 实算，与设计图 36 格 = A/B/C 三段之和一致）。 */
+    /** 出生点 → A 板：14 格（BFS 实算）。 */
     public static final long SPAWN_TO_PLATE_A_TICKS = 14 * TICKS_PER_TILE;
-    /** A 板 → C 板：9 格。 */
+    /** A 板 → C 板：9 格（沿第 1 行走廊折下）。 */
     public static final long PLATE_A_TO_C_TICKS = 9 * TICKS_PER_TILE;
-    /** C 板 → D 板：13 格。 */
-    public static final long PLATE_C_TO_D_TICKS = 13 * TICKS_PER_TILE;
+    /** C 板 → K 板：13 格。 */
+    public static final long PLATE_C_TO_K_TICKS = 13 * TICKS_PER_TILE;
 
-    /** 出生点 → 门 A：14 格（与出生点→A 同长，玩家正好在门开的刻抵达门外）。 */
+    /** 出生点 → 门 A：14 格（与出生点→A 同长，玩家正好在门开那一刻抵达门外）。 */
     public static final long SPAWN_TO_DOOR_A_TICKS = 14 * TICKS_PER_TILE;
-    /** 门 A → 分岔口 J：4 格。 */
-    public static final long DOOR_A_TO_FORK_TICKS = 4 * TICKS_PER_TILE;
-    /** J → 射线：5 格（沿第 17 列向上）。 */
-    public static final long FORK_TO_RAY_TICKS = 5 * TICKS_PER_TILE;
-    /** 射线 → B 板：3 格（≥ 2.5 格，故受击的迟到量取满 30 刻）。 */
-    public static final long RAY_TO_PLATE_B_TICKS = 3 * TICKS_PER_TILE;
-    /** J → 门 B：7 格（主通道向右折上）。 */
-    public static final long FORK_TO_DOOR_B_TICKS = 7 * TICKS_PER_TILE;
-    /** 门 B → 门 C：4 格。 */
-    public static final long DOOR_B_TO_DOOR_C_TICKS = 4 * TICKS_PER_TILE;
-    /** 门 C → 出口：5 格。 */
-    public static final long DOOR_C_TO_EXIT_TICKS = 5 * TICKS_PER_TILE;
+    /** 门 A → 分岔口 J：2 格。 */
+    public static final long DOOR_A_TO_FORK_TICKS = 2 * TICKS_PER_TILE;
+    /** J → S₂（向南）：3 格。 */
+    public static final long FORK_TO_SWITCH_S2_TICKS = 3 * TICKS_PER_TILE;
+    /** S₂ → 时滞射线：6 格。 */
+    public static final long SWITCH_S2_TO_RAY_TICKS = 6 * TICKS_PER_TILE;
+    /** 射线 → 门 C：1 格。 */
+    public static final long RAY_TO_DOOR_C_TICKS = 1 * TICKS_PER_TILE;
+    /** 门 C → B 板：5 格。 */
+    public static final long DOOR_C_TO_PLATE_B_TICKS = 5 * TICKS_PER_TILE;
+    /** J → 门 B（向北再折东）：10 格。 */
+    public static final long FORK_TO_DOOR_B_TICKS = 10 * TICKS_PER_TILE;
+    /** 门 B → S₃（开关室里面）：3 格。 */
+    public static final long SWITCH_S3_TO_DOOR_B_TICKS = 3 * TICKS_PER_TILE;
+    /** 门 B → 门 C：6 格（沿第 20 列直下）。 */
+    public static final long DOOR_B_TO_DOOR_C_TICKS = 6 * TICKS_PER_TILE;
+    /** 门 C → 出口：9 格（东南回环）。 */
+    public static final long DOOR_C_TO_EXIT_TICKS = 9 * TICKS_PER_TILE;
 
     /**
-     * E₁ 在 A 板上驻留的格数 = 门 A 窗口宽度。
+     * E₁ 在 A 板上驻留的格数 = 门 A 窗口宽度（2 格 = 48 刻）。
      *
-     * <p>取 2 格（48 刻）而不是更大值：A 窗口越长，E₁ 抵达 C 越晚，后面全部刻表顺延；
-     * 48 刻已足够「第二轮玩家与第三轮玩家 + {@code E₂} 依次穿门」（他们都在窗口一开始的刻抵达门外）。</p>
+     * <p>E₁ 在刻 {@link #GATE_A_WINDOW_START} 踩上 A 板、刻 {@link #GATE_A_WINDOW_END} 离开；
+     * 第二轮玩家与第三轮玩家都在窗口一开始的刻抵达门外。</p>
      */
     public static final int HOLD_A_TILES = 2;
 
     /**
-     * E₁ 在 C 板上驻留的格数 = 门 C 窗口宽度。
+     * E₁ 在 C 板上驻留的格数 = 门 C 窗口宽度（19 格 = 456 刻）。
      *
-     * <p>由「正解要留余量」与「受击必失败」共同唯一确定：正解穿门 C 于
-     * {@link #DOOR_C_CROSS_TICK}，窗口必须再留 {@link #SUCCESS_MARGIN_TICKS} 刻，同时窗口结束刻必须
-     * <b>早于</b>受击路线的门 C 抵达刻 —— 6 格 = 144 刻恰好同时满足（见
-     * {@code Level03PursuitGeometryTest.fairnessInequalitiesHold}）。</p>
+     * <p>由「E₂ 必须先过门 C 才能拿到 B 板」与「E₃ 必须在同一窗口内二次穿过门 C」共同确定：
+     * 窗口从 E₁ 抵达 C 的刻 {@link #PLATE_C_ARRIVAL}(600) 一直到 {@link #PLATE_C_WINDOW_END}(1056)，
+     * 中间要容下 E₂ 的 624 与 E₃ 的 1032 两次穿越。</p>
      */
-    public static final int HOLD_C_TILES = 6;
+    public static final int HOLD_C_TILES = 19;
 
-    // ---------- ⑥ 公平性常量（设定书 §6.4）----------
+    // ---------- ⑥ 公平性常量 ----------
 
     /**
-     * 正解穿过门 C 后到门 C 关闭的余量。
+     * 正解穿过门 C 后保留的余量（刻）。
      *
-     * <p><b>为什么是 24 而不是设定书建议的 30–45</b>：全局减速是 0.5× / 60 刻，即受击恰好迟
-     * {@link #HIT_DELAY_TICKS} = 30 刻。而「正解要留余量」与「受击必须错过门 C」共用同一段余量
-     * （{@code margin + 迟到超出量 = 30}）：设定书 §11.3 的「≥30 刻余量」与 §6.4 的「受击必失败」
-     * 在既有全局参数下<b>不可能同时成立</b>（要同时成立就得增强全局减速，而设定书 §6.4 末条明令禁止）。
-     * 本关取 24 刻（= 1 格），把剩下的 6 刻留给「受击 / 等待路线必须失败」。</p>
+     * <p>与上一版同一个口径：全局减速 0.5× / 60 刻 ⇒ 受击恰好迟 {@link #HIT_DELAY_TICKS} = 30 刻，
+     * 而「正解要留余量」与「受击必须错过门 C」共用同一段余量（{@code margin + 超出量 = 30}）。
+     * v3 取 24（剩余 6 刻给「受击 / 等待路线必须失败」），与设计文档「公平性 ④」一致。</p>
      */
     public static final long SUCCESS_MARGIN_TICKS = 24L;
 
@@ -200,88 +212,99 @@ public final class Level03Pursuit {
 
     // ---------- ⑦ 路线关键刻 ----------
 
-    /** 出生点 → A 板抵达刻（= A 板开始占用 = E₁ 开门的刻 = 玩家穿门 A 的刻）。 */
+    /** 出生点 → A 板抵达刻（= A 板开始占用 = E₁ 开门 A 的刻 = 玩家穿门 A 的刻）。 */
     public static final long GATE_A_WINDOW_START = SPAWN_TO_PLATE_A_TICKS;
-    /** A 板驻留窗口结束：E₁ 在刻 384 离开 A，门 A 回锁（窗口 2 格 = 48 刻）。 */
+    /** A 板驻留窗口结束：E₁ 在刻 384 离开 A，门 A 回锁。 */
     public static final long GATE_A_WINDOW_END = GATE_A_WINDOW_START + HOLD_A_TILES * TICKS_PER_TILE;
 
-    /** 第二轮 / 第三轮玩家穿过门 A 的刻（= 门 A 窗口起点；他们正好在门开那一刻抵达门外）。 */
+    /** 第二轮 / 第三轮玩家穿过门 A 的刻（= 门 A 窗口起点）。 */
     public static final long DOOR_A_CROSS_TICK = GATE_A_WINDOW_START;
-    /** 第二轮玩家抵达 J 的刻。 */
+    /** 第二轮 / 第三轮玩家抵达分岔口 J 的刻。 */
     public static final long FORK_ARRIVAL = DOOR_A_CROSS_TICK + DOOR_A_TO_FORK_TICKS;
-    /** 第二轮玩家抵达射线的刻：射线此时<b>必须 ACTIVE</b>，否则「必须下潜」的教学不成立。 */
-    public static final long RAY_CROSS_TICK = FORK_ARRIVAL + FORK_TO_RAY_TICKS;
-    /** 第二轮正解抵达 B 的刻（= 第三轮 E₂ 在 B 就位刻 = 门 B 开启刻）。 */
-    public static final long PLATE_B_ARRIVAL = RAY_CROSS_TICK + RAY_TO_PLATE_B_TICKS;
-    /** 第三轮玩家穿过门 B 的刻（门 B 由 E₂ 在刻 {@link #PLATE_B_ARRIVAL} 开启）。 */
-    public static final long DOOR_B_CROSS_TICK = PLATE_B_ARRIVAL;
-    /** 第三轮玩家穿过门 C 的刻。 */
-    public static final long DOOR_C_CROSS_TICK = DOOR_B_CROSS_TICK + DOOR_B_TO_DOOR_C_TICKS;
+    /** E₂ 抵达 S₂ 开关的刻（踩上即锁存，出口闸的第一个条件）。 */
+    public static final long SWITCH_S2_ARRIVAL = FORK_ARRIVAL + FORK_TO_SWITCH_S2_TICKS;
+    /** E₂ 抵达射线的刻：射线此时<b>必须 ACTIVE</b>（＝ {@link #RAY_ACTIVE_START_TICK}）。 */
+    public static final long RAY_CROSS_TICK = SWITCH_S2_ARRIVAL + SWITCH_S2_TO_RAY_TICKS;
+    /** E₁ 抵达 C 板、门 C 开启的刻。 */
+    public static final long PLATE_C_ARRIVAL = GATE_A_WINDOW_END + PLATE_A_TO_C_TICKS;
+    /** E₂ 穿过门 C 的刻（门 C 在刻 {@link #PLATE_C_ARRIVAL} 已经开着，E₂ 不必空等）。 */
+    public static final long DOOR_C_CROSS_BY_E2_TICK = RAY_CROSS_TICK + RAY_TO_DOOR_C_TICKS;
+    /** E₂ 抵达 B 板的刻（= 第三轮门 B 开启刻）。 */
+    public static final long PLATE_B_ARRIVAL = DOOR_C_CROSS_BY_E2_TICK + DOOR_C_TO_PLATE_B_TICKS;
+    /** 门 B 开启刻（E₂ 压上 B 板的那一该）。 */
+    public static final long DOOR_B_OPEN_TICK = PLATE_B_ARRIVAL;
+    /** 第三轮 E₃ 抵达门 B 门外的刻（必须早于开门刻，否则本轮必失败）。 */
+    public static final long E3_DOOR_B_ARRIVAL = FORK_ARRIVAL + FORK_TO_DOOR_B_TICKS;
+    /** 第三轮 E₃ 穿过门 B 的刻（= 门 B 开启刻，E₃ 正好在门外等到它开）。 */
+    public static final long DOOR_B_CROSS_TICK = DOOR_B_OPEN_TICK;
+    /** E₃ 踩上 S₃ 开关的刻（出口闸的第二个条件）。 */
+    public static final long SWITCH_S3_ARRIVAL = DOOR_B_CROSS_TICK + SWITCH_S3_TO_DOOR_B_TICKS;
+    /** 第三轮玩家穿过门 C 的刻（S₃ → 折回门 B → 直下门 C）。 */
+    public static final long DOOR_C_CROSS_TICK = SWITCH_S3_ARRIVAL
+            + SWITCH_S3_TO_DOOR_B_TICKS + DOOR_B_TO_DOOR_C_TICKS;
     /** 第三轮玩家抵达出口的刻。 */
     public static final long EXIT_ARRIVAL = DOOR_C_CROSS_TICK + DOOR_C_TO_EXIT_TICKS;
 
-    // ---------- ⑧ 窗口刻（由公平性反推）----------
+    // ---------- ⑧ 窗口刻与公平性反推 ----------
 
-    /** A 板 → C 板抵达刻：E₁ 在刻 600 踩上 C，门 C 开启。 */
-    public static final long PLATE_C_ARRIVAL = GATE_A_WINDOW_END + PLATE_A_TO_C_TICKS;
-    /** 门 C 关闭刻：正解穿过门 C 后还须留 {@link #SUCCESS_MARGIN_TICKS} 刻余量。 */
+    /** 门 C 关闭刻：正解（E₃）穿过门 C 后还须留 {@link #SUCCESS_MARGIN_TICKS} 刻余量。 */
     public static final long PLATE_C_WINDOW_END = DOOR_C_CROSS_TICK + SUCCESS_MARGIN_TICKS;
     /**
-     * C 板 → D 板抵达刻：E₁ 在刻 1056 踩上 D 并驻留到轮末，出口由此供能。
+     * E₁ 抵达 K 板的刻：E₁ 离开 C 后走 13 格到 K 并驻留到轮末，出口闸的第三个条件由此满足。
      *
-     * <p><b>注意</b>：本图 C→D（13 格）比「门 C→出口」（5 格）长，所以 D 供能晚于玩家抵达出口
-     * —— 玩家要在出口<b>等</b>到这一刻再按 {@code E}。这是设计意图（出口在门 C 之后不远，
-     * 而外区控制线绕得远），不是缺陷：轮长 1800 刻，供能 1056 刻，余量充足。</p>
+     * <p>注意 K 板满足刻（1368）晚于玩家抵达出口的刻（{@link #EXIT_ARRIVAL}＝1248）——玩家要在出口
+     * <b>等</b>到那一刻再按 {@code E}。这是设计意图（外区控制线绕得远），不是缺陷。</p>
      */
-    public static final long PLATE_D_ARRIVAL = PLATE_C_WINDOW_END + PLATE_C_TO_D_TICKS;
+    public static final long PLATE_K_ARRIVAL = PLATE_C_WINDOW_END + PLATE_C_TO_K_TICKS;
 
-    /** B 板仍有用的最晚抵达刻 = 门 C 关闭刻 − 门 B→门 C 路程。 */
-    public static final long LATEST_USEFUL_B_ARRIVAL =
-            PLATE_C_WINDOW_END - DOOR_B_TO_DOOR_C_TICKS;
+    /** B 板仍有用的最晚抵达刻 = 正解抵达刻 + 余量（再晚就会让 E₃ 错过门 C 窗口）。 */
+    public static final long LATEST_USEFUL_B_ARRIVAL = PLATE_B_ARRIVAL + SUCCESS_MARGIN_TICKS;
     /** 受击路线的 B 抵达刻。 */
     public static final long LAGGED_B_ARRIVAL = PLATE_B_ARRIVAL + HIT_DELAY_TICKS;
     /** 等待路线的 B 抵达刻。 */
     public static final long WAIT_FOR_OFF_B_ARRIVAL = PLATE_B_ARRIVAL + WAIT_FOR_OFF_DELAY_TICKS;
     /** 受击路线穿过门 C 的刻（必须晚于门 C 关闭刻）。 */
-    public static final long LATE_DOOR_C_ARRIVAL = LAGGED_B_ARRIVAL + DOOR_B_TO_DOOR_C_TICKS;
+    public static final long LATE_DOOR_C_ARRIVAL = DOOR_C_CROSS_TICK + HIT_DELAY_TICKS;
+    /** 等待路线穿过门 C 的刻（必须晚于门 C 关闭刻）。 */
+    public static final long WAIT_DOOR_C_ARRIVAL = DOOR_C_CROSS_TICK + WAIT_FOR_OFF_DELAY_TICKS;
 
-    // ---------- ⑨ 时滞射线（横跨 B 支路竖廊：y 固定、x 跨一格）----------
+    // ---------- ⑨ 时滞射线（竖跨 E₂ 走廊一格：x 固定、y 跨一格）----------
 
-    /** 射线所在行的行中心 y。 */
-    public static final double RAY_Y = (CELL_RAY[1] + 0.5) * TILE_SIZE;
-    /** 射线西端点 x（第 9 列西边界）。 */
-    public static final double RAY_X0 = CELL_RAY[0] * TILE_SIZE;
-    /** 射线东端点 x（第 9 列东边界）。 */
-    public static final double RAY_X1 = (CELL_RAY[0] + 1) * TILE_SIZE;
+    /** 射线所在列的列中心 x。 */
+    public static final double RAY_X = (CELL_RAY[0] + 0.5) * TILE_SIZE;
+    /** 射线上端点 y（第 11 行北边界）。 */
+    public static final double RAY_Y0 = CELL_RAY[1] * TILE_SIZE;
+    /** 射线下端点 y（第 11 行南边界）。 */
+    public static final double RAY_Y1 = (CELL_RAY[1] + 1) * TILE_SIZE;
     /** 命中判定的横向半宽（沿用第二关口径）。 */
     public static final double RAY_HIT_WIDTH = 0.20 * TILE_SIZE;
 
     /**
      * 关闭（OFF）时长：一个周期里射线不发射的刻数。
      *
-     * <p>与「预警 + 激活」共同决定发射频率：周期 = OFF + 预警 + 激活。
-     * 本值不影响预警/激活时长，也不挪动绝对刻锚点 {@link #RAY_CROSS_TICK}（靠 {@link
-     * #RAY_CYCLE_OFFSET_TICKS} 保持相位）。</p>
+     * <p>与「预警 + 激活」共同决定发射频率：周期 = OFF + 预警 + 激活。v3 设计文档冻结
+     * 「预警起 528、激活起 600、周期 660」，因此 OFF = 528。</p>
      */
-    public static final long RAY_OFF_DURATION_TICKS = 240L;
+    public static final long RAY_OFF_DURATION_TICKS = 528L;
     /** 预警时长：72 刻 ≥ 24–30 刻反应预算 + 6–10 刻输入缓冲（设定书 §6.4）。 */
     public static final long RAY_WARNING_DURATION_TICKS = 72L;
     /** 激活时长。 */
     public static final long RAY_ACTIVE_DURATION_TICKS = 60L;
-    /** 周期内预警起点（数值上等于 OFF 段长度）。 */
+    /** 周期内预警起点（数值上等于 OFF 段长度）= 528；v3 里它同时就是绝对预警起点。 */
     public static final long RAY_WARNING_START_TICK = RAY_OFF_DURATION_TICKS;
-    /** 周期内激活起点（通常 = 预警起点 + 预警时长）。 */
+    /** 周期内激活起点 = 预警起点 + 预警时长 = 600（= E₂ 抵达射线的刻）。 */
     public static final long RAY_ACTIVE_START_TICK = RAY_WARNING_START_TICK + RAY_WARNING_DURATION_TICKS;
-    /** 一个完整周期 = OFF + 预警 + 激活；状态只由共享 {@code roundTick} 决定（无独立计时器）。 */
+    /** 一个完整周期 = OFF + 预警 + 激活 = 528 + 72 + 60 = 660；状态只由共享 {@code roundTick} 决定。 */
     public static final long RAY_CYCLE_TICKS = RAY_OFF_DURATION_TICKS
             + RAY_WARNING_DURATION_TICKS + RAY_ACTIVE_DURATION_TICKS;
     /**
      * 周期原点：使绝对刻 {@link #RAY_CROSS_TICK}（玩家抵达射线那一刻）恰好落在 ACTIVE 段内。
      *
      * <p>反推依据：{@code floorMod(RAY_CROSS_TICK − RAY_CYCLE_OFFSET_TICKS, RAY_CYCLE_TICKS)
-     * == RAY_ACTIVE_START_TICK}，即 {@code 552 − 240 ≡ 312 (mod 372)}。</p>
+     * == RAY_ACTIVE_START_TICK}。v3 的绝对刻与周期内刻一一对应（预警起点 528、激活起点 600），
+     * 因此原点 = 600 − 600 = 0；写成差值形式是为了以后改锚点时自动跟着走。</p>
      */
-    public static final long RAY_CYCLE_OFFSET_TICKS = 240L;
+    public static final long RAY_CYCLE_OFFSET_TICKS = RAY_CROSS_TICK - RAY_ACTIVE_START_TICK;
     /** 抵达射线时刻在周期内的相位（夹具前提：必须落在 [activeStart, activeStart+activeDuration)）。 */
     public static final long RAY_CROSS_PHASE =
             Math.floorMod(RAY_CROSS_TICK - RAY_CYCLE_OFFSET_TICKS, RAY_CYCLE_TICKS);
@@ -359,17 +382,20 @@ public final class Level03Pursuit {
     private static List<EntitySpawnInfo> buildEntities() {
         List<EntitySpawnInfo> entities = new ArrayList<>();
         entities.add(plate(PLATE_A, CELL_PLATE_A));
-        entities.add(plate(PLATE_B, CELL_PLATE_B));
         entities.add(plate(PLATE_C, CELL_PLATE_C));
-        entities.add(plate(PLATE_D, CELL_PLATE_D));
+        entities.add(plate(PLATE_K, CELL_PLATE_K));
+        entities.add(plate(PLATE_B, CELL_PLATE_B));
+        // 两个锁存开关：踩上即锁存到轮末（出口闸要它们与 K 板同时成立，见类注释）。
+        entities.add(switchPlate(SWITCH_S2, CELL_SWITCH_S2));
+        entities.add(switchPlate(SWITCH_S3, CELL_SWITCH_S3));
 
         entities.add(new EntitySpawnInfo(EXIT, "exit_terminal",
                 cellCenter(CELL_EXIT[0], CELL_EXIT[1]), NODE_EXIT));
 
-        // 射线横跨 B 支路竖廊：y 固定在第 9 行行中心，x 跨第 9 列一格。
-        entities.add(new EntitySpawnInfo(RAY_B, "ray", new Vector2D(RAY_X0, RAY_Y), nodeIdOf(CELL_RAY))
-                .putProp("endX", RAY_X1)
-                .putProp("endY", RAY_Y)
+        // 射线竖跨 E₂ 走廊一格：x 固定在第 19 列列中心，y 跨第 11 行一格。
+        entities.add(new EntitySpawnInfo(RAY_B, "ray", new Vector2D(RAY_X, RAY_Y0), nodeIdOf(CELL_RAY))
+                .putProp("endX", RAY_X)
+                .putProp("endY", RAY_Y1)
                 .putProp("warningStartTick", RAY_WARNING_START_TICK)
                 .putProp("warningDurationTicks", RAY_WARNING_DURATION_TICKS)
                 .putProp("activeStartTick", RAY_ACTIVE_START_TICK)
@@ -378,11 +404,16 @@ public final class Level03Pursuit {
         return entities;
     }
 
-    /** 普通驻留板：{@code dock_plate} + {@code autoDock=true}（四块都不锁存，占即开、离即关）。 */
+    /** 普通驻留板：{@code dock_plate} + {@code autoDock=true}（占即开、离即关）。 */
     private static EntitySpawnInfo plate(String id, int[] cell) {
         return new EntitySpawnInfo(id, "dock_plate",
                 cellCenter(cell[0], cell[1]), nodeIdOf(cell))
                 .putProp("autoDock", true);
+    }
+
+    /** 锁存开关变体：{@code role=switch}（装配层据此把 {@code latching} 传成 true）。 */
+    private static EntitySpawnInfo switchPlate(String id, int[] cell) {
+        return plate(id, cell).putProp("role", "switch");
     }
 
     private static List<DoorInfo> buildDoors() {
@@ -390,8 +421,9 @@ public final class Level03Pursuit {
         doors.add(door(DOOR_A, CELL_DOOR_A, Set.of(PLATE_A)));
         doors.add(door(DOOR_B, CELL_DOOR_B, Set.of(PLATE_B)));
         doors.add(door(DOOR_C, CELL_DOOR_C, Set.of(PLATE_C)));
-        // 终点供能闸：与出口同格，只要求 D 板；D 板只「供能」，通关仍须当前玩家按 E。
-        doors.add(door(DOOR_EXIT, CELL_EXIT, Set.of(PLATE_D)));
+        // 终点供能闸：与出口同格，要求 S₂ + S₃ + K 三块同时成立。
+        // D 板只「供能」，通关仍须当前玩家在半径内按 E。
+        doors.add(door(DOOR_EXIT, CELL_EXIT, Set.of(SWITCH_S2, SWITCH_S3, PLATE_K)));
         return doors;
     }
 
