@@ -74,10 +74,10 @@ class Level03MapRenderSnapshotTest {
 
         assertEquals(10, mechanisms.size(),
                 "4 板 + 2 开关 + 3 门 + 1 出口 = 10 件（终点闸与出口同格只投影一个 EXIT）");
-        assertEquals(4, mechanisms.stream()
-                .filter(m -> m.kind() == RenderViews.MechanismKind.PLATE).count(), "四块驻留板");
-        assertEquals(2, mechanisms.stream()
-                .filter(m -> m.kind() == RenderViews.MechanismKind.SWITCH).count(), "两个锁存开关");
+        assertEquals(5, mechanisms.stream()
+                .filter(m -> m.kind() == RenderViews.MechanismKind.PLATE).count(), "五块驻留板（含 S₂）");
+        assertEquals(1, mechanisms.stream()
+                .filter(m -> m.kind() == RenderViews.MechanismKind.SWITCH).count(), "只剩 S₃ 是胶囊");
         assertEquals(3, mechanisms.stream()
                 .filter(m -> m.kind() == RenderViews.MechanismKind.DOOR).count(), "三扇门");
         assertEquals(1, mechanisms.stream()
@@ -86,8 +86,8 @@ class Level03MapRenderSnapshotTest {
         Set<String> switchIds = mechanisms.stream()
                 .filter(m -> m.kind() == RenderViews.MechanismKind.SWITCH)
                 .map(RenderViews.Mechanism::id).collect(java.util.stream.Collectors.toSet());
-        assertEquals(Set.of(Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3), switchIds,
-                "SWITCH 必须正好是 S₂ / S₃");
+        assertEquals(Set.of(Level03Pursuit.SWITCH_S3), switchIds,
+                "SWITCH 只剩 S₃（S₂ 按项目方要求改画成驻留板）");
 
         // 标识：开门组 A/B/C = 1/2/3（板心 + 门右下角同号）；终点组琥珀、一律不带数字。
         assertEquals("1", tagOf(mechanisms, Level03Pursuit.PLATE_A));
@@ -231,7 +231,7 @@ class Level03MapRenderSnapshotTest {
             list.add(mechanism(plateK.getId(), plateK.getPosition(),
                     RenderViews.MechanismKind.PLATE, plateK.isOccupied(), null, true));
             list.add(mechanism(switchS2.getId(), switchS2.getPosition(),
-                    RenderViews.MechanismKind.SWITCH, switchS2.isOccupied(), null, true));
+                    RenderViews.MechanismKind.PLATE, switchS2.isOccupied(), null, true));
             list.add(mechanism(switchS3.getId(), switchS3.getPosition(),
                     RenderViews.MechanismKind.SWITCH, switchS3.isOccupied(), null, true));
             list.add(mechanism(doorA.getId(), doorA.getPosition(),

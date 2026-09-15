@@ -498,9 +498,13 @@ public final class Level03Assembly {
     private static final Set<String> GATE_GROUP_PLATES = Set.of(
             Level03Pursuit.PLATE_K, Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3);
 
-    /** 锁存开关的 ID 集合：渲染上投影成 {@code SWITCH}（胶囊），而不是圆角方块。 */
-    private static final Set<String> SWITCH_IDS = Set.of(
-            Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3);
+    /**
+     * 渲染上投影成 {@code SWITCH}（胶囊）的机关 ID。
+     *
+     * <p>S₂ 与 S₃ 同为锁存板，但项目方要求 S₂ 的外观是<b>驻留板</b>（琥珀圆角方块），
+     * 因此只有 S₃ 走胶囊；锁存语义不受外观影响。</p>
+     */
+    private static final Set<String> SWITCH_IDS = Set.of(Level03Pursuit.SWITCH_S3);
 
     /**
      * 只读渲染视图（零回写）。
