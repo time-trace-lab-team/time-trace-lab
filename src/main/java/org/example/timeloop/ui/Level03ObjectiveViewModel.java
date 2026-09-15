@@ -47,6 +47,16 @@ public record Level03ObjectiveViewModel(int currentRound,
                                         boolean doorCOpen,
                                         boolean exitPowered) {
 
+    /**
+     * 只校验<b>真</b>不变量：轮次范围，以及「最后有效轮」只可能出现在最后一轮。
+     *
+     * <p><b>刻意不再校验「板与门之间的因果组合」</b>：本类曾在这里要求「门 C 开着时门 B 必须也开着且轮次 ≥3」
+     * 与「供能只可能来自残影」，结果在真实玩法里<b>每帧抛异常</b> —— 第 1 轮玩家踩 C 板（门 C 开、
+     * 门 B 无人压、轮次 1）本就是官方解的第一步，踩 D 板供能时门 C 早已松开同理。
+     * 教训与 L1、L3 那两条被删的假不变量一致：**「某个时刻的因果」不是「状态组合的合法性」**，
+     * 把前者写进构造校验，就会在玩家按正常解法游玩时崩溃。当前状态组合是否可达由装配与刻表决定，
+     * 不归一个只读投影管；本类只保证对<b>任意</b>合法轮次/布尔组合都能给出一句人话。</p>
+     */
     public Level03ObjectiveViewModel {
         if (maxRounds < 1) {
             throw new IllegalArgumentException("maxRounds 必须 >= 1");
@@ -58,12 +68,6 @@ public record Level03ObjectiveViewModel(int currentRound,
             throw new IllegalArgumentException(
                     "「E₁ 最后有效轮」只可能出现在最后一轮: currentRound=" + currentRound
                             + ", maxRounds=" + maxRounds);
-        }
-        if (!doorBOpen && doorCOpen && currentRound < 3) {
-            throw new IllegalArgumentException("门 C 只能由第一残影在第三轮打开");
-        }
-        if (!doorCOpen && exitPowered && currentRound < 2) {
-            throw new IllegalArgumentException("出口供能只可能来自第一残影驻留 D");
         }
     }
 

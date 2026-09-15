@@ -98,15 +98,59 @@ class Level03ObjectiveViewModelTest {
     }
 
     @Test
-    void rejectsInconsistentState() {
+    void rejectsOnlyTheGenuinelyImpossibleStates() {
         assertThrows(IllegalArgumentException.class, () -> view(0, false, false, false, false, false, false, false));
         assertThrows(IllegalArgumentException.class, () -> view(4, false, false, false, false, false, false, false));
         // 「最后有效轮」只可能出现在最后一轮
         assertThrows(IllegalArgumentException.class, () -> view(2, true, false, false, false, false, false, false));
-        // 第一、二轮不可能出现「门 C 开着但门 B 没开」
-        assertThrows(IllegalArgumentException.class, () -> view(2, false, false, false, false, false, true, false));
-        // 第一轮不可能已供能
-        assertThrows(IllegalArgumentException.class, () -> view(1, false, false, false, false, false, false, true));
+    }
+
+    /**
+     * <b>穷举输入空间</b>：任意合法轮次 × 任意布尔组合，{@code text()} 与四个分层 accessor 都必须
+     * 给出一句人话、<b>绝不抛异常</b>。
+     *
+     * <p>这条用例是被一次真实崩溃逼出来的：本类曾校验「门 C 开着时门 B 必须也开着且轮次 ≥3」
+     * 与「供能只可能来自残影」，而第 1 轮玩家踩 C 板（门 C 开、门 B 无人、轮次 1）正是官方解的
+     * 第一步、踩 D 板供能时门 C 早已松开 —— 于是 HUD 每帧抛异常，游戏刷屏报错。
+     * 手挑几个组合的用例扫不到这种状态，所以这里改成<b>全枚举</b>：3 轮 × 64 种布尔组合。</p>
+     */
+    @Test
+    void everyLegalRoundAndFlagCombinationProducesTextWithoutThrowing() {
+        int checked = 0;
+        for (int round = 1; round <= 3; round++) {
+            for (int mask = 0; mask < 64; mask++) {
+                boolean doorAOpen = (mask & 1) != 0;
+                boolean inBranchB = (mask & 2) != 0;
+                boolean rayActive = (mask & 4) != 0;
+                boolean doorBOpen = (mask & 8) != 0;
+                boolean doorCOpen = (mask & 16) != 0;
+                boolean exitPowered = (mask & 32) != 0;
+                boolean finalRound = round == 3;
+
+                Level03ObjectiveViewModel vm = new Level03ObjectiveViewModel(round, 3, finalRound,
+                        doorAOpen, inBranchB, rayActive, doorBOpen, doorCOpen, exitPowered);
+
+                assertFalse(vm.text().isBlank(),
+                        "组合 round=" + round + " mask=" + mask + " 必须给出提示");
+                assertFalse(vm.tierOne().isBlank());
+                assertFalse(vm.tierTwo().isBlank());
+                assertFalse(vm.tierThreeRoute().isBlank());
+                assertFalse(vm.forkHint().isBlank());
+                checked++;
+            }
+        }
+        assertEquals(192, checked, "3 轮 × 64 组合全都要扫过");
+    }
+
+    /** 官方解第一轮的三个状态：踩 A → 踩 C（门 C 开、门 B 无人）→ 踩 D（供能开、门 C 已松）。 */
+    @Test
+    void firstRoundOfficialRouteStatesAreAllLegal() {
+        // 站在 A 板上（门 A 开）
+        assertFalse(view(1, false, true, false, false, false, false, false).text().isBlank());
+        // 站在 C 板上：这正是曾经抛「门 C 只能由第一残影在第三轮打开」的那一格
+        assertFalse(view(1, false, false, false, false, false, true, false).text().isBlank());
+        // 站在 D 板上：这正是曾经抛「出口供能只可能来自第一残影驻留 D」的那一格
+        assertFalse(view(1, false, false, false, false, false, false, true).text().isBlank());
     }
 
     /**
