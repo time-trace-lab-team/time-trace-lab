@@ -86,7 +86,7 @@ public record Level03ObjectiveViewModel(int currentRound,
                     : "沿支路往南踩 S₂ 开关 → 走廊往东，见预警就按 Space 下潜，然后穿门 C 驻留 B 板到轮末";
         }
         if (currentRound == 1) {
-            return "第 1 轮：依次踩 A → C → K；A 驻留 1 格、C 驻留 22 格、K 压到轮末 —— "
+            return "第 1 轮：依次踩 A → C → K；A 驻留 1 格、C 驻留 20 格、K 压到轮末 —— "
                     + "这三段窗口就是后面两轮的时间资源";
         }
         if (switchS3On) {
@@ -121,7 +121,7 @@ public record Level03ObjectiveViewModel(int currentRound,
 
     /** 三级提示（设定书 §9.4）：三条路线与关键时间节点（刻数以共享刻表为准）。 */
     public String tierThreeRoute() {
-        return "控制线 A(336) → C(528) → K(1272)　｜　"
+        return "控制线 A(336) → C(528) → K(1248)　｜　"
                 + "E₂ 门A(336) → J(384) → S₂(456) → 射线(600) → 门C(624) → B(744)　｜　"
                 + "E₃ 门A(336) → 门B(744) → S₃(816) → 门C(1032) → 出口(1248)";
     }
