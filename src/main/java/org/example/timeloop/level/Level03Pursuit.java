@@ -72,7 +72,7 @@ public final class Level03Pursuit {
     /** 每格走行刻数（baseSpeed 2 px/tick、tileSize 48）。 */
     public static final long TICKS_PER_TILE = 24L;
 
-    public static final long DURATION_TICKS = 1260L;   // 21s × 60 刻/秒（项目方 2026-09-15 指定）
+    public static final long DURATION_TICKS = 1200L;   // 21s × 60 刻/秒（项目方 2026-09-15 指定）
     public static final int MAX_ROUNDS = 3;
     public static final int ECHO_LIFE_L = 2;
 
@@ -102,9 +102,9 @@ public final class Level03Pursuit {
             "###.#######.###....#.#.B..##", // 9  B 板(23,9)
             "#............a.J.###.#....##", // 10 门 A(13,10) / 分岔 J(15,10)
             "##.#######.####....Rc..#####", // 11 射线(19,11) 竖跨走廊 / 门 C(20,11)
-            "#.....##.....##...##.#....##", // 12
+            "#.....##.....##...##.#...x##", // 12 出口(25,12)
             "#.S...##.....##...##.#....##", // 13 出生点(2,13)
-            "#.....#......##...##.2....x#", // 14 S₂(21,14) / 出口(26,14)
+            "#.....#......##...##.2.....#", // 14 S₂(21,14)
             "############################", // 15
     };
 
@@ -143,7 +143,7 @@ public final class Level03Pursuit {
     public static final int[] CELL_FORK_J = {15, 10};
     public static final int[] CELL_DOOR_B = {20, 5};
     public static final int[] CELL_DOOR_C = {20, 11};
-    public static final int[] CELL_EXIT = {26, 14};
+    public static final int[] CELL_EXIT = {25, 12};
     public static final int[] CELL_RAY = {19, 11};
 
     // ---------- ④ 关键路径节点 ----------
@@ -193,7 +193,7 @@ public final class Level03Pursuit {
     /** 门 B → 门 C：6 格（沿第 20 列直下）。 */
     public static final long DOOR_B_TO_DOOR_C_TICKS = 6 * TICKS_PER_TILE;
     /** 门 C → 出口：9 格（东南回环）。 */
-    public static final long DOOR_C_TO_EXIT_TICKS = 9 * TICKS_PER_TILE;
+    public static final long DOOR_C_TO_EXIT_TICKS = 6 * TICKS_PER_TILE;
 
     /**
      * E₁ 在 A 板上驻留的格数 = 门 A 窗口宽度（1 格 = 24 刻）。
