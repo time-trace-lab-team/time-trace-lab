@@ -93,7 +93,7 @@ class Level03ObjectiveViewModelTest {
         Level03ObjectiveViewModel view = new Fixture().round(2).build();
         assertTrue(view.tierOne().contains("S₂ + S₃ + K"), view.tierOne());
         assertTrue(view.tierTwo().contains("S₂"), view.tierTwo());
-        assertTrue(view.tierThreeRoute().contains("K(1368)"), view.tierThreeRoute());
+        assertTrue(view.tierThreeRoute().contains("K(1488)"), view.tierThreeRoute());
         assertTrue(view.tierThreeRoute().contains("S₂(456)"), view.tierThreeRoute());
         assertTrue(view.tierThreeRoute().contains("S₃(816)"), view.tierThreeRoute());
         assertTrue(view.tierThreeRoute().contains("门C(1032)"), view.tierThreeRoute());

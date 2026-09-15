@@ -28,11 +28,22 @@ import java.util.Set;
  *       踩 <b>S₃ 开关</b> → 折回 → 穿门 C → 东南回环 → 出口按 {@code E}。</li>
  * </ul>
  *
- * <p><b>v3 相对上一版的变化</b>：地图整块重排（地板 239/448 = 53%）；内区入口仍是门 A(13,10)（中央竖门
- * 位置保留、左侧一字未改）；分岔口从 (17,10) 移到 {@link #CELL_FORK_J}(15,10)；射线从横向 (17,5) 改成
- * <b>竖向</b> {@link #CELL_RAY}(19,11)（竖跨 E₂ 走廊一格，上下两侧都是墙）；D 板改名 {@link #PLATE_K} 并
- * 从「单独给出口供能」变成「与两个开关一起给出口供能」；新增两个<b>锁存开关</b>（关卡数据
- * {@code role=switch}）{@link #SWITCH_S2}(15,13) 与 {@link #SWITCH_S3}(20,2)；C 板窗口从 6 格拉到 19 格。</p>
+ * <p><b>v3 相对上一版的变化</b>：地图整块重排；内区入口仍是门 A(13,10)（中央竖门位置保留）；
+ * 分岔口 {@link #CELL_FORK_J}(15,10)；射线是<b>竖向</b> {@link #CELL_RAY}(19,11)（竖跨 E₂ 走廊一格，
+ * 上下两侧都是墙）；新增两个<b>锁存开关</b>（关卡数据 {@code role=switch}）
+ * {@link #SWITCH_S2}(15,13) 与 {@link #SWITCH_S3}(20,2)；出口闸条件 = {@code {S₂, S₃, K}}。</p>
+ *
+ * <p><b>2026-09-15 第二版改动（项目方指定）</b>：C 板从 (10,2) 挪到 {@link #CELL_PLATE_C}(12,3)；
+ * K 板从 (10,13) 挪到 {@link #CELL_PLATE_K}(7,14)；(6,14) 补一面墙，
+ * 于是 K 板格只剩「向右」一个出口 —— 玩家进去就只能停在那里压到轮末。</p>
+ *
+ * <p><b>为什么 (4,3)(5,3) 必须打通</b>：C 挪到 (12,3) 后 A→C 的最短距离从 9 格变成 12 格
+ * （第 1 行走廊绕远），门 C 窗口起刻会从 600 落到 672。<b>后果不是「变难」，而是公平性塌掉</b>：
+ * 第二轮玩家在刻 624 就抵达门 C 门口，本来要空等到 672；而射线命中只让他迟 30 刻（到 654），
+ * 空等把这些迟到的刻全部吃掉 —— 于是「受击」与「正解」在门 C 的表现完全一样，
+ * 「被射线打中就过不了关」这条教学就不成立了（等射线关闭迟 60 刻时也只差 12 刻，仍过得了）。
+ * 把 (4,3)(5,3) 打通让 A→C 压回 10 格（这是 (12,3) 这个格子理论上能达到的最短距离），
+ * 再把 A 板驻留压到 1 格，窗口起刻就回到 600，七条公平性不等式<b>一条都不用改</b>。</p>
  *
  * <p><b>为什么 S₂ / S₃ 必须是锁存开关而不是普通板</b>：出口闸的条件是「三块同时成立」，
  * 但 S₂ 是 E₂ 在刻 {@link #SWITCH_S2_ARRIVAL} 路过踩一下就继续往门 C 走、S₃ 是 E₃ 在刻
@@ -62,7 +73,7 @@ public final class Level03Pursuit {
     public static final int ECHO_LIFE_L = 2;
 
     /**
-     * 地形（28×16 · 地板 239 格 = 53%）。{@code S}=出生点；机关与门都落在可走格上；
+     * 地形（28×16 · 地板 240 格 = 54%）。{@code S}=出生点；机关与门都落在可走格上；
      * 字母只是给设计图对照用的标记，引擎一律按 {@code 非 '#' = 可走} 处理。
      *
      * <pre>
@@ -77,8 +88,8 @@ public final class Level03Pursuit {
     public static final String[] MAP = {
             "############################", // 0
             "#............###..........##", // 1
-            "#..A##....C..###....3.....##", // 2  A(3,2) / C(10,2) / S₃(20,2)
-            "#...##.......###..........##", // 3
+            "#..A##.......###....3.....##", // 2  A(3,2) / S₃(20,2)
+            "#...........C###..........##", // 3  C(12,3)（(4,3)(5,3) 打通，见类注释）
             "#.....##.....#######.#######", // 4
             "##.#######.####.....b#######", // 5  门 B(20,5)：开关室唯一进口
             "#............##....#.#######", // 6
@@ -88,8 +99,8 @@ public final class Level03Pursuit {
             "#............a.J.###.#....##", // 10 门 A(13,10) / 分岔 J(15,10)
             "##.#######.####....Rc..#####", // 11 射线(19,11) 竖跨走廊 / 门 C(20,11)
             "#.....##.....##...##.#....##", // 12
-            "#.S...##..K..##2..##.#....##", // 13 出生点(2,13) / K 板(10,13) / S₂(15,13)
-            "#............##...##......x#", // 14 出口(26,14)
+            "#.S...##.....##2..##.#....##", // 13 出生点(2,13) / S₂(15,13)
+            "#.....#K.....##...##......x#", // 14 K 板(7,14) / 出口(26,14)
             "############################", // 15
     };
 
@@ -119,8 +130,8 @@ public final class Level03Pursuit {
 
     public static final int[] SPAWN_CELL = {2, 13};
     public static final int[] CELL_PLATE_A = {3, 2};
-    public static final int[] CELL_PLATE_C = {10, 2};
-    public static final int[] CELL_PLATE_K = {10, 13};
+    public static final int[] CELL_PLATE_C = {12, 3};
+    public static final int[] CELL_PLATE_K = {7, 14};
     public static final int[] CELL_PLATE_B = {23, 9};
     public static final int[] CELL_SWITCH_S2 = {15, 13};
     public static final int[] CELL_SWITCH_S3 = {20, 2};
@@ -150,10 +161,18 @@ public final class Level03Pursuit {
 
     /** 出生点 → A 板：14 格（BFS 实算）。 */
     public static final long SPAWN_TO_PLATE_A_TICKS = 14 * TICKS_PER_TILE;
-    /** A 板 → C 板：9 格（沿第 1 行走廊折下）。 */
-    public static final long PLATE_A_TO_C_TICKS = 9 * TICKS_PER_TILE;
-    /** C 板 → K 板：13 格。 */
-    public static final long PLATE_C_TO_K_TICKS = 13 * TICKS_PER_TILE;
+    /**
+     * A 板 → C 板：10 格。
+     *
+     * <p>C 板挪到 (12,3) 之后，A→C 的最短距离本来是 12 格（走第 1 行绕远），
+     * 于是「门 C 窗口」会晚到刻 672 才开 —— 而第二轮玩家在刻 624 就到门 C 门口，
+     * <b>48 刻的空等会把射线命中那 30 刻的惩罚整个吃掉</b>，「受击必失败」这条公平性就不成立了
+     * （见类注释「为什么 (4,3)(5,3) 必须打通」）。因此把 (4,3)、(5,3) 两格打开，
+     * 让 A→C 压回 10 格，窗口起刻回到 600。</p>
+     */
+    public static final long PLATE_A_TO_C_TICKS = 10 * TICKS_PER_TILE;
+    /** C 板 → K 板：18 格。 */
+    public static final long PLATE_C_TO_K_TICKS = 18 * TICKS_PER_TILE;
 
     /** 出生点 → 门 A：14 格（与出生点→A 同长，玩家正好在门开那一刻抵达门外）。 */
     public static final long SPAWN_TO_DOOR_A_TICKS = 14 * TICKS_PER_TILE;
@@ -177,12 +196,18 @@ public final class Level03Pursuit {
     public static final long DOOR_C_TO_EXIT_TICKS = 9 * TICKS_PER_TILE;
 
     /**
-     * E₁ 在 A 板上驻留的格数 = 门 A 窗口宽度（2 格 = 48 刻）。
+     * E₁ 在 A 板上驻留的格数 = 门 A 窗口宽度（1 格 = 24 刻）。
      *
      * <p>E₁ 在刻 {@link #GATE_A_WINDOW_START} 踩上 A 板、刻 {@link #GATE_A_WINDOW_END} 离开；
-     * 第二轮玩家与第三轮玩家都在窗口一开始的刻抵达门外。</p>
+     * 第二轮玩家与第三轮玩家都在窗口一开始的刻抵达门外（他们是被门挡住的，门一开就走，
+     * 不需要反应时间，因此 24 刻足够；每轮只有一个当前玩家要穿门 A，残影回放不产生移动）。</p>
+     *
+     * <p><b>为什么是 1 而不是 2</b>：C 板挪到 (12,3) 后 A→C 变长，若仍驻留 2 格，
+     * 门 C 窗口起刻会落到 624，正好把第二轮「受击迟 30 刻」的差异吃掉（见
+     * {@link #PLATE_A_TO_C_TICKS}）。压到 1 格后窗口起刻回到设计文档的 600，
+     * 七条公平性不等式一条都不用改。</p>
      */
-    public static final int HOLD_A_TILES = 2;
+    public static final int HOLD_A_TILES = 1;
 
     /**
      * E₁ 在 C 板上驻留的格数 = 门 C 窗口宽度（19 格 = 456 刻）。

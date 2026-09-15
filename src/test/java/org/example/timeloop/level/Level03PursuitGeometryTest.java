@@ -61,7 +61,7 @@ class Level03PursuitGeometryTest {
                 }
             }
         }
-        assertEquals(239, floor, "地板 239/448 = 53%（设计文档冻结值）");
+        assertEquals(240, floor, "地板 240/448 = 54%（C 板挪位后打通 (4,3)(5,3)、(6,14) 补墙）");
     }
 
     @Test
@@ -225,7 +225,7 @@ class Level03PursuitGeometryTest {
     @Test
     void tickTableMatchesTheFrozenDesign() {
         assertEquals(336L, Level03Pursuit.GATE_A_WINDOW_START, "A 窗口起");
-        assertEquals(384L, Level03Pursuit.GATE_A_WINDOW_END, "A 窗口末");
+        assertEquals(360L, Level03Pursuit.GATE_A_WINDOW_END, "A 窗口末（HOLD_A 1 格）");
         assertEquals(600L, Level03Pursuit.PLATE_C_ARRIVAL, "E₁ 抵 C");
         assertEquals(624L, Level03Pursuit.DOOR_C_CROSS_BY_E2_TICK, "E₂ 穿门 C");
         assertEquals(744L, Level03Pursuit.PLATE_B_ARRIVAL, "E₂ 抵 B");
@@ -238,7 +238,7 @@ class Level03PursuitGeometryTest {
         assertEquals(1032L, Level03Pursuit.DOOR_C_CROSS_TICK, "E₃ 穿门 C");
         assertEquals(1248L, Level03Pursuit.EXIT_ARRIVAL, "E₃ 抵出口");
         assertEquals(1056L, Level03Pursuit.PLATE_C_WINDOW_END, "C 窗口末");
-        assertEquals(1368L, Level03Pursuit.PLATE_K_ARRIVAL, "E₁ 抵 K");
+        assertEquals(1488L, Level03Pursuit.PLATE_K_ARRIVAL, "E₁ 抵 K（C→K 18 格）");
         assertTrue(Level03Pursuit.PLATE_K_ARRIVAL < Level03Pursuit.DURATION_TICKS,
                 "K 板驻留必须早于轮末，玩家才来得及按 E");
         assertTrue(Level03Pursuit.EXIT_ARRIVAL < Level03Pursuit.PLATE_K_ARRIVAL,
@@ -250,7 +250,7 @@ class Level03PursuitGeometryTest {
         assertEquals(Level03Pursuit.HOLD_A_TILES * TILE,
                 Level03Pursuit.GATE_A_WINDOW_END - Level03Pursuit.GATE_A_WINDOW_START,
                 "A 窗口 = HOLD_A_TILES 格");
-        assertEquals(2, Level03Pursuit.HOLD_A_TILES);
+        assertEquals(1, Level03Pursuit.HOLD_A_TILES, "A 驻留 1 格：C 挪位后靠它把门 C 窗口起刻压回 600");
         assertEquals(Level03Pursuit.HOLD_C_TILES * TILE,
                 Level03Pursuit.PLATE_C_WINDOW_END - Level03Pursuit.PLATE_C_ARRIVAL,
                 "C 窗口 = HOLD_C_TILES 格");
