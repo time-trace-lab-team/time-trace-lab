@@ -197,22 +197,30 @@ class Level03AssemblyTest {
             tick++;
         }
 
-        // 关键刻（夹具前提：ACTIVE 起点 552、周期 612）逐点钉死，避免整段循环「恰好自洽」。
-        assertEquals(552L, Level03Pursuit.RAY_ACTIVE_START_TICK);
-        assertEquals(612L, Level03Pursuit.RAY_CYCLE_TICKS);
+        // 关键刻（夹具前提：绝对锚点 552 必须 ACTIVE、周期 372、周期原点 240）逐点钉死，
+        // 避免整段循环「恰好自洽」。
+        assertEquals(552L, Level03Pursuit.RAY_CROSS_TICK,
+                "刻表锚点：第二轮玩家抵达射线的绝对刻");
+        assertEquals(372L, Level03Pursuit.RAY_CYCLE_TICKS,
+                "周期 = OFF 240 + 预警 72 + 激活 60");
+        assertEquals(Level03Pursuit.RAY_ACTIVE_START_TICK, Level03Pursuit.RAY_CROSS_PHASE,
+                "绝对锚点 552 必须恰好落在 ACTIVE 起点（否则「必须下潜」不成立）");
         assertTrue(expectedRayActive(552L), "update(552) 必须落在 ACTIVE 段内（刻表前提）");
         assertFalse(expectedRayActive(551L), "update(551) 还在预警段，不是 ACTIVE");
-        assertFalse(expectedRayActive(612L), "刻 612 是下一周期起点，不再是 ACTIVE");
-        assertFalse(expectedRayActive(191L), "刻 191 在 OFF 段，不是 ACTIVE");
+        assertFalse(expectedRayActive(612L), "刻 612 已回到 OFF 段（周期原点处）");
+        assertFalse(expectedRayActive(240L), "刻 240 是周期原点，OFF 段起点");
     }
 
     /**
      * 与 {@link Level03Pursuit} 常量等价、但独立算出的期望状态（不在生产代码里复用同一表达式）。
      *
+     * <p>相位 = {@code floorMod(drivenTick - 周期原点, 周期)}，与 {@code Ray.update} 同一口径。</p>
+     *
      * @param drivenTick 装配对该刻调用 {@code Ray.update(drivenTick)} 时落在哪个状态段
      */
     private static boolean expectedRayActive(long drivenTick) {
-        long cycleTick = drivenTick % Level03Pursuit.RAY_CYCLE_TICKS;
+        long cycleTick = Math.floorMod(drivenTick - Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
+                Level03Pursuit.RAY_CYCLE_TICKS);
         return cycleTick >= Level03Pursuit.RAY_ACTIVE_START_TICK
                 && cycleTick < Level03Pursuit.RAY_ACTIVE_START_TICK + Level03Pursuit.RAY_ACTIVE_DURATION_TICKS;
     }
