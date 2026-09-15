@@ -279,19 +279,35 @@ public final class Level03Pursuit {
     /** 命中判定的横向半宽（沿用第二关口径）。 */
     public static final double RAY_HIT_WIDTH = 0.20 * TILE_SIZE;
 
-    /** 预警时长：72 刻 ≥ 24–30 刻反应预算 + 6–10 刻输入缓冲。 */
+    /**
+     * 关闭（OFF）时长：一个周期里射线不发射的刻数。
+     *
+     * <p>与「预警 + 激活」共同决定发射频率：周期 = OFF + 预警 + 激活。v3 设计文档冻结
+     * 「预警起 528、激活起 600、周期 660」，因此 OFF = 528。</p>
+     */
+    public static final long RAY_OFF_DURATION_TICKS = 528L;
+    /** 预警时长：72 刻 ≥ 24–30 刻反应预算 + 6–10 刻输入缓冲（设定书 §6.4）。 */
     public static final long RAY_WARNING_DURATION_TICKS = 72L;
     /** 激活时长。 */
     public static final long RAY_ACTIVE_DURATION_TICKS = 60L;
-    /** 激活起点 = E₂ 抵达射线的刻（初相由「正解必须在刻 {@link #RAY_CROSS_TICK} 下潜」反推）。 */
-    public static final long RAY_ACTIVE_START_TICK = RAY_CROSS_TICK;
-    /** 预警起点 = 激活起点 − 预警时长（刻 528 起屏幕上出现预警）。 */
-    public static final long RAY_WARNING_START_TICK = RAY_ACTIVE_START_TICK - RAY_WARNING_DURATION_TICKS;
-    /** 一个完整周期（660 刻）；状态只由共享 {@code roundTick} 决定（无独立计时器）。 */
-    public static final long RAY_CYCLE_TICKS = RAY_WARNING_START_TICK
+    /** 周期内预警起点（数值上等于 OFF 段长度）= 528；v3 里它同时就是绝对预警起点。 */
+    public static final long RAY_WARNING_START_TICK = RAY_OFF_DURATION_TICKS;
+    /** 周期内激活起点 = 预警起点 + 预警时长 = 600（= E₂ 抵达射线的刻）。 */
+    public static final long RAY_ACTIVE_START_TICK = RAY_WARNING_START_TICK + RAY_WARNING_DURATION_TICKS;
+    /** 一个完整周期 = OFF + 预警 + 激活 = 528 + 72 + 60 = 660；状态只由共享 {@code roundTick} 决定。 */
+    public static final long RAY_CYCLE_TICKS = RAY_OFF_DURATION_TICKS
             + RAY_WARNING_DURATION_TICKS + RAY_ACTIVE_DURATION_TICKS;
+    /**
+     * 周期原点：使绝对刻 {@link #RAY_CROSS_TICK}（玩家抵达射线那一刻）恰好落在 ACTIVE 段内。
+     *
+     * <p>反推依据：{@code floorMod(RAY_CROSS_TICK − RAY_CYCLE_OFFSET_TICKS, RAY_CYCLE_TICKS)
+     * == RAY_ACTIVE_START_TICK}。v3 的绝对刻与周期内刻一一对应（预警起点 528、激活起点 600），
+     * 因此原点 = 600 − 600 = 0；写成差值形式是为了以后改锚点时自动跟着走。</p>
+     */
+    public static final long RAY_CYCLE_OFFSET_TICKS = RAY_CROSS_TICK - RAY_ACTIVE_START_TICK;
     /** 抵达射线时刻在周期内的相位（夹具前提：必须落在 [activeStart, activeStart+activeDuration)）。 */
-    public static final long RAY_CROSS_PHASE = RAY_CROSS_TICK % RAY_CYCLE_TICKS;
+    public static final long RAY_CROSS_PHASE =
+            Math.floorMod(RAY_CROSS_TICK - RAY_CYCLE_OFFSET_TICKS, RAY_CYCLE_TICKS);
 
     // ---------- 构建 ----------
 
@@ -383,7 +399,8 @@ public final class Level03Pursuit {
                 .putProp("warningStartTick", RAY_WARNING_START_TICK)
                 .putProp("warningDurationTicks", RAY_WARNING_DURATION_TICKS)
                 .putProp("activeStartTick", RAY_ACTIVE_START_TICK)
-                .putProp("activeDurationTicks", RAY_ACTIVE_DURATION_TICKS));
+                .putProp("activeDurationTicks", RAY_ACTIVE_DURATION_TICKS)
+                .putProp("cycleOffsetTicks", RAY_CYCLE_OFFSET_TICKS));
         return entities;
     }
 

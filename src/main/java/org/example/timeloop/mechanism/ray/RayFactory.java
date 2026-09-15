@@ -54,6 +54,7 @@ public final class RayFactory {
                     requireLong(entity, "warningDurationTicks"),
                     requireLong(entity, "activeStartTick"),
                     requireLong(entity, "activeDurationTicks"),
+                    optionalLong(entity, "cycleOffsetTicks", 0L),
                     bus));
         }
         return List.copyOf(rays);
@@ -102,6 +103,24 @@ public final class RayFactory {
         if (!(value instanceof Number number)) {
             throw new IllegalArgumentException(
                     "射线实体缺少数值属性 " + key + ": id=" + entity.getId());
+        }
+        return number.longValue();
+    }
+
+    /**
+     * 可选数值属性：缺省时回落到 {@code fallback}。
+     *
+     * <p>{@code cycleOffsetTicks}（周期原点）是可选属性：不写等价于 0，
+     * 即与「以刻 0 为周期起点」的历史行为完全一致（第二关沿用）。</p>
+     */
+    private static long optionalLong(EntitySpawnInfo entity, String key, long fallback) {
+        Object value = entity.getProperties().get(key);
+        if (value == null) {
+            return fallback;
+        }
+        if (!(value instanceof Number number)) {
+            throw new IllegalArgumentException(
+                    "射线实体属性 " + key + " 必须是数值: id=" + entity.getId());
         }
         return number.longValue();
     }

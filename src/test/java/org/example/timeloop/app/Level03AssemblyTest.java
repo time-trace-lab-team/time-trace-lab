@@ -190,18 +190,32 @@ class Level03AssemblyTest {
             tick++;
         }
 
-        // 关键刻（v3 冻结：ACTIVE 起点 600、周期 660）逐点钉死，避免整段循环「恰好自洽」。
-        assertEquals(600L, Level03Pursuit.RAY_ACTIVE_START_TICK);
-        assertEquals(528L, Level03Pursuit.RAY_WARNING_START_TICK);
-        assertEquals(660L, Level03Pursuit.RAY_CYCLE_TICKS);
+        // 关键刻（v3 冻结 + 周期原点口径）逐点钉死，避免整段循环「恰好自洽」。
+        assertEquals(600L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = E₂ 抵达射线刻");
+        assertEquals(528L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点");
+        assertEquals(528L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 段长度（v3 设计文档：周期 660）");
+        assertEquals(660L, Level03Pursuit.RAY_CYCLE_TICKS,
+                "周期 = OFF 528 + 预警 72 + 激活 60");
+        assertEquals(0L, Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
+                "v3 的绝对刻与周期内刻一一对应（预警 528 / 激活 600 就是绝对刻）");
+        assertEquals(Level03Pursuit.RAY_ACTIVE_START_TICK, Level03Pursuit.RAY_CROSS_PHASE,
+                "刻表锚点 600 必须恰好落在 ACTIVE 起点（否则「必须下潜」不成立）");
         assertTrue(expectedRayActive(600L), "update(600) 必须落在 ACTIVE 段内（刻表前提）");
         assertFalse(expectedRayActive(599L), "update(599) 还在预警段，不是 ACTIVE");
         assertFalse(expectedRayActive(660L), "刻 660 是下一周期起点，不再是 ACTIVE");
-        assertTrue(expectedRayActive(528L) == false, "预警段不是 ACTIVE");
+        assertFalse(expectedRayActive(528L), "刻 528 是预警起点，不是 ACTIVE");
     }
 
+    /**
+     * 与 {@link Level03Pursuit} 常量等价、但独立算出的期望状态（不在生产代码里复用同一表达式）。
+     *
+     * <p>相位 = {@code floorMod(drivenTick - 周期原点, 周期)}，与 {@code Ray.update} 同一口径。</p>
+     *
+     * @param drivenTick 装配对该刻调用 {@code Ray.update(drivenTick)} 时落在哪个状态段
+     */
     private static boolean expectedRayActive(long drivenTick) {
-        long cycleTick = drivenTick % Level03Pursuit.RAY_CYCLE_TICKS;
+        long cycleTick = Math.floorMod(drivenTick - Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
+                Level03Pursuit.RAY_CYCLE_TICKS);
         return cycleTick >= Level03Pursuit.RAY_ACTIVE_START_TICK
                 && cycleTick < Level03Pursuit.RAY_ACTIVE_START_TICK
                 + Level03Pursuit.RAY_ACTIVE_DURATION_TICKS;
