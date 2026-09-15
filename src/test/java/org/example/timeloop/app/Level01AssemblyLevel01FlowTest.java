@@ -35,8 +35,8 @@ class Level01AssemblyLevel01FlowTest {
     /** 新地图左驻留板 (4,6) 中心 y = 312；到出口终端 (19,8) = (936,408) 相距约 726，远超 1.5 格半径 72。 */
     private static final double LEFT_PLATE_Y = 6.5 * TILE_SIZE;
     /** 新地图右驻留板 (18,8) 中心；与出口终端 (19,8) 恰好相距 1 格。 */
-    private static final double RIGHT_PLATE_X = 18.5 * TILE_SIZE;
-    private static final double RIGHT_PLATE_Y = 8.5 * TILE_SIZE;
+    private static final double RIGHT_PLATE_X = 23.5 * TILE_SIZE;
+    private static final double RIGHT_PLATE_Y = 14.5 * TILE_SIZE;
 
     private Level01Assembly assembly;
 
@@ -85,7 +85,9 @@ class Level01AssemblyLevel01FlowTest {
         assertTrue(a.isPlateOccupied("L01_plate_left"),
                 "左板应仍由残影占住");
 
-        // 在右驻留板中心（距出口终端恰好 1 格）按 E → 宽容半径内结算
+        // 开关搬到右下角后离出口 12 格：先走到出口旁 (18,8)（距出口 1 格）再按 E
+        tick = drive(a, tick, LogicalKey.DIR_UP, 6 * 24);     // (23,14) → (23,8)
+        tick = drive(a, tick, LogicalKey.DIR_LEFT, 5 * 24);   // (23,8) → (18,8)
         a.tick(pressKey(tick, LogicalKey.INTERACT));
         assertEquals(GamePhase.RESULT, a.phase(), "半径内按 E 应结算通关");
     }
@@ -151,8 +153,8 @@ class Level01AssemblyLevel01FlowTest {
         tick = drive(a, tick, LogicalKey.DIR_RIGHT, 48);     // (10,4) → (12,4)
         tick = drive(a, tick, LogicalKey.DIR_DOWN, 24);      // (12,4) → (12,5)
         tick = drive(a, tick, LogicalKey.DIR_RIGHT, 240);    // (12,5) → (22,5)
-        tick = drive(a, tick, LogicalKey.DIR_DOWN, 72);      // (22,5) → (22,8)
-        tick = drive(a, tick, LogicalKey.DIR_LEFT, 96);      // (22,8) → 右驻留板 (18,8)
+        tick = drive(a, tick, LogicalKey.DIR_DOWN, 216);     // (22,5) → (22,14)
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT, 24);     // (22,14) → 右驻留板/开关 (23,14)
         return tick;
     }
 
