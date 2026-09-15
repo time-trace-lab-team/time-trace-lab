@@ -35,8 +35,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *   <li><b>渲染投影</b>：4 块板（A/B/C 蓝底带 1/2/3 号）+ 2 个开关（S₂/S₃，琥珀胶囊）+
  *       3 扇门（各带同号角标）+ 1 个出口；终点格（{@code L03_door_exit} 与出口同格）<b>只</b>投影一个
  *       {@code EXIT}，不叠一个 {@code DOOR}，且终点组一律不带数字；</li>
- *   <li><b>射线随共享 {@code roundTick} 推进</b>：射线周期 264（OFF 132 / 预警 72 / 激活 60），
- *       绝对锚点仍是 预警起 528、激活起 600；</li>
+ *   <li><b>射线随共享 {@code roundTick} 推进</b>：第三关射线<b>无 OFF 段</b>，周期 132（预警 72 / 激活 60），
+ *       绝对锚点仍是 预警起 528、激活起 600、激活终 660；</li>
  *   <li><b>{@code objectiveView()} 在真实玩法状态下不得抛异常</b>：玩家已进 E₂ 支路而门 A 早已回锁，
  *       是第三关必然出现的合法局面 —— 这里用<b>真驾驶</b>复现，而不是拼一个 VM 参数；</li>
  *   <li><b>官方解第一轮的顺序路线</b>（A → C → K）玩家真走到时三块板都必须占板（上一张任务卡的回归）；</li>
@@ -191,13 +191,13 @@ class Level03AssemblyTest {
             tick++;
         }
 
-        // 关键刻（当前冻结 + 周期原点口径）逐点钉死，避免整段循环「恰好自洽」。
-        assertEquals(132L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "OFF 段长度 264 再减半 → 132");
-        assertEquals(132L, Level03Pursuit.RAY_WARNING_START_TICK, "周期内预警起点 = OFF 段长度");
-        assertEquals(204L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = 132 + 72");
-        assertEquals(264L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = OFF 132 + 预警 72 + 激活 60");
-        assertEquals(396L, Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
-                "周期缩短后相位与绝对刻不再一一对应：原点 = 600 − 204");
+        // 关键刻（第三关无 OFF 段 + 周期原点口径）逐点钉死，避免整段循环「恰好自洽」。
+        assertEquals(0L, Level03Pursuit.RAY_OFF_DURATION_TICKS, "第三关已取消 OFF 段");
+        assertEquals(0L, Level03Pursuit.RAY_WARNING_START_TICK, "无 OFF 段 ⇒ 周期起点即预警起点");
+        assertEquals(72L, Level03Pursuit.RAY_ACTIVE_START_TICK, "周期内激活起点 = 0 + 72");
+        assertEquals(132L, Level03Pursuit.RAY_CYCLE_TICKS, "周期 = 预警 72 + 激活 60（无 OFF 段）");
+        assertEquals(528L, Level03Pursuit.RAY_CYCLE_OFFSET_TICKS,
+                "相位与绝对刻不再一一对应：原点 = 600 − 72");
         assertEquals(528L, Level03Pursuit.RAY_WARNING_START_ABSOLUTE_TICK,
                 "绝对预警起点必须仍是 528（教学锚点不随周期变化）");
         assertEquals(600L, Level03Pursuit.RAY_ACTIVE_START_ABSOLUTE_TICK,
@@ -438,7 +438,13 @@ class Level03AssemblyTest {
         return a.renderViews().player();
     }
 
-    /** 直线推进一格（24 刻）：首刻为新按下边沿，其余为按住。 */
+    /**
+     * 直线推进一格（24 刻）：首刻为新按下边沿，其余为按住。
+     *
+     * <p>注意：本脚本假设「全速」—— 若玩家在推进过程中被射线命中（{@code speedMultiplier < 1}），
+     * 24 刻走不满一格，脚本会 under-shoot。第三关取消 OFF 段后射线 duty cycle 升高，
+     * 凡是不按 Space 下潜、直接穿过射线格的脚本都会踩到这个前提。</p>
+     */
     private static long drive(Level03Assembly a, long tick, LogicalKey key) {
         a.tick(press(tick++, key));
         for (long i = 1; i < TICKS_PER_TILE; i++) {
