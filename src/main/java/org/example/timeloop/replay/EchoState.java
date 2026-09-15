@@ -62,6 +62,22 @@ public final class EchoState {
      * 以共享 {@code roundTick} 直接索引本刻应呈现的帧。
      * 这是残影唯一的"移动"方式：不维护任何内部进度。
      *
+     * <p><b>取帧语义（TASK-DEV2-L03-ECHO-ACTOR-VIEW 冻结）</b>：本方法是残影
+     * <b>唯一</b>的取帧入口，只服务「残影当前该画什么姿态」，且与寿命 / 消散状态
+     * <b>无关</b>：</p>
+     * <ul>
+     *   <li>合法 {@code roundTick}（{@code [0, durationTicks)}）<b>恒返回该刻录制帧</b>
+     *       —— 不因处于「最后有效轮」或已被淘汰而改变，也不返回 {@code null}；</li>
+     *   <li>越界 {@code roundTick}（{@code < 0} 或 {@code >= durationTicks}）<b>一律拒绝</b>
+     *       （抛 {@link IndexOutOfBoundsException}），<b>绝不返回最后一帧补齐</b>；</li>
+     *   <li><b>消散轮 / GONE 语义</b>：{@code EchoState} 自身<b>不做寿命判断、不感知「消散」</b>。
+     *       被淘汰（GONE）的残影不再出现在 {@link EchoQueue#activeEchoes(int)}，
+     *       由调用方据此停止取帧；只要调用方仍在合法区间内取帧，本方法照常返回该刻录制帧。</li>
+     * </ul>
+     *
+     * <p>回放<b>不重算射线</b>：本方法只做只读索引 —— 不写减速、不刷新
+     * {@code (rayId, activeCycle)} 去重、不改变任何位置或状态。</p>
+     *
      * @param roundTick 共享逻辑刻，范围 [0, durationTicks)
      * @return 该刻的不可变帧
      * @throws IndexOutOfBoundsException {@code roundTick} 越界
