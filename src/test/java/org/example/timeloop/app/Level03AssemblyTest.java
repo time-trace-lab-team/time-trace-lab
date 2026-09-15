@@ -24,6 +24,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -149,10 +150,10 @@ class Level03AssemblyTest {
         assertEquals("3", mechanismOf(mechanisms, Level03Pursuit.DOOR_C).tag(), "C 板与门 C 同号");
 
         RenderViews.Mechanism plateD = mechanismOf(mechanisms, Level03Pursuit.PLATE_D);
-        assertEquals("4", plateD.tag());
+        assertNull(plateD.tag(), "终点组不带数字：同色即同组（照第二关口径）");
         assertTrue(plateD.gateGroup(), "D 板作用于出口供能闸 → 终点组（琥珀）");
         RenderViews.Mechanism exitView = mechanismOf(mechanisms, Level03Pursuit.EXIT);
-        assertEquals("4", exitView.tag(), "出口与 D 板同号");
+        assertNull(exitView.tag(), "终点闸/出口不加角标（照第二关口径）");
         assertTrue(exitView.gateGroup(), "出口属于终点组");
 
         for (String openingGroup : List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_B,

@@ -462,24 +462,23 @@ public final class Level03Assembly {
      * 把板与「它作用的那扇门」用<b>同一个序号</b>关联起来（自开局起静态显示，不随玩法状态变化）。
      *
      * <p>与第二关同一套视觉语言：<b>开门组</b>（蓝，板心写数字、门在本格右下角带同号角标）；
-     * <b>终点组</b>（琥珀，与终点闸/出口同色系）。序号对应关系：</p>
+     * <b>终点组</b>（琥珀）<b>不带数字</b> —— 同色即同组，终点闸也不加角标。</p>
      *
      * <pre>
-     * 1 = A 板 → 门 A      2 = B 板 → 门 B      3 = C 板 → 门 C      4 = D 板 → 出口供能闸
+     * 1 = A 板 → 门 A      2 = B 板 → 门 B      3 = C 板 → 门 C
+     * D 板 → 出口供能闸：终点组，靠琥珀色识别，不标号
      * </pre>
      */
     private static final Map<String, String> TAG_BY_PLATE = Map.of(
             Level03Pursuit.PLATE_A, "1",
             Level03Pursuit.PLATE_B, "2",
-            Level03Pursuit.PLATE_C, "3",
-            Level03Pursuit.PLATE_D, "4");
+            Level03Pursuit.PLATE_C, "3");
 
-    /** 门侧角标：与 {@link #TAG_BY_PLATE} 里的板同号（含与出口同格的终点供能闸 = 4）。 */
+    /** 门侧角标：只给开门组（与 {@link #TAG_BY_PLATE} 里的板同号）；终点闸不加角标。 */
     private static final Map<String, String> TAG_BY_DOOR = Map.of(
             Level03Pursuit.DOOR_A, "1",
             Level03Pursuit.DOOR_B, "2",
-            Level03Pursuit.DOOR_C, "3",
-            Level03Pursuit.DOOR_EXIT, "4");
+            Level03Pursuit.DOOR_C, "3");
 
     /** 作用于出口供能闸的板（D）：与出口同色系（琥珀，终点组）。 */
     private static final Set<String> GATE_GROUP_PLATES = Set.of(Level03Pursuit.PLATE_D);
@@ -487,10 +486,10 @@ public final class Level03Assembly {
     /**
      * 只读渲染视图（零回写）。
      *
-     * <p>投影契约：4 个 {@code PLATE}（A / B / C / D，{@code active} = 此刻是否被占，各带序号 1–4）+
-     * {@code L03_door_a} / {@code L03_door_b} / {@code L03_door_c} 三个 {@code DOOR}
+     * <p>投影契约：4 个 {@code PLATE}（A / B / C / D，{@code active} = 此刻是否被占；A/B/C 带序号 1–3，
+     * D 属终点组不标号）+ {@code L03_door_a} / {@code L03_door_b} / {@code L03_door_c} 三个 {@code DOOR}
      * （{@code active} = 是否解锁，各带与板同号的角标）+ 终点格一个 {@code EXIT}
-     * （{@code active} = {@code exit.isDoorUnlocked()}，角标 4、终点组色）。终点供能闸
+     * （{@code active} = {@code exit.isDoorUnlocked()}，终点组颜色、<b>不加角标</b>）。终点供能闸
      * {@code L03_door_exit} 与出口同格，该格<b>不</b>再投影 {@code DOOR}（同格叠画会互相遮挡）。</p>
      *
      * <p><b>序号与组色自开局起就在</b>：它们是静态投影，不看任何玩法状态，玩家一进关就能看出
