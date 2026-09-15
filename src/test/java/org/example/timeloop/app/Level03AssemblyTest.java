@@ -341,6 +341,157 @@ class Level03AssemblyTest {
         return assembly;
     }
 
+    /**
+     * 官方解第一轮的顺序路线：出生点 → **A**（驻留）→ 离开 → **C**（驻留）→ 离开 → **D**（驻留）。
+     *
+     * <p>这是测试报的「C 板无反应」最可能的触发场景：C 不是被单独走到，而是在**先驻留过 A、再走过去**
+     * 的顺序里踩到的。三段各用真实按键驱动，每段结束都断言该板确实被占。</p>
+     */
+    @Test
+    void officialFirstRoundRouteDocksOnAThenCThenD() {
+        Level03Assembly a = started();
+        long tick = 0L;
+
+        tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_PLATE_A,
+                Set.of(Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_D));
+        assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_A), "第 1 步：玩家踩 A 板必须占板");
+
+        tick = driveTo(a, tick, Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_C,
+                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_D));
+        assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_C),
+                "第 2 步：玩家踩 C 板必须占板（测试报的 P1 就在这一步）");
+
+        tick = driveTo(a, tick, Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_D,
+                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_C));
+        assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_D), "第 3 步：玩家踩 D 板必须占板");
+    }
+
+    /**
+     * 触发场景复原：**C 板先被残影占着**，玩家走到 C 格并停住（此时 `tryEnter` 返回
+     * {@code ALREADY_OCCUPIED} → 不驻留），随后残影让出 —— 玩家仍站在格心，却<b>再也不会</b>驻留。
+     *
+     * <p>这正是测试报的「残影能占、玩家站上去没反应」：{@code C3DockController.cruiseStep} 的驻留是
+     * <b>边沿触发</b>（要求「本刻在区域内 且 上一刻不在」），第一次尝试失败时边沿就被吃掉了，
+     * 之后玩家不离开再回来就永远不重试。</p>
+     */
+    @Test
+    void playerStandingOnAPlateReleasedByAnEchoShouldDockAfterwards() {
+        Level03Assembly a = started();
+        DockingPlate plateC = a.dockingPlate(Level03Pursuit.PLATE_C).orElseThrow();
+        assertTrue(plateC.tryEnter("echo_1", 1, 0L), "夹具前提：残影先占住 C 板");
+
+        long tick = 0L;
+        tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_PLATE_C,
+                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_B,
+                        Level03Pursuit.NODE_PLATE_D));
+        assertEquals(List.of("echo_1", "player"), plateC.getOccupantIds(),
+                "残影持板时玩家也必须登记进去（旧单槽模型会静默丢弃玩家 → 残影一走门就回锁）");
+        assertEquals(Level03Pursuit.cellCenter(Level03Pursuit.CELL_PLATE_C[0],
+                        Level03Pursuit.CELL_PLATE_C[1]),
+                new Vector2D(player(a).x(), player(a).y()),
+                "夹具前提：玩家确实停在 C 板格中心（位置在区域内）");
+
+        // 残影让出（寿命到 / 轮末淘汰 / 主动离开），玩家位置不动。
+        assertTrue(plateC.tryExit("echo_1", 1, tick), "残影让出 C 板");
+        for (int i = 0; i < 120; i++) {
+            a.tick(InputIntent.empty(tick++));
+        }
+
+        assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_C),
+                "残影让出后，站在板心不动的玩家仍必须被算作占板（门 C 不得回锁）");
+        assertEquals(List.of("player"), plateC.getOccupantIds(),
+                "残影已移除，板上只剩玩家");
+    }
+
+    /**
+     * 卡 §6.2 一致性回归：**同一块板**「玩家真走到」与「残影事件」两条路径必须得到相同的占用结果。
+     *
+     * <p>两条路径的判定链路不同（玩家靠 {@code AutoDockService.region().contains(实时位置)}，
+     * 残影靠回放里固化的 {@code DOCK_ENTERED}），所以四块板都必须走一遍；任一块板不一致就是 P1。</p>
+     */
+    @Test
+    void playerPathAndEchoPathOccupyEveryPlateIdentically() {
+        for (String plateId : List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_C,
+                Level03Pursuit.PLATE_D)) {
+            assertBothPathsOccupy(plateId, null);
+        }
+        // B 板在内区（门 A 之内）：先让残影压住 A 板把门 A 打开，玩家才走得进去。
+        assertBothPathsOccupy(Level03Pursuit.PLATE_B, Level03Pursuit.PLATE_A);
+    }
+
+    /**
+     * @param echoAnchorPlateId 若非 null，先注入一个残影占用该板（用于打开门 A），再让玩家出发
+     */
+    private void assertBothPathsOccupy(String plateId, String echoAnchorPlateId) {
+        Level03Assembly a = started();
+        long tick = 0L;
+        if (echoAnchorPlateId != null) {
+            assertTrue(a.dockingPlate(echoAnchorPlateId).orElseThrow()
+                    .tryEnter("echo_1", 1, tick), "夹具前提：残影压住 " + echoAnchorPlateId + " 开门");
+        }
+        tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, plateNode(plateId), otherPlates(plateId));
+        if (Level03Pursuit.PLATE_B.equals(plateId)) {
+            // 上面这条定步长驾驶对 B 支路不够：它要穿过射线，被命中会减速 30 刻、步长就错位了。
+            // 重新来一遍，每格先按一次 Space 相位下潜（相位期间不受射线判定）。
+            Level03Assembly phased = started();
+            assertTrue(phased.dockingPlate(echoAnchorPlateId).orElseThrow()
+                    .tryEnter("echo_1", 1, 0L), "夹具前提：残影压住 " + echoAnchorPlateId + " 开门");
+            long phasedTick = driveToPhasing(phased, 0L, Level03Pursuit.NODE_SPAWN,
+                    plateNode(plateId), otherPlates(plateId));
+            assertTrue(phased.isPlateOccupied(plateId),
+                    plateId + "：玩家真走到板上必须占板（相位下潜路线）");
+            phased.cleanup();
+            a.cleanup();
+            assertBothPathsEchoLeg(plateId);
+            return;
+        }
+        assertTrue(a.isPlateOccupied(plateId),
+                plateId + "：玩家真走到板上必须占板（玩家路径与残影路径不一致）");
+        a.cleanup();
+
+        assertBothPathsEchoLeg(plateId);
+    }
+
+    /** 残影路径：同一块板由回放的 {@code DOCK_ENTERED} 占住（这正是 replayEchoEvents 做的事）。 */
+    private static void assertBothPathsEchoLeg(String plateId) {
+        Level03Assembly echoRun = new Level03Assembly();
+        echoRun.start();
+        assertTrue(echoRun.dockingPlate(plateId).orElseThrow().tryEnter("echo_1", 1, 0L),
+                plateId + "：残影事件必须能占板");
+        assertTrue(echoRun.isPlateOccupied(plateId), plateId + "：残影路径占用结果");
+        echoRun.cleanup();
+    }
+
+    /** 每格先按一次 Space 相位再推进一格（用于必须穿过射线的 B 支路）。 */
+    private static long driveToPhasing(Level03Assembly a, long tick, String fromNodeId,
+                                       String toNodeId, Set<String> avoidNodeIds) {
+        for (LogicalKey key : route(fromNodeId, toNodeId, avoidNodeIds)) {
+            a.tick(pressKey(tick++, LogicalKey.PHASE));   // 相位是按下边沿触发，不需要按住
+            tick = drive(a, tick, key);
+        }
+        return tick;
+    }
+
+    private static String plateNode(String plateId) {
+        if (Level03Pursuit.PLATE_A.equals(plateId)) {
+            return Level03Pursuit.NODE_PLATE_A;
+        }
+        if (Level03Pursuit.PLATE_B.equals(plateId)) {
+            return Level03Pursuit.NODE_PLATE_B;
+        }
+        if (Level03Pursuit.PLATE_C.equals(plateId)) {
+            return Level03Pursuit.NODE_PLATE_C;
+        }
+        return Level03Pursuit.NODE_PLATE_D;
+    }
+
+    /** 除目标板之外的其它三块板格：寻路时避开，免得半路被别的板驻留下来。 */
+    private static Set<String> otherPlates(String plateId) {
+        Set<String> avoid = new java.util.LinkedHashSet<>(allPlateCells());
+        avoid.remove(plateNode(plateId));
+        return avoid;
+    }
+
     private static RenderViews.Player player(Level03Assembly a) {
         return a.renderViews().player();
     }
