@@ -28,21 +28,18 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 第三关装配（{@link Level03Assembly}）的机关 / 射线 / 目标投影集成测试。
+ * 第三关装配（{@link Level03Assembly}）的机关 / 射线 / 目标投影集成测试 · <b>重排 v3</b>。
  *
- * <p>覆盖四件事：</p>
+ * <p>覆盖五件事：</p>
  * <ol>
- *   <li><b>渲染投影</b>：4 个 {@code PLATE} + 3 个 {@code DOOR} + 1 个 {@code EXIT}；终点格
- *       （{@code L03_door_exit} 与出口同格）<b>只</b>投影一个 {@code EXIT}，不叠一个 {@code DOOR}；</li>
- *   <li><b>射线随共享 {@code roundTick} 推进</b>：逐刻把 {@link Ray} 的权威状态与
- *       {@code roundTick % RAY_CYCLE_TICKS} 算出的期望状态比对（刻 552 必须 ACTIVE，
- *       刻 551 / 612 等周期其余段落必须非 ACTIVE）—— 若装配漏掉 {@code RayFactory.updateAll}
- *       或另起计时器，这条会先红；</li>
- *   <li><b>{@code objectiveView()} 在真实玩法状态下不得抛异常</b>：玩家已在 B 支路而门 A 早已回锁
- *       （{@code doorAOpen=false && inBranchB=true}）是第三关必然出现的合法局面，
- *       这里用**真驾驶**走到分岔口 J 来复现，而不是拼一个 VM 参数；</li>
- *   <li><b>官方解的一条端到端链路</b>：B 板 / C 板由残影压住（门 B / 门 C 开）→ 玩家真开到出口旁
- *       → D 板供能（终点闸解锁）→ 真按 {@code E} → {@code RESULT}。</li>
+ *   <li><b>渲染投影</b>：4 块板（A/B/C 蓝底带 1/2/3 号）+ 2 个开关（S₂/S₃，琥珀胶囊）+
+ *       3 扇门（各带同号角标）+ 1 个出口；终点格（{@code L03_door_exit} 与出口同格）<b>只</b>投影一个
+ *       {@code EXIT}，不叠一个 {@code DOOR}，且终点组一律不带数字；</li>
+ *   <li><b>射线随共享 {@code roundTick} 推进</b>：v3 的射线初相是 600（预警 528、周期 660）；</li>
+ *   <li><b>{@code objectiveView()} 在真实玩法状态下不得抛异常</b>：玩家已进 E₂ 支路而门 A 早已回锁，
+ *       是第三关必然出现的合法局面 —— 这里用<b>真驾驶</b>复现，而不是拼一个 VM 参数；</li>
+ *   <li><b>官方解第一轮的顺序路线</b>（A → C → K）玩家真走到时三块板都必须占板（上一张任务卡的回归）；</li>
+ *   <li><b>出口闸三条件</b>：S₂ + S₃ + K 缺一不解锁；齐了才武装、才允许进出口格、按 {@code E} 才通关。</li>
  * </ol>
  *
  * <p>驾驶脚本不手抄地图路线：{@link #route} 用 {@link Level03Pursuit#isOpen} 现算 BFS 最短格子路线
@@ -52,9 +49,6 @@ class Level03AssemblyTest {
 
     private static final double TILE = Level03Pursuit.TILE_SIZE;
     private static final long TICKS_PER_TILE = Level03Pursuit.TICKS_PER_TILE;
-    private static final String PLATE_D = Level03Pursuit.PLATE_D;
-    private static final String NODE_DOOR_B = Level03Pursuit.NODE_DOOR_B;
-    private static final String NODE_DOOR_C = Level03Pursuit.NODE_DOOR_C;
 
     /** 寻路用的方向顺序（固定顺序 → 脚本可复现）。 */
     private static final List<LogicalKey> MOVE_ORDER = List.of(
@@ -78,31 +72,37 @@ class Level03AssemblyTest {
     // ---------- 1. 渲染投影 ----------
 
     @Test
-    void renderProjectionHasFourPlatesThreeDoorsAndOneExitAtTheExitCell() {
+    void renderProjectionHasFourPlatesTwoSwitchesThreeDoorsAndOneExit() {
         Level03Assembly a = started();
         List<RenderViews.Mechanism> mechanisms = a.renderViews().mechanisms();
-        assertEquals(8, mechanisms.size(), "4 板 + 3 门 + 1 终点");
+        assertEquals(10, mechanisms.size(), "4 板 + 2 开关 + 3 门 + 1 终点");
 
         Map<String, RenderViews.MechanismKind> kindById = new HashMap<>();
         int plates = 0;
+        int switches = 0;
         int doors = 0;
         int exits = 0;
         for (RenderViews.Mechanism m : mechanisms) {
             kindById.put(m.id(), m.kind());
             switch (m.kind()) {
                 case PLATE -> plates++;
+                case SWITCH -> switches++;
                 case DOOR -> doors++;
                 case EXIT -> exits++;
-                case SWITCH -> throw new AssertionError("第三关没有锁存开关，不得投影 SWITCH: " + m.id());
             }
         }
-        assertEquals(4, plates, "L3 四块板都是普通驻留板（role 不存在 → latching=false）");
+        assertEquals(4, plates, "A / C / K / B 四块驻留板");
+        assertEquals(2, switches, "S₂ / S₃ 两个锁存开关投影成 SWITCH（琥珀胶囊）");
         assertEquals(3, doors, "门 A / 门 B / 门 C 三扇普通门");
         assertEquals(1, exits, "终点格只投影一个 EXIT");
 
         for (String plateId : List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_B,
-                Level03Pursuit.PLATE_C, Level03Pursuit.PLATE_D)) {
+                Level03Pursuit.PLATE_C, Level03Pursuit.PLATE_K)) {
             assertEquals(RenderViews.MechanismKind.PLATE, kindById.get(plateId), plateId + " 应投影成 PLATE");
+        }
+        for (String switchId : List.of(Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3)) {
+            assertEquals(RenderViews.MechanismKind.SWITCH, kindById.get(switchId),
+                    switchId + " 应投影成 SWITCH");
         }
         for (String doorId : List.of(Level03Pursuit.DOOR_A, Level03Pursuit.DOOR_B, Level03Pursuit.DOOR_C)) {
             assertEquals(RenderViews.MechanismKind.DOOR, kindById.get(doorId), doorId + " 应投影成 DOOR");
@@ -112,22 +112,16 @@ class Level03AssemblyTest {
                 "终点供能闸与出口同格，不得再投影一个 DOOR（同格叠画）");
         assertPairedTagsAndGroups(mechanisms);
 
-        // 终点格：只有一个 EXIT，且坐标就是出口格中心；该格没有任何 DOOR。
         Vector2D exitCell = Level03Pursuit.cellCenter(
                 Level03Pursuit.CELL_EXIT[0], Level03Pursuit.CELL_EXIT[1]);
-        RenderViews.Mechanism exitView = mechanisms.stream()
-                .filter(m -> m.kind() == RenderViews.MechanismKind.EXIT)
-                .findFirst()
-                .orElseThrow(() -> new AssertionError("渲染投影缺少 EXIT"));
-        assertEquals(Level03Pursuit.EXIT, exitView.id());
+        RenderViews.Mechanism exitView = mechanismOf(mechanisms, Level03Pursuit.EXIT);
         assertEquals(exitCell.x(), exitView.x(), 1e-9);
         assertEquals(exitCell.y(), exitView.y(), 1e-9);
         assertFalse(mechanisms.stream().anyMatch(m -> m.kind() == RenderViews.MechanismKind.DOOR
                         && Math.abs(m.x() - exitCell.x()) < 1e-9 && Math.abs(m.y() - exitCell.y()) < 1e-9),
                 "终点格只能有一个 EXIT，不得同时叠一个 DOOR");
-        assertFalse(exitView.active(), "开局 D 板无人 → 终点闸未解锁 → EXIT 未激活");
+        assertFalse(exitView.active(), "开局三条件都不成立 → 终点闸未解锁 → EXIT 未激活");
 
-        // 门格上的 DOOR 坐标 = 门所在格中心（画在门口而不是别处）。
         RenderViews.Mechanism doorA = mechanismOf(mechanisms, Level03Pursuit.DOOR_A);
         assertEquals(Level03Pursuit.cellCenter(
                         Level03Pursuit.CELL_DOOR_A[0], Level03Pursuit.CELL_DOOR_A[1]).x(),
@@ -136,10 +130,8 @@ class Level03AssemblyTest {
     }
 
     /**
-     * 板与门共用同一个序号，且<b>自开局起就在</b>（静态投影，不看任何玩法状态）。
-     *
-     * <p>与第二关同一套视觉语言：开门组（A/B/C → 蓝）板心写数字、门带同号角标；
-     * 终点组（D → 出口供能闸）琥珀同色，板与出口同号 4。</p>
+     * 板与门共用同一个序号（照设计图 v3：A=1 / B=2 / C=3），且<b>自开局起就在</b>（静态投影，
+     * 不看任何玩法状态）；终点组（K 板、S₂/S₃ 开关、出口）琥珀同色，一律不带数字。
      */
     private static void assertPairedTagsAndGroups(List<RenderViews.Mechanism> mechanisms) {
         assertEquals("1", mechanismOf(mechanisms, Level03Pursuit.PLATE_A).tag());
@@ -149,13 +141,17 @@ class Level03AssemblyTest {
         assertEquals("3", mechanismOf(mechanisms, Level03Pursuit.PLATE_C).tag());
         assertEquals("3", mechanismOf(mechanisms, Level03Pursuit.DOOR_C).tag(), "C 板与门 C 同号");
 
-        RenderViews.Mechanism plateD = mechanismOf(mechanisms, Level03Pursuit.PLATE_D);
-        assertNull(plateD.tag(), "终点组不带数字：同色即同组（照第二关口径）");
-        assertTrue(plateD.gateGroup(), "D 板作用于出口供能闸 → 终点组（琥珀）");
-        RenderViews.Mechanism exitView = mechanismOf(mechanisms, Level03Pursuit.EXIT);
-        assertNull(exitView.tag(), "终点闸/出口不加角标（照第二关口径）");
-        assertTrue(exitView.gateGroup(), "出口属于终点组");
+        assertNull(mechanismOf(mechanisms, Level03Pursuit.PLATE_K).tag(),
+                "终点组不带数字：同色即同组（照设计图 v3）");
+        assertNull(mechanismOf(mechanisms, Level03Pursuit.SWITCH_S2).tag(), "开关不带数字");
+        assertNull(mechanismOf(mechanisms, Level03Pursuit.SWITCH_S3).tag(), "开关不带数字");
+        assertNull(mechanismOf(mechanisms, Level03Pursuit.EXIT).tag(), "出口不加角标");
 
+        for (String gateGroup : List.of(Level03Pursuit.PLATE_K, Level03Pursuit.SWITCH_S2,
+                Level03Pursuit.SWITCH_S3, Level03Pursuit.EXIT)) {
+            assertTrue(mechanismOf(mechanisms, gateGroup).gateGroup(),
+                    gateGroup + " 属于终点组（琥珀）");
+        }
         for (String openingGroup : List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_B,
                 Level03Pursuit.PLATE_C, Level03Pursuit.DOOR_A, Level03Pursuit.DOOR_B,
                 Level03Pursuit.DOOR_C)) {
@@ -182,9 +178,6 @@ class Level03AssemblyTest {
         a.tick(InputIntent.empty(0L)); // 首个方向输入出现前不推进逻辑刻
         a.tick(press(1L, LogicalKey.DIR_UP));
 
-        // 逐刻比对：装配每逻辑刻用共享 roundTick 驱动射线，因此
-        // 「刻 T 观察到的状态」= Ray.update(T-1) 的结果（tick 先 updateAll(tick) 再 advance）。
-        // 若装配漏掉 updateAll 或另起计时器，这条会先红。
         long tick = 1L;
         while (tick < Level03Pursuit.DURATION_TICKS) {
             if (!a.isPlaying()) {
@@ -197,30 +190,27 @@ class Level03AssemblyTest {
             tick++;
         }
 
-        // 关键刻（夹具前提：ACTIVE 起点 552、周期 612）逐点钉死，避免整段循环「恰好自洽」。
-        assertEquals(552L, Level03Pursuit.RAY_ACTIVE_START_TICK);
-        assertEquals(612L, Level03Pursuit.RAY_CYCLE_TICKS);
-        assertTrue(expectedRayActive(552L), "update(552) 必须落在 ACTIVE 段内（刻表前提）");
-        assertFalse(expectedRayActive(551L), "update(551) 还在预警段，不是 ACTIVE");
-        assertFalse(expectedRayActive(612L), "刻 612 是下一周期起点，不再是 ACTIVE");
-        assertFalse(expectedRayActive(191L), "刻 191 在 OFF 段，不是 ACTIVE");
+        // 关键刻（v3 冻结：ACTIVE 起点 600、周期 660）逐点钉死，避免整段循环「恰好自洽」。
+        assertEquals(600L, Level03Pursuit.RAY_ACTIVE_START_TICK);
+        assertEquals(528L, Level03Pursuit.RAY_WARNING_START_TICK);
+        assertEquals(660L, Level03Pursuit.RAY_CYCLE_TICKS);
+        assertTrue(expectedRayActive(600L), "update(600) 必须落在 ACTIVE 段内（刻表前提）");
+        assertFalse(expectedRayActive(599L), "update(599) 还在预警段，不是 ACTIVE");
+        assertFalse(expectedRayActive(660L), "刻 660 是下一周期起点，不再是 ACTIVE");
+        assertTrue(expectedRayActive(528L) == false, "预警段不是 ACTIVE");
     }
 
-    /**
-     * 与 {@link Level03Pursuit} 常量等价、但独立算出的期望状态（不在生产代码里复用同一表达式）。
-     *
-     * @param drivenTick 装配对该刻调用 {@code Ray.update(drivenTick)} 时落在哪个状态段
-     */
     private static boolean expectedRayActive(long drivenTick) {
         long cycleTick = drivenTick % Level03Pursuit.RAY_CYCLE_TICKS;
         return cycleTick >= Level03Pursuit.RAY_ACTIVE_START_TICK
-                && cycleTick < Level03Pursuit.RAY_ACTIVE_START_TICK + Level03Pursuit.RAY_ACTIVE_DURATION_TICKS;
+                && cycleTick < Level03Pursuit.RAY_ACTIVE_START_TICK
+                + Level03Pursuit.RAY_ACTIVE_DURATION_TICKS;
     }
 
-    // ---------- 3. objectiveView() 在「已进 B 支路、门 A 已回锁」时不得抛异常 ----------
+    // ---------- 3. objectiveView() 在「已进 E₂ 支路、门 A 已回锁」时不得抛异常 ----------
 
     @Test
-    void objectiveViewStaysValidWhilePlayerIsInBranchBWithDoorAAlreadyRelocked() {
+    void objectiveViewStaysValidWhilePlayerIsInEcho2BranchWithDoorAAlreadyRelocked() {
         Level03Assembly a = started();
         long tick = 0;
         a.tick(InputIntent.empty(tick++));
@@ -229,150 +219,76 @@ class Level03AssemblyTest {
         assertTrue(a.dockingPlate(Level03Pursuit.PLATE_A).orElseThrow().tryEnter("echo_1", 1, tick));
         assertTrue(a.door(Level03Pursuit.DOOR_A).orElseThrow().isUnlocked(), "A 板被压 → 门 A 开");
 
-        // 真开到分岔口 J（18 格 = 432 刻，与 SPAWN_TO_PLATE_A_TICKS + DOOR_A_TO_FORK_TICKS 一致）。
+        // 真开到分岔口 J（出生点 → 门 A 14 格 → J 2 格 = 16 格 = 384 刻）。
         tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_J,
-                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_EXIT,
-                        NODE_DOOR_B, NODE_DOOR_C));
-        assertEquals(432L, a.hudContext().roundTick(),
-                "按刻表，出生点 → 门 A（14 格）→ J（4 格）= 18 格 = 432 刻");
-        assertTrue(a.inBranchB(), "J(17,10) 属于 B 支路集合");
+                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_C,
+                        Level03Pursuit.NODE_PLATE_K, Level03Pursuit.NODE_PLATE_B,
+                        Level03Pursuit.NODE_SWITCH_S2, Level03Pursuit.NODE_SWITCH_S3));
+        assertEquals(384L, a.hudContext().roundTick(),
+                "按刻表，出生点 → 门 A（14 格）→ J（2 格）= 16 格 = 384 刻");
+        assertTrue(a.inEcho2Branch(), "J(15,10) 属于 E₂ 支路集合");
 
-        // 关键局面：门 A 此刻已经回锁（刻 432 > 窗口结束 384），而玩家已经在 B 支路里。
+        // 关键局面：门 A 此刻已经回锁（刻 384 是窗口末），而玩家已经在 E₂ 支路里。
         a.dockingPlate(Level03Pursuit.PLATE_A).orElseThrow().tryExit("echo_1", 1, tick);
         assertFalse(a.door(Level03Pursuit.DOOR_A).orElseThrow().isUnlocked(), "A 板一松 → 门 A 回锁");
 
         Level03ObjectiveViewModel atFork = a.objectiveView();   // 修掉假不变量前：这里抛 IllegalArgumentException
         assertFalse(atFork.doorAOpen(), "门 A 已回锁");
-        assertTrue(atFork.inBranchB(), "玩家确实已经在 B 支路里");
-        assertFalse(atFork.rayActive(), "刻 432 射线尚未 ACTIVE");
-        assertTrue(atFork.text().contains("沿 B 支路往上走"), atFork.text());
+        assertTrue(atFork.inEcho2Branch(), "玩家确实已经在 E₂ 支路里");
+        assertFalse(atFork.rayActive(), "刻 384 射线尚未 ACTIVE");
 
         // 再推进到射线 ACTIVE 那一刻：提示切成「按 Space 下潜」，投影仍然合法。
-        // 装配先 updateAll(roundTick) 再 advance，因此刻 552 的 update 结果在刻 553 才可见。
+        // 装配先 updateAll(roundTick) 再 advance，因此刻 600 的 update 结果在刻 601 才可见。
         while (!a.isRayActive()) {
             a.tick(InputIntent.empty(tick++));
         }
-        assertEquals(553L, a.hudContext().roundTick(), "射线在刻 553 才可观察到 ACTIVE（见射线刻表口径）");
+        assertEquals(601L, a.hudContext().roundTick(), "射线在刻 601 才可观察到 ACTIVE");
         Level03ObjectiveViewModel atRay = a.objectiveView();
-        assertTrue(atRay.rayActive(), "刻 553 射线 ACTIVE");
-        assertTrue(atRay.inBranchB(), "玩家仍在 B 支路");
+        assertTrue(atRay.rayActive(), "刻 601 射线 ACTIVE");
+        assertTrue(atRay.inEcho2Branch(), "玩家仍在 E₂ 支路");
         assertFalse(atRay.doorAOpen(), "门 A 仍然是锁的");
         assertTrue(atRay.text().contains("Space"), atRay.text());
         assertTrue(atRay.text().contains("下潜"), atRay.text());
     }
 
-    // ---------- 4. 官方解的一条端到端链路 ----------
+    // ---------- 4. 上一张任务卡的回归：官方解第一轮 A → C → K ----------
 
     /**
-     * 官方解链路：残影压开 B 板 / C 板 → 玩家真开到出口旁 → 按 {@code E} 无效（D 板未供能）
-     * → D 板供能（终点供能闸解锁）→ 按 {@code E} 通关。
+     * 官方解第一轮的顺序路线：出生点 → **A**（驻留）→ 离开 → **C**（驻留）→ 离开 → **K**（驻留到轮末）。
      *
-     * <p>地图与通行性约束（不是测试取巧）：出口格 {@code (25,6)} 与终点供能闸 {@code L03_door_exit}
-     * 同格，而 {@code isPassable} 与 L1 / L2 同构地<b>挡住未解锁的门格</b>，所以供能之前玩家进不了出口格
-     * ——他停在正下方的 {@code (25,7)}（距出口 1 格 = 48 &lt; 宽容半径 72，交互照常生效），
-     * 等到 D 板供能后再按 {@code E}。这正是刻表 {@code PLATE_D_ARRIVAL(1056) > EXIT_ARRIVAL(840)} 的
-     * 设计意图：玩家要在出口旁<b>等</b>供能。</p>
+     * <p>这是任务卡 {@code TASK-DEV3-L03-PLATE-C-NO-RESPONSE} 的现场：C 不是被单独走到，而是在
+     * <b>先驻留过 A、再走过去</b>的顺序里踩到的。三段各用真实按键驱动，每段结束都断言该板确实被占。</p>
      */
     @Test
-    void branchBAndCBeyondEchoesPlusPoweredExitLetThePlayerClearTheLevel() {
-        Level03Assembly a = started();
-        long tick = 0;
-        a.tick(InputIntent.empty(tick++));
-
-        // 官方解：第二轮玩家驻留 B 板到轮末 → 第三轮门 B 由 E₂ 开；E₁ 在 C 板上撑开 C 窗口。
-        assertTrue(a.dockingPlate(Level03Pursuit.PLATE_B).orElseThrow().tryEnter("echo_2", 2, tick));
-        assertTrue(a.dockingPlate(Level03Pursuit.PLATE_C).orElseThrow().tryEnter("echo_1", 1, tick));
-        assertTrue(a.door(Level03Pursuit.DOOR_B).orElseThrow().isUnlocked(), "B 板被压 → 门 B 开");
-        assertTrue(a.door(Level03Pursuit.DOOR_C).orElseThrow().isUnlocked(), "C 板被压 → 门 C 开");
-        // 门 A 是内区唯一入口，玩家要真开进去就必须有人压着 A 板（刻表上 E₁ 的 A 窗口是 336..384）。
-        assertTrue(a.dockingPlate(Level03Pursuit.PLATE_A).orElseThrow().tryEnter("echo_1", 1, tick));
-        assertTrue(a.door(Level03Pursuit.DOOR_A).orElseThrow().isUnlocked(), "A 板被压 → 门 A 开");
-
-        // 真开到出口正下方 (25,7)：门 A 之外的控制线与 J 右侧主通道都走得通；
-        // 寻路避开四块板格 —— 顺路压上 D 板会掩盖「D 板供能」这一步。
-        tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.nodeId(25, 7),
-                allPlateCells());
-        assertEquals(cellX(25), player(a).x(), 1e-9);
-        assertEquals(cellY(7), player(a).y(), 1e-9);
-
-        // 终点供能闸锁着 → 进不了出口格（与 L1 / L2「门格未解锁不可通行」同一条规则）。
-        assertFalse(a.door(Level03Pursuit.DOOR_EXIT).orElseThrow().isUnlocked(), "D 板无人 → 终点闸锁着");
-        assertFalse(a.exitTerminal().isDoorUnlocked(), "出口终端未被武装");
-        tick = drive(a, tick, LogicalKey.DIR_UP);
-        assertEquals(cellY(7), player(a).y(), 1e-9, "终点闸锁着时不得进入出口格 (25,6)");
-
-        // 只按 E 也不够：闸没解锁 → 不结算。
-        a.tick(pressKey(tick++, LogicalKey.INTERACT));
-        assertEquals(GamePhase.PLAYING, a.phase(), "闸没解锁时按 E 不得通关");
-        assertFalse(a.exitTerminal().isTriggered());
-
-        // E₁ 驻留 D 板（刻表 1056）→ 终点闸解锁 → 出口武装，目标提示同步改口。
-        assertTrue(a.dockingPlate(PLATE_D).orElseThrow().tryEnter("echo_1", 1, tick));
-        assertTrue(a.door(Level03Pursuit.DOOR_EXIT).orElseThrow().isUnlocked(), "D 板被压 → 终点闸解锁");
-        assertTrue(a.exitTerminal().isDoorUnlocked(), "出口终端随终点闸一起武装");
-        assertTrue(a.objectiveView().exitPowered());
-        assertEquals("出口已供能：到出口旁按 E 通关", a.objectiveView().text());
-
-        // 闸解锁后同一按键即可走进出口格，并在半径内按 E → RESULT。
-        tick = drive(a, tick, LogicalKey.DIR_UP);
-        assertEquals(cellY(6), player(a).y(), 1e-9, "终点闸解锁后应允许进入出口格 (25,6)");
-        a.tick(pressKey(tick, LogicalKey.INTERACT));
-        assertEquals(GamePhase.RESULT, a.phase(), "闸门解锁后在半径内按 E 应通关");
-        assertTrue(a.isFinalPhase());
-        LevelResult result = a.result().orElseThrow(() -> new AssertionError("通关后必须有结算投影"));
-        assertTrue(result.cleared(), "结算应为通关");
-        assertEquals(LevelFlow.LevelId.LEVEL_03.title(), result.levelName(),
-                "RecordingSession 的关卡名必须与当前 LevelId 一致");
-        assertEquals(Level03Pursuit.MAX_ROUNDS, result.maxRounds());
-    }
-
-    /** 本关四块驻留板所在节点（寻路时避开，避免玩家顺路把自己压上某块板）。 */
-    private static Set<String> allPlateCells() {
-        return Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_B,
-                Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_D);
-    }
-
-    // ---------- 驾驶与寻路 ----------
-
-    private Level03Assembly started() {
-        assembly = new Level03Assembly();
-        assembly.start();
-        assertTrue(assembly.isPlaying());
-        return assembly;
-    }
-
-    /**
-     * 官方解第一轮的顺序路线：出生点 → **A**（驻留）→ 离开 → **C**（驻留）→ 离开 → **D**（驻留）。
-     *
-     * <p>这是测试报的「C 板无反应」最可能的触发场景：C 不是被单独走到，而是在**先驻留过 A、再走过去**
-     * 的顺序里踩到的。三段各用真实按键驱动，每段结束都断言该板确实被占。</p>
-     */
-    @Test
-    void officialFirstRoundRouteDocksOnAThenCThenD() {
+    void officialFirstRoundRouteDocksOnAThenCThenK() {
         Level03Assembly a = started();
         long tick = 0L;
 
         tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_PLATE_A,
-                Set.of(Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_D));
+                Set.of(Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_K,
+                        Level03Pursuit.NODE_PLATE_B, Level03Pursuit.NODE_SWITCH_S2,
+                        Level03Pursuit.NODE_SWITCH_S3));
         assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_A), "第 1 步：玩家踩 A 板必须占板");
+        assertTrue(a.door(Level03Pursuit.DOOR_A).orElseThrow().isUnlocked(), "A 板占 → 门 A 开");
 
         tick = driveTo(a, tick, Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_C,
-                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_D));
+                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_K,
+                        Level03Pursuit.NODE_PLATE_B, Level03Pursuit.NODE_SWITCH_S2,
+                        Level03Pursuit.NODE_SWITCH_S3));
         assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_C),
-                "第 2 步：玩家踩 C 板必须占板（测试报的 P1 就在这一步）");
+                "第 2 步：玩家踩 C 板必须占板（任务卡报的 P1 就在这一步）");
+        assertTrue(a.door(Level03Pursuit.DOOR_C).orElseThrow().isUnlocked(), "C 板占 → 门 C 开");
 
-        tick = driveTo(a, tick, Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_D,
-                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_C));
-        assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_D), "第 3 步：玩家踩 D 板必须占板");
+        tick = driveTo(a, tick, Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_K,
+                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_C,
+                        Level03Pursuit.NODE_PLATE_B, Level03Pursuit.NODE_SWITCH_S2,
+                        Level03Pursuit.NODE_SWITCH_S3));
+        assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_K), "第 3 步：玩家踩 K 板必须占板");
     }
 
     /**
      * 触发场景复原：**C 板先被残影占着**，玩家走到 C 格并停住（此时 `tryEnter` 返回
      * {@code ALREADY_OCCUPIED} → 不驻留），随后残影让出 —— 玩家仍站在格心，却<b>再也不会</b>驻留。
-     *
-     * <p>这正是测试报的「残影能占、玩家站上去没反应」：{@code C3DockController.cruiseStep} 的驻留是
-     * <b>边沿触发</b>（要求「本刻在区域内 且 上一刻不在」），第一次尝试失败时边沿就被吃掉了，
-     * 之后玩家不离开再回来就永远不重试。</p>
      */
     @Test
     void playerStandingOnAPlateReleasedByAnEchoShouldDockAfterwards() {
@@ -383,15 +299,15 @@ class Level03AssemblyTest {
         long tick = 0L;
         tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.NODE_PLATE_C,
                 Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_B,
-                        Level03Pursuit.NODE_PLATE_D));
+                        Level03Pursuit.NODE_PLATE_K, Level03Pursuit.NODE_SWITCH_S2,
+                        Level03Pursuit.NODE_SWITCH_S3));
         assertEquals(List.of("echo_1", "player"), plateC.getOccupantIds(),
-                "残影持板时玩家也必须登记进去（旧单槽模型会静默丢弃玩家 → 残影一走门就回锁）");
+                "残影持板时玩家也必须登记进去（旧单槽位模型会静默丢弃玩家 → 残影一走门就回锁）");
         assertEquals(Level03Pursuit.cellCenter(Level03Pursuit.CELL_PLATE_C[0],
                         Level03Pursuit.CELL_PLATE_C[1]),
                 new Vector2D(player(a).x(), player(a).y()),
                 "夹具前提：玩家确实停在 C 板格中心（位置在区域内）");
 
-        // 残影让出（寿命到 / 轮末淘汰 / 主动离开），玩家位置不动。
         assertTrue(plateC.tryExit("echo_1", 1, tick), "残影让出 C 板");
         for (int i = 0; i < 120; i++) {
             a.tick(InputIntent.empty(tick++));
@@ -399,97 +315,100 @@ class Level03AssemblyTest {
 
         assertTrue(a.isPlateOccupied(Level03Pursuit.PLATE_C),
                 "残影让出后，站在板心不动的玩家仍必须被算作占板（门 C 不得回锁）");
-        assertEquals(List.of("player"), plateC.getOccupantIds(),
-                "残影已移除，板上只剩玩家");
+        assertEquals(List.of("player"), plateC.getOccupantIds(), "残影已移除，板上只剩玩家");
+        assertTrue(a.door(Level03Pursuit.DOOR_C).orElseThrow().isUnlocked(), "门 C 仍开着");
     }
 
+    // ---------- 5. 出口闸三条件 ----------
+
     /**
-     * 卡 §6.2 一致性回归：**同一块板**「玩家真走到」与「残影事件」两条路径必须得到相同的占用结果。
+     * 出口闸要 <b>S₂ + S₃ + K 三块同时成立</b>：缺一不解锁、进不了出口格、按 {@code E} 无效；
+     * 齐了才武装，玩家走进出口格按 {@code E} 才 {@code RESULT}。
      *
-     * <p>两条路径的判定链路不同（玩家靠 {@code AutoDockService.region().contains(实时位置)}，
-     * 残影靠回放里固化的 {@code DOCK_ENTERED}），所以四块板都必须走一遍；任一块板不一致就是 P1。</p>
+     * <p>残影条件用直接注入（等价于「前两轮按刻表踩过 S₂/S₃ 并压住 K」）：本用例测的是
+     * <b>闸门条件与出口结算</b>，不是三轮时序（时序由 {@code Level03PursuitChainTest} 覆盖）。</p>
      */
     @Test
-    void playerPathAndEchoPathOccupyEveryPlateIdentically() {
-        for (String plateId : List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_C,
-                Level03Pursuit.PLATE_D)) {
-            assertBothPathsOccupy(plateId, null);
-        }
-        // B 板在内区（门 A 之内）：先让残影压住 A 板把门 A 打开，玩家才走得进去。
-        assertBothPathsOccupy(Level03Pursuit.PLATE_B, Level03Pursuit.PLATE_A);
-    }
-
-    /**
-     * @param echoAnchorPlateId 若非 null，先注入一个残影占用该板（用于打开门 A），再让玩家出发
-     */
-    private void assertBothPathsOccupy(String plateId, String echoAnchorPlateId) {
+    void exitGateNeedsSwitchesPlusKBeforeThePlayerCanClearTheLevel() {
         Level03Assembly a = started();
-        long tick = 0L;
-        if (echoAnchorPlateId != null) {
-            assertTrue(a.dockingPlate(echoAnchorPlateId).orElseThrow()
-                    .tryEnter("echo_1", 1, tick), "夹具前提：残影压住 " + echoAnchorPlateId + " 开门");
-        }
-        tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, plateNode(plateId), otherPlates(plateId));
-        if (Level03Pursuit.PLATE_B.equals(plateId)) {
-            // 上面这条定步长驾驶对 B 支路不够：它要穿过射线，被命中会减速 30 刻、步长就错位了。
-            // 重新来一遍，每格先按一次 Space 相位下潜（相位期间不受射线判定）。
-            Level03Assembly phased = started();
-            assertTrue(phased.dockingPlate(echoAnchorPlateId).orElseThrow()
-                    .tryEnter("echo_1", 1, 0L), "夹具前提：残影压住 " + echoAnchorPlateId + " 开门");
-            long phasedTick = driveToPhasing(phased, 0L, Level03Pursuit.NODE_SPAWN,
-                    plateNode(plateId), otherPlates(plateId));
-            assertTrue(phased.isPlateOccupied(plateId),
-                    plateId + "：玩家真走到板上必须占板（相位下潜路线）");
-            phased.cleanup();
-            a.cleanup();
-            assertBothPathsEchoLeg(plateId);
-            return;
-        }
-        assertTrue(a.isPlateOccupied(plateId),
-                plateId + "：玩家真走到板上必须占板（玩家路径与残影路径不一致）");
-        a.cleanup();
+        long tick = 0;
+        a.tick(InputIntent.empty(tick++));
 
-        assertBothPathsEchoLeg(plateId);
+        // 门 A / 门 B / 门 C 都压开，玩家才能真开到出口旁
+        assertTrue(a.dockingPlate(Level03Pursuit.PLATE_A).orElseThrow().tryEnter("echo_1", 1, tick));
+        assertTrue(a.dockingPlate(Level03Pursuit.PLATE_B).orElseThrow().tryEnter("echo_2", 2, tick));
+        assertTrue(a.dockingPlate(Level03Pursuit.PLATE_C).orElseThrow().tryEnter("echo_1", 1, tick));
+
+        tick = driveTo(a, tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.nodeId(25, 14),
+                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_B,
+                        Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_K,
+                        Level03Pursuit.NODE_SWITCH_S2, Level03Pursuit.NODE_SWITCH_S3));
+        assertEquals(cellX(25), player(a).x(), 1e-9);
+        assertEquals(cellY(14), player(a).y(), 1e-9);
+
+        // 三条件都不成立 → 闸锁着、出口未武装
+        assertFalse(a.door(Level03Pursuit.DOOR_EXIT).orElseThrow().isUnlocked(), "三条件未齐 → 闸锁着");
+        assertFalse(a.exitTerminal().isDoorUnlocked(), "出口终端未被武装");
+        assertEquals("出口闸 0/3：S₂✗ S₃✗ K✗", a.objectiveView().gateProgress());
+
+        // 只按 E 不够
+        a.tick(pressKey(tick++, LogicalKey.INTERACT));
+        assertEquals(GamePhase.PLAYING, a.phase(), "闸没解锁时按 E 不得通关");
+        assertFalse(a.exitTerminal().isTriggered());
+
+        // 只满足两块也不够（缺 K）
+        assertTrue(a.dockingPlate(Level03Pursuit.SWITCH_S2).orElseThrow().tryEnter("echo_2", 2, tick));
+        assertTrue(a.dockingPlate(Level03Pursuit.SWITCH_S3).orElseThrow().tryEnter("player", 0, tick));
+        assertEquals("出口闸 2/3：S₂✓ S₃✓ K✗", a.objectiveView().gateProgress());
+        assertFalse(a.door(Level03Pursuit.DOOR_EXIT).orElseThrow().isUnlocked(), "缺 K → 闸仍锁着");
+
+        // 补上 K：三条件齐 → 闸解锁、出口武装、目标提示改口
+        assertTrue(a.dockingPlate(Level03Pursuit.PLATE_K).orElseThrow().tryEnter("echo_1", 1, tick));
+        assertTrue(a.door(Level03Pursuit.DOOR_EXIT).orElseThrow().isUnlocked(), "三条件齐 → 闸解锁");
+        assertTrue(a.exitTerminal().isDoorUnlocked(), "出口终端随闸一起武装");
+        assertEquals("出口闸 3/3：S₂✓ S₃✓ K✓", a.objectiveView().gateProgress());
+        assertEquals("出口已供能：到出口旁按 E 通关", a.objectiveView().text());
+
+        // 闸解锁后走进出口格并按 E → RESULT
+        tick = drive(a, tick, LogicalKey.DIR_RIGHT);
+        assertEquals(cellX(26), player(a).x(), 1e-9, "闸解锁后应允许进入出口格 (26,14)");
+        a.tick(pressKey(tick, LogicalKey.INTERACT));
+        assertEquals(GamePhase.RESULT, a.phase(), "闸解锁后在半径内按 E 应通关");
+        assertTrue(a.isFinalPhase());
+        LevelResult result = a.result().orElseThrow(() -> new AssertionError("通关后必须有结算投影"));
+        assertTrue(result.cleared(), "结算应为通关");
+        assertEquals(LevelFlow.LevelId.LEVEL_03.title(), result.levelName(),
+                "RecordingSession 的关卡名必须与当前 LevelId 一致");
+        assertEquals(Level03Pursuit.MAX_ROUNDS, result.maxRounds());
     }
 
-    /** 残影路径：同一块板由回放的 {@code DOCK_ENTERED} 占住（这正是 replayEchoEvents 做的事）。 */
-    private static void assertBothPathsEchoLeg(String plateId) {
-        Level03Assembly echoRun = new Level03Assembly();
-        echoRun.start();
-        assertTrue(echoRun.dockingPlate(plateId).orElseThrow().tryEnter("echo_1", 1, 0L),
-                plateId + "：残影事件必须能占板");
-        assertTrue(echoRun.isPlateOccupied(plateId), plateId + "：残影路径占用结果");
-        echoRun.cleanup();
+    /** 开关的锁存必须随轮末归零（否则下一轮出口闸会白送两块条件）。 */
+    @Test
+    void switchLatchResetsAtRoundEnd() {
+        Level03Assembly a = started();
+        long tick = 0;
+        a.tick(press(tick++, LogicalKey.DIR_UP));   // 首个方向输入出现后时钟才开始走
+        assertTrue(a.dockingPlate(Level03Pursuit.SWITCH_S2).orElseThrow().tryEnter("echo_2", 2, tick));
+        assertTrue(a.dockingPlate(Level03Pursuit.SWITCH_S2).orElseThrow().isLatched(), "踩上即锁存");
+
+        while (a.hudContext().currentRound() == 1) {
+            a.tick(InputIntent.empty(tick++));
+        }
+
+        assertEquals(2, a.hudContext().currentRound(), "轮末必须进入第 2 轮");
+        assertFalse(a.dockingPlate(Level03Pursuit.SWITCH_S2).orElseThrow().isLatched(),
+                "轮末 reset 后锁存必须归零");
+        assertFalse(a.isPlateOccupied(Level03Pursuit.SWITCH_S2), "新一轮开关回到 OFF");
+        assertEquals("出口闸 0/3：S₂✗ S₃✗ K✗", a.objectiveView().gateProgress());
     }
 
-    /** 每格先按一次 Space 相位再推进一格（用于必须穿过射线的 B 支路）。 */
-    private static long driveToPhasing(Level03Assembly a, long tick, String fromNodeId,
-                                       String toNodeId, Set<String> avoidNodeIds) {
-        for (LogicalKey key : route(fromNodeId, toNodeId, avoidNodeIds)) {
-            a.tick(pressKey(tick++, LogicalKey.PHASE));   // 相位是按下边沿触发，不需要按住
-            tick = drive(a, tick, key);
-        }
-        return tick;
-    }
+    // ---------- 驾驶与寻路 ----------
 
-    private static String plateNode(String plateId) {
-        if (Level03Pursuit.PLATE_A.equals(plateId)) {
-            return Level03Pursuit.NODE_PLATE_A;
-        }
-        if (Level03Pursuit.PLATE_B.equals(plateId)) {
-            return Level03Pursuit.NODE_PLATE_B;
-        }
-        if (Level03Pursuit.PLATE_C.equals(plateId)) {
-            return Level03Pursuit.NODE_PLATE_C;
-        }
-        return Level03Pursuit.NODE_PLATE_D;
-    }
-
-    /** 除目标板之外的其它三块板格：寻路时避开，免得半路被别的板驻留下来。 */
-    private static Set<String> otherPlates(String plateId) {
-        Set<String> avoid = new java.util.LinkedHashSet<>(allPlateCells());
-        avoid.remove(plateNode(plateId));
-        return avoid;
+    private Level03Assembly started() {
+        assembly = new Level03Assembly();
+        assembly.start();
+        assertTrue(assembly.isPlaying());
+        return assembly;
     }
 
     private static RenderViews.Player player(Level03Assembly a) {
@@ -514,11 +433,7 @@ class Level03AssemblyTest {
         return tick;
     }
 
-    /**
-     * 用关卡数据现算一条最短格子路线（BFS，四方向）。
-     *
-     * @param avoidNodeIds 寻路时不经过的节点（例如已由残影压住的板格、当前锁着的门格）
-     */
+    /** 用关卡数据现算一条最短格子路线（BFS，四方向）。 */
     private static List<LogicalKey> route(String fromNodeId, String toNodeId, Set<String> avoidNodeIds) {
         Map<String, String> cameFrom = new HashMap<>();
         Map<String, LogicalKey> cameBy = new HashMap<>();

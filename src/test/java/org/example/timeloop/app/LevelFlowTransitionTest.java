@@ -247,7 +247,7 @@ class LevelFlowTransitionTest {
         assertEquals(l3.objectiveView().text(), flow.objectiveText(),
                 "目标提示必须来自 Level03ObjectiveViewModel");
         assertNotEquals(l2ObjectiveBefore, flow.objectiveText(), "不得残留第二关的目标文本");
-        assertTrue(flow.objectiveText().contains("A → C → D"), flow.objectiveText());
+        assertTrue(flow.objectiveText().contains("A → C → K"), flow.objectiveText());
 
         // 交付：只允许第三关推进；第二关 roundTick 冻结。
         assertEquals(Level03Pursuit.cellCenter(
@@ -305,7 +305,8 @@ class LevelFlowTransitionTest {
         // 机关与射线都回到初始态，不带上一局的残留。
         assertEquals(Ray.State.OFF, l3.rays().get(0).getState(), "重开后射线回到周期起点 OFF");
         for (String plateId : List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_B,
-                Level03Pursuit.PLATE_C, Level03Pursuit.PLATE_D)) {
+                Level03Pursuit.PLATE_C, Level03Pursuit.PLATE_K,
+                Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3)) {
             assertFalse(l3.isPlateOccupied(plateId), "重开后 " + plateId + " 不得残留占用");
         }
         for (String doorId : List.of(Level03Pursuit.DOOR_A, Level03Pursuit.DOOR_B,
@@ -427,33 +428,34 @@ class LevelFlowTransitionTest {
     }
 
     /**
-     * 真·驾驶第三关到通关（RESULT）：残影压开 A / B / C 板 → 玩家真开到出口正下方 (25,7)
-     * → 等到 D 板供能刻（{@code PLATE_D_ARRIVAL}）→ 按 E。
+     * 真·驾驶第三关到通关（RESULT）：残影压开 A / B / C 板与出口闸的 K 板、S₂/S₃ 两个开关
+     * → 玩家真开到出口正左方 (25,14) → 在宽容半径内按 E。
      *
-     * <p>刻表上「玩家到出口」早于「D 板供能」（840 &lt; 1056），而出口格与终点供能闸同格、
-     * 未解锁不可通行，所以玩家停在出口正下方（距出口 1 格 = 48 ≤ 宽容半径 72），等到供能再按 E
-     * —— 这正是第三关的设计意图。</p>
+     * <p>v3 的出口闸要 <b>S₂ + S₃ + K 三块同时成立</b>，且出口 (26,14) 与终点闸同格 ——
+     * 未解锁就不可通行，所以玩家停在正左方（距出口 1 格 = 48 ≤ 宽容半径 72），
+     * 三条件一成立即可在半径内按 E 结算。</p>
      */
     private long runLevel03ToClear(long tick) {
         Level03Assembly l3 = flow.level03().orElseThrow();
         for (String plateId : List.of(Level03Pursuit.PLATE_A, Level03Pursuit.PLATE_B,
-                Level03Pursuit.PLATE_C, Level03Pursuit.PLATE_D)) {
+                Level03Pursuit.PLATE_C, Level03Pursuit.PLATE_K,
+                Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3)) {
             assertTrue(l3.dockingPlate(plateId).orElseThrow().tryEnter("echo_1", 1, tick),
                     "残影应能压住 " + plateId);
         }
-        assertTrue(l3.isPlateOccupied(Level03Pursuit.PLATE_D), "注入后 D 板应被占");
-        tick = driveTo(tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.nodeId(25, 7),
-                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_B,
-                        Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_D));
-        assertEquals(Level03Pursuit.cellCenter(25, 7).x(), positionOf(flow.renderViews()).x(), 1e-9,
-                "应停在出口正下方 (25,7)");
-        assertEquals(Level03Pursuit.cellCenter(25, 7).y(), positionOf(flow.renderViews()).y(), 1e-9);
-        while (flow.hudContext().roundTick() < Level03Pursuit.PLATE_D_ARRIVAL) {
-            flow.tick(InputIntent.empty(tick++));
-        }
-        // 供能刻之后：终点闸必须已解锁，玩家仍在宽容半径内（否则按 E 白按）。
+        assertTrue(l3.isPlateOccupied(Level03Pursuit.PLATE_K), "注入后 K 板应被占");
         assertTrue(l3.door(Level03Pursuit.DOOR_EXIT).orElseThrow().isUnlocked(),
-                "D 板供能 → 终点闸解锁");
+                "S₂ + S₃ + K 齐了 → 终点闸解锁");
+        tick = driveTo(tick, Level03Pursuit.NODE_SPAWN, Level03Pursuit.nodeId(25, 14),
+                Set.of(Level03Pursuit.NODE_PLATE_A, Level03Pursuit.NODE_PLATE_B,
+                        Level03Pursuit.NODE_PLATE_C, Level03Pursuit.NODE_PLATE_K,
+                        Level03Pursuit.NODE_SWITCH_S2, Level03Pursuit.NODE_SWITCH_S3,
+                        Level03Pursuit.NODE_EXIT));
+        assertEquals(Level03Pursuit.cellCenter(25, 14).x(), positionOf(flow.renderViews()).x(), 1e-9,
+                "应停在出口正左方 (25,14)");
+        assertEquals(Level03Pursuit.cellCenter(25, 14).y(), positionOf(flow.renderViews()).y(), 1e-9);
+        assertTrue(l3.door(Level03Pursuit.DOOR_EXIT).orElseThrow().isUnlocked(),
+                "K 板供能 → 终点闸解锁");
         assertTrue(l3.exitTerminal().isInInteractRange(positionOf(flow.renderViews())),
                 "玩家应仍在出口的宽容半径内");
         flow.tick(pressKey(tick, LogicalKey.INTERACT));

@@ -61,18 +61,35 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PlatePathConsistencyTest {
 
-    /** 第三关四块板各自的（板 → 它作用的那扇门）。 */
-    private static final List<String[]> PLATE_DOOR_PAIRS = List.of(
-            new String[] {Level03Pursuit.PLATE_A, Level03Pursuit.DOOR_A},
-            new String[] {Level03Pursuit.PLATE_B, Level03Pursuit.DOOR_B},
-            new String[] {Level03Pursuit.PLATE_C, Level03Pursuit.DOOR_C},
-            new String[] {Level03Pursuit.PLATE_D, Level03Pursuit.DOOR_EXIT});
+    /**
+     * 第三关重排 v3 的「板 → 它作用的那扇门」对照表。
+     *
+     * <p>开门的 A/B/C 板各自对应一扇门；终点组的 K 板与 S₂/S₃ 两个开关共用终点供能闸，
+     * 因此检验其中一块时，要先在两条路径上把另外两块<b>同样</b>满足掉，否则门条件本来就差一块，
+     * 分不出「路径不一致」还是「条件没凑齐」。</p>
+     */
+    private static final List<PlatePair> PLATE_DOOR_PAIRS = List.of(
+            new PlatePair(Level03Pursuit.PLATE_A, Level03Pursuit.DOOR_A, List.of()),
+            new PlatePair(Level03Pursuit.PLATE_C, Level03Pursuit.DOOR_C, List.of()),
+            new PlatePair(Level03Pursuit.PLATE_B, Level03Pursuit.DOOR_B, List.of()),
+            new PlatePair(Level03Pursuit.PLATE_K, Level03Pursuit.DOOR_EXIT,
+                    List.of(Level03Pursuit.SWITCH_S2, Level03Pursuit.SWITCH_S3)),
+            new PlatePair(Level03Pursuit.SWITCH_S2, Level03Pursuit.DOOR_EXIT,
+                    List.of(Level03Pursuit.SWITCH_S3, Level03Pursuit.PLATE_K)),
+            new PlatePair(Level03Pursuit.SWITCH_S3, Level03Pursuit.DOOR_EXIT,
+                    List.of(Level03Pursuit.SWITCH_S2, Level03Pursuit.PLATE_K)));
+
+    /** 测试用的一条对照：待测板 + 它作用的那扇门 + 检验门之前要先满足掉的其它板。 */
+    private record PlatePair(String plateId, String doorId, List<String> prepare) {
+    }
 
     private static final Map<String, int[]> CELL_OF_PLATE = Map.of(
             Level03Pursuit.PLATE_A, Level03Pursuit.CELL_PLATE_A,
             Level03Pursuit.PLATE_B, Level03Pursuit.CELL_PLATE_B,
             Level03Pursuit.PLATE_C, Level03Pursuit.CELL_PLATE_C,
-            Level03Pursuit.PLATE_D, Level03Pursuit.CELL_PLATE_D);
+            Level03Pursuit.PLATE_K, Level03Pursuit.CELL_PLATE_K,
+            Level03Pursuit.SWITCH_S2, Level03Pursuit.CELL_SWITCH_S2,
+            Level03Pursuit.SWITCH_S3, Level03Pursuit.CELL_SWITCH_S3);
 
     // ---------- §6.2 主用例：两条路径同一块板必须同结果 ----------
 
@@ -90,30 +107,39 @@ class PlatePathConsistencyTest {
      */
     @Test
     void playerWalkAndEchoReplayAgreeOnEveryPlateInEveryArrivalOrder() {
-        for (String[] pair : PLATE_DOOR_PAIRS) {
-            String plateId = pair[0];
-            String doorId = pair[1];
+        for (PlatePair pair : PLATE_DOOR_PAIRS) {
+            String plateId = pair.plateId();
+            String doorId = pair.doorId();
             List<Vector2D> walk = walkPath(Level03Pursuit.SPAWN_CELL, CELL_OF_PLATE.get(plateId),
                     otherPlateCells(plateId));
 
             // ---- ① 只玩家：真走到板格（真实 2px/刻 位置流 → C3DockController → AutoDockService）----
             Fixture playerRun = new Fixture();
+            prepareGate(playerRun, pair.prepare());
             assertEquals(plateId, walkAndDock(playerRun, walk),
                     plateId + "：玩家沿真实路线走到板格必须停在它上面（位置判定链路）");
             Outcome playerAlone = playerRun.outcome(plateId, doorId);
             assertTrue(playerAlone.occupied(), plateId + "：玩家踩上去必须占板（任务卡 §6.1）");
-            assertTrue(playerAlone.doorUnlocked(), plateId + "：玩家踩上去必须把门解锁（任务卡 §6.1）");
+            assertTrue(playerAlone.doorUnlocked(),
+                    plateId + "：玩家踩上去必须让它作用的那扇门解锁（任务卡 §6.1）");
             assertEquals(List.of(PLAYER), playerRun.plate(plateId).getOccupantIds());
             assertEquals(1, playerAlone.occupantCount());
-            // 玩家按合法出口方向离开：占用释放、门回锁。
+            // 玩家按合法出口方向离开
             leave(playerRun, plateId, walk.size() + 1L);
             Outcome playerReleased = playerRun.outcome(plateId, doorId);
-            assertFalse(playerReleased.occupied(), plateId + "：玩家离开后板释放");
-            assertFalse(playerReleased.doorUnlocked(), plateId + "：没人压板后门回锁");
+            boolean playerLatched = playerRun.plate(plateId).isLatched();
+            if (playerLatched) {
+                assertTrue(playerReleased.occupied(),
+                        plateId + "：锁存开关人走条件仍成立");
+            } else {
+                assertFalse(playerReleased.occupied(), plateId + "：普通板人走即释放");
+                assertFalse(playerReleased.doorUnlocked(), plateId + "：普通板释放后门回锁");
+            }
             playerRun.close();
 
             // ---- ② 只残影：回放一条 DOCK_ENTERED（事件链路）----
             Fixture echoRun = new Fixture();
+            prepareGate(echoRun, pair.prepare());
             assertTrue(echoRun.plate(plateId).tryEnter(ECHO, 1, 600L),
                     plateId + "：残影事件必须能占板");
             Outcome echoAlone = echoRun.outcome(plateId, doorId);
@@ -130,14 +156,18 @@ class PlatePathConsistencyTest {
             assertEquals(playerAlone.state(), echoAlone.state(),
                     plateId + "：板状态枚举必须一致");
 
-            // 残影也离开：释放后的每一个字段都必须与玩家路径的释放态<b>完全相同</b>。
+            // 残影也离开：两条路径的释放/锁存态必须逐字段相同
             assertTrue(echoRun.plate(plateId).tryExit(ECHO, 1, 700L), "残影离开");
-            assertEquals(playerReleased, echoRun.outcome(plateId, doorId),
-                    plateId + "：两条路径的释放态必须逐字段相同");
+            Outcome echoReleased = echoRun.outcome(plateId, doorId);
+            assertEquals(playerReleased, echoReleased,
+                    plateId + "：两条路径离开之后的每一个字段都必须相同");
+            assertEquals(playerLatched, echoRun.plate(plateId).isLatched(),
+                    plateId + "：锁存态也必须一致");
             echoRun.close();
 
             // ---- ③ 残影先占 → 玩家真走到（任务卡现场：残影能占、玩家站上去也得有反应）----
             Fixture echoFirst = new Fixture();
+            prepareGate(echoFirst, pair.prepare());
             assertTrue(echoFirst.plate(plateId).tryEnter(ECHO, 1, 600L), "夹具前提：残影先压住板");
             assertEquals(plateId, walkAndDock(echoFirst, walk),
                     plateId + "：残影持板时玩家走到板格仍必须停驻在它上面");
@@ -153,7 +183,7 @@ class PlatePathConsistencyTest {
             // 残影让出（回放里的 DOCK_LEFT / 轮末释放）→ 玩家还站着，门绝不回锁。
             assertTrue(echoFirst.plate(plateId).tryExit(ECHO, 1, 744L), "残影让出板");
             assertRemainingActorKeepsThePlateOccupied(echoFirst, plateId, doorId, PLAYER);
-            // 玩家也离开后才释放 —— 与「只玩家」路径的释放态逐字段一致。
+            // 玩家也离开后才释放 —— 与单路径终态的每一个字段一致
             assertTrue(echoFirst.plate(plateId).tryExit(PLAYER, 0, 800L), "玩家离开");
             assertEquals(playerReleased, echoFirst.outcome(plateId, doorId),
                     plateId + "：最后一人离开后，与单路径终态一致");
@@ -161,6 +191,7 @@ class PlatePathConsistencyTest {
 
             // ---- ④ 玩家先站定 → 残影回放压上来（顺序反过来，结果必须对称）----
             Fixture playerFirst = new Fixture();
+            prepareGate(playerFirst, pair.prepare());
             assertEquals(plateId, walkAndDock(playerFirst, walk));
             assertTrue(playerFirst.plate(plateId).tryEnter(ECHO, 1, 700L), "残影后到");
             assertEquals(List.of(PLAYER, ECHO), playerFirst.plate(plateId).getOccupantIds(),
@@ -174,8 +205,17 @@ class PlatePathConsistencyTest {
             assertRemainingActorKeepsThePlateOccupied(playerFirst, plateId, doorId, ECHO);
             assertTrue(playerFirst.plate(plateId).tryExit(ECHO, 1, 900L), "残影也离开");
             assertEquals(playerReleased, playerFirst.outcome(plateId, doorId),
-                    plateId + "：与「只残影」路径的终态一致（两条路径的释放态已在上面对账）");
+                    plateId + "：与「只残影」路径的终态一致（两条路径的终态已在上面对账）");
             playerFirst.close();
+        }
+    }
+
+    /** 检验终点组某一块之前，先在<b>两条路径</b>上把同组的另外两块同样满足掉。 */
+    private static void prepareGate(Fixture fixture, List<String> plateIds) {
+        long tick = 100L;
+        for (String plateId : plateIds) {
+            assertTrue(fixture.plate(plateId).tryEnter("gate_prep", 0, tick++),
+                    "夹具前提：预满足出口闸条件 " + plateId);
         }
     }
 
@@ -261,14 +301,14 @@ class PlatePathConsistencyTest {
     // ---------- §6.3 四块板同一套规则 ----------
 
     /**
-     * 四块板的判定配置必须逐字段同构（任务卡 §6.3「除位置外无差异」）：
+     * 六块板/开关的判定配置必须逐字段同构（任务卡 §6.3「除位置外无差异」）：
      * 区域都是「以板为中心、边长 = 一格」的正方形，区域互不重叠，中心就是路径节点中心。
      *
      * <p>这一条同时排掉任务卡 §3 清单里的 1/2/4 项：中心-节点不一致、区域不覆盖玩家停下的那一格、
-     * 与 D 板同列导致区域重叠或 ID 串用 —— 任一项成立，这里都会红。</p>
+     * 同列导致区域重叠或 ID 串用 —— 任一项成立，这里都会红。</p>
      */
     @Test
-    void allFourPlatesShareTheSameDockRegionRule() {
+    void allPlatesAndSwitchesShareTheSameDockRegionRule() {
         AutoDockService autoDock = new AutoDockService(Level03Pursuit.build());
         double tile = Level03Pursuit.TILE_SIZE;
         List<DockRegionView> regions = new ArrayList<>();
@@ -307,11 +347,11 @@ class PlatePathConsistencyTest {
             regions.add(region);
         }
 
-        assertEquals(4, regions.size());
+        assertEquals(CELL_OF_PLATE.size(), regions.size(), "六块板/开关都要检查到");
         for (int i = 0; i < regions.size(); i++) {
             for (int j = i + 1; j < regions.size(); j++) {
                 assertFalse(regions.get(i).overlaps(regions.get(j)),
-                        "四块板的判定区域不得两两重叠（C(10,2) 与 D(10,13) 同列也不得串用）");
+                        "判定区域不得两两重叠（C(10,2) 与 K(10,13) 同列也不得串用）");
             }
         }
     }

@@ -1,61 +1,62 @@
 package org.example.timeloop.ui;
 
 /**
- * 第三关《追赶过去》的目标提示投影（开发三，卡 {@code L03-DEV3} §三 / 设定书 §9.2 §9.4）。
+ * 第三关《追赶过去》的目标提示投影（开发三，卡 {@code L03-DEV3} §三 / 设定书 §9.2 §9.4）· <b>重排 v3</b>。
  *
  * <p>与 {@link Level02ObjectiveViewModel}、{@link ObjectiveViewModel} <b>并存</b>：三者都是只读
  * record，互不改签名，PM 侧接线时按当前关卡投影对应类型即可。</p>
  *
- * <p>本关要表达的四件事（设定书 §9.4）：</p>
+ * <p>v3 的判定链：门 A ← A 板；门 C ← C 板；门 B ← B 板；<b>出口闸 ← {S₂, S₃, K}</b>。
+ * 本关要表达的四件事（设定书 §9.4）：</p>
  * <ol>
- *   <li><b>一级</b>：出口需要 D 板供能；两道中间门由过去开启；</li>
- *   <li><b>二级</b>：第二轮到达 B 的时刻，会决定第三轮门 B 何时打开；</li>
- *   <li><b>三级</b>：两条推荐路线 {@code A → C → D} 与 {@code 门A → 射线 → B} 及其关键节点；</li>
- *   <li>J 分岔引导（上方 B 支路 / 右侧主通道）与 {@code E₁：最后有效轮}（设定书 §9.2）。</li>
+ *   <li><b>一级</b>：出口要 S₂ + S₃ + K 三块同时成立；三道门由过去开启；</li>
+ *   <li><b>二级</b>：第二轮踩上 S₂ 与 B 板的时刻，会决定第三轮门 B 何时打开；</li>
+ *   <li><b>三级</b>：三条路线（控制线 {@code A → C → K}、E₂ 支路 {@code J → S₂ → 射线 → 门C → B}、
+ *       E₃ 主线 {@code J → 门B → S₃ → 门C → 出口}）及其关键时间节点；</li>
+ *   <li>J 分岔引导（向南 E₂ 支路 / 向北 E₃ 主线）与 {@code E₁：最后有效轮}（设定书 §9.2）。</li>
  * </ol>
  *
  * <p>提示只显示信息：{@link #text()} 及其它 accessor 都是纯函数，不推进、不暂停、不修改任何时钟
  * （设定书 §9.4 末条）。</p>
  *
- * <p><b>校验只保留真命题</b>：紧凑构造器里曾经有过一条
- * {@code !doorAOpen && inBranchB → 抛异常}（「门 A 没开时不可能已经在 B 支路里」），
- * 它把「门<b>此刻</b>是否被打开」误当成「玩家<b>能不能</b>已经在里面」—— 与第一关那条被删掉的
- * 假不变量同类。第三关的真实玩法里它<b>必然</b>触发：E₁ 在刻 384 离开 A 板后门 A 就回锁，
- * 而第二轮 / 第三轮的玩家此时正在 B 支路里跑到轮末（见 {@code Level03Pursuit.GATE_A_WINDOW_END}）。
- * 因此该条校验已删除，{@code doorAOpen=false && inBranchB=true} 是<b>合法</b>状态。</p>
+ * <p><b>校验只保留真命题</b>：本类曾写过三条「板与门的因果组合」校验（门 C 必须由第一残影在第三轮打开、
+ * 出口供能只可能来自第一残影驻留 D 板…），它们在真实玩法里<b>每帧抛异常</b>并让 JavaFX 直接报错。
+ * 教训：「某个时刻的因果」不是「状态组合的合法性」。v3 这里只校验轮次范围与「最后有效轮」，
+ * 其余任意布尔组合都必须能给出人话 —— 是否可达由装配与刻表决定，不归只读投影管。</p>
  *
- * @param currentRound         当前轮次（1..maxRounds）
- * @param maxRounds            最大轮次（本关 = 3）
- * @param firstEchoFinalRound  第一残影是否已进入最后有效轮（= 当前已是最后一轮，设定书 §9.2）
- * @param doorAOpen            门 A <b>此刻</b>是否开着（E₁ 正压着 A 板）。它与 {@code inBranchB}
- *                             <b>互相独立</b>：门只在一小段窗口里开着，而玩家（尤其在第二轮 / 第三轮）
- *                             完全可以已经身处 B 支路、门 A 却早已回锁 —— 这是本关的<b>正常</b>局面，
- *                             不是矛盾状态
- * @param inBranchB            当前玩家是否已进入 B 支路（会接触射线）
- * @param rayActive            射线此刻是否 ACTIVE（该按下潜了）
- * @param doorBOpen            门 B 是否开着（E₂ 已压住 B 板）
- * @param doorCOpen            门 C 是否开着（E₁ 正压着 C 板）
- * @param exitPowered          出口是否已供能（E₁ 正压着 D 板）
+ * @param currentRound        当前轮次（1..maxRounds）
+ * @param maxRounds           最大轮次（本关 = 3）
+ * @param firstEchoFinalRound 第一残影是否已进入最后有效轮（= 当前已是最后一轮，设定书 §9.2）
+ * @param doorAOpen           门 A <b>此刻</b>是否开着（E₁ 正压着 A 板）。它与 {@code inEcho2Branch}
+ *                            <b>互相独立</b>：门只在一小段窗口里开着，而玩家完全可以已经身处支路、
+ *                            门 A 却早已回锁 —— 这是本关的<b>正常</b>局面
+ * @param inEcho2Branch       当前玩家是否已进入 E₂ 支路（J 以南 + 通往射线的走廊，会接触射线）
+ * @param rayActive           射线此刻是否 ACTIVE（该按下潜了）
+ * @param switchS2On          S₂ 开关是否已兑现（踩上即锁存到轮末）
+ * @param switchS3On          S₃ 开关是否已兑现（在门 B 后面的开关室里，第三轮先穿门 B）
+ * @param plateKHeld          K 板此刻是否被压住（出口闸的第三个条件）
+ * @param doorBOpen           门 B 是否开着（E₂ 正压住 B 板）
+ * @param doorCOpen           门 C 是否开着（E₁ 正压着 C 板，窗口 [600, 1056)）
+ * @param exitUnlocked        出口闸是否已解锁（= 出口终端已被武装；S₂ + S₃ + K 同时成立）
  */
 public record Level03ObjectiveViewModel(int currentRound,
                                         int maxRounds,
                                         boolean firstEchoFinalRound,
                                         boolean doorAOpen,
-                                        boolean inBranchB,
+                                        boolean inEcho2Branch,
                                         boolean rayActive,
+                                        boolean switchS2On,
+                                        boolean switchS3On,
+                                        boolean plateKHeld,
                                         boolean doorBOpen,
                                         boolean doorCOpen,
-                                        boolean exitPowered) {
+                                        boolean exitUnlocked) {
 
     /**
      * 只校验<b>真</b>不变量：轮次范围，以及「最后有效轮」只可能出现在最后一轮。
      *
-     * <p><b>刻意不再校验「板与门之间的因果组合」</b>：本类曾在这里要求「门 C 开着时门 B 必须也开着且轮次 ≥3」
-     * 与「供能只可能来自残影」，结果在真实玩法里<b>每帧抛异常</b> —— 第 1 轮玩家踩 C 板（门 C 开、
-     * 门 B 无人压、轮次 1）本就是官方解的第一步，踩 D 板供能时门 C 早已松开同理。
-     * 教训与 L1、L3 那两条被删的假不变量一致：**「某个时刻的因果」不是「状态组合的合法性」**，
-     * 把前者写进构造校验，就会在玩家按正常解法游玩时崩溃。当前状态组合是否可达由装配与刻表决定，
-     * 不归一个只读投影管；本类只保证对<b>任意</b>合法轮次/布尔组合都能给出一句人话。</p>
+     * <p>刻意不校验任何「板与门之间的因果组合」：第 1 轮玩家踩 C 板（门 C 开、门 B 无人压、轮次 1）
+     * 本就是官方解第一步，踩 S₂/S₃ 开关时轮次也可能是 2（E₂ 路过）—— 这些都是<b>合法</b>局面。</p>
      */
     public Level03ObjectiveViewModel {
         if (maxRounds < 1) {
@@ -72,60 +73,78 @@ public record Level03ObjectiveViewModel(int currentRound,
     }
 
     /**
-     * 一句话行动提示。判定顺序：已供能 → 两门齐开 → 在 B 支路（射线在下潜窗口内）→ 第 1 轮录制
-     * → 等门 A → 等门 B → 赶门 C 窗口 → 兜底。
+     * 一句话行动提示。判定顺序：已解锁 → 在 E₂ 支路（射线在下潜窗口内）→ 第 1 轮录制
+     * → S₃ 已踩（折回门 C）→ 第 2 轮录制 → 门 C 开着 → 门 B 开着 → 门 A 开着 → 兜底。
      */
     public String text() {
-        if (exitPowered) {
+        if (exitUnlocked) {
             return "出口已供能：到出口旁按 E 通关";
         }
-        if (inBranchB) {
+        if (inEcho2Branch) {
             return rayActive
                     ? "射线激活：按 Space 相位下潜穿过去（下潜期间不受射线判定）"
-                    : "沿 B 支路往上走，看到预警就准备按 Space 下潜，然后驻留 B 板到轮末";
-        }
-        if (doorBOpen && doorCOpen) {
-            return "门 B 与门 C 同时开着：沿主通道冲过去，再到出口等 D 板供能";
+                    : "沿支路往南踩 S₂ 开关 → 走廊往东，见预警就按 Space 下潜，然后穿门 C 驻留 B 板到轮末";
         }
         if (currentRound == 1) {
-            return "第 1 轮：依次踩 A → C → D；A 要踩够久（给下一轮留门），C 短暂停留，D 压到轮末";
+            return "第 1 轮：依次踩 A → C → K；A 驻留 2 格、C 驻留 19 格、K 压到轮末 —— "
+                    + "这三段窗口就是后面两轮的时间资源";
+        }
+        if (switchS3On) {
+            return "S₃ 已锁存：折回门 B，沿第 20 列直下穿门 C，再到东南回环尽头的出口等 K 板供能";
         }
         if (currentRound == 2) {
             return doorAOpen
-                    ? "门 A 开了：穿过去，在 J 处向上进 B 支路，看到预警按下潜，然后驻留 B 到轮末"
+                    ? "门 A 开了：穿过去，在 J 向南踩 S₂，再过射线、门 C，驻留 B 板到轮末"
                     : "等残影 E₁ 压住 A 板开门（它第一轮踩过 A），门一开就穿进内区";
         }
+        if (doorCOpen) {
+            return "门 C 开着：趁 E₁ 的 C 窗口穿过去，再到东南回环尽头的出口等供能";
+        }
         if (doorBOpen) {
-            return "门 B 开了：走主通道，趁 E₁ 的 C 窗口穿过门 C，再到出口等 D 供能";
+            return "门 B 开了：进开关室踩 S₃（开关会锁存到轮末），再折回沿第 20 列下到门 C";
         }
         if (doorAOpen) {
-            return "门 A 开了：和 E₂ 一起进内区，在 J 处向右走主通道，等 E₂ 压住 B 开门 B";
+            return "门 A 开了：进内区，在 J 向北走到门 B 外等 E₂ 开门";
         }
-        return "等 E₁ 压住 A 板开门 A（E₁ 处于最后有效轮，它第一轮的窗口仍会按时出现）";
+        return "等 E₁ 压住 A 板开门 A（它在刻 336 踩上、刻 384 离开；门一开就穿进内区）";
     }
 
-    /** 一级提示（设定书 §9.4）：出口的供能来源与两道中间门由谁开。 */
+    /** 一级提示（设定书 §9.4）：出口的供能来源与三道门由谁开。 */
     public String tierOne() {
-        return "出口需要 D 板供能；两道中间门由过去开启。";
+        return "出口闸要 S₂ + S₃ + K 三块同时成立；门 A / 门 C / 门 B 各由过去的那一轮开启。";
     }
 
-    /** 二级提示（设定书 §9.4）：B 的到达时刻决定门 B 何时开。 */
+    /** 二级提示（设定书 §9.4）：S₂ 与 B 的到达时刻决定第三轮门 B 何时开。 */
     public String tierTwo() {
-        return "第二轮到达 B 的时刻，会决定第三轮门 B 何时打开。";
+        return "第二轮踩上 S₂ 与 B 板的时刻，会决定第三轮门 B 何时打开。";
     }
 
-    /** 三级提示（设定书 §9.4）：两条推荐路线与关键时间节点（刻数以共享刻表为准）。 */
+    /** 三级提示（设定书 §9.4）：三条路线与关键时间节点（刻数以共享刻表为准）。 */
     public String tierThreeRoute() {
-        return "控制线 A(336) → C(600) → D(1056)　｜　支路 门A(336) → J(432) → 射线(552) → B(624)";
+        return "控制线 A(336) → C(600) → K(1368)　｜　"
+                + "E₂ 门A(336) → J(384) → S₂(456) → 射线(600) → 门C(624) → B(744)　｜　"
+                + "E₃ 门A(336) → 门B(744) → S₃(816) → 门C(1032) → 出口(1248)";
     }
 
-    /** J 分岔引导（设定书 §11.4）：上方是 B 支路，右侧是最终主通道。 */
+    /** J 分岔引导（设定书 §11.4）：向南是 E₂ 支路，向北是 E₃ 主线。 */
     public String forkHint() {
-        return "J 分岔：上方通向 B 板（支路，有射线，第二轮走这条）；右侧是主通道（门 B → 门 C → 出口，第三轮走这条）";
+        return "J 分岔：向南是第二轮支路（S₂ → 射线 → 门 C → B 板）；"
+                + "向北是第三轮主线（门 B → 开关室踩 S₃ → 折回门 C → 出口）";
+    }
+
+    /** 出口闸三个条件（S₂ / S₃ / K）的兑现进度，供 HUD 直接显示。 */
+    public String gateProgress() {
+        int done = (switchS2On ? 1 : 0) + (switchS3On ? 1 : 0) + (plateKHeld ? 1 : 0);
+        return "出口闸 " + done + "/3：S₂" + mark(switchS2On) + " S₃" + mark(switchS3On)
+                + " K" + mark(plateKHeld);
     }
 
     /** 残影代际角标（设定书 §9.2）：第一残影进入最后有效轮时必须显式提示。 */
     public String finalRoundBadge() {
         return firstEchoFinalRound ? "E₁：最后有效轮" : "";
+    }
+
+    private static String mark(boolean satisfied) {
+        return satisfied ? "✓" : "✗";
     }
 }
