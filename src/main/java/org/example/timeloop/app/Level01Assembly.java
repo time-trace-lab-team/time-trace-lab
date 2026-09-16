@@ -360,7 +360,8 @@ public final class Level01Assembly {
         // MechanismKind.DOOR 绘制分支保留给第二关起使用。
         List<RenderViews.Mechanism> mechanisms = List.of(
                 new RenderViews.Mechanism(leftPlate.getId(), leftPlate.getPosition().x(),
-                        leftPlate.getPosition().y(), RenderViews.MechanismKind.PLATE, leftPlate.isOccupied()),
+                        leftPlate.getPosition().y(), RenderViews.MechanismKind.PLATE, leftPlate.isOccupied(),
+                        null, true),   // 琥珀色（终点组色）
                 new RenderViews.Mechanism(rightPlate.getId(), rightPlate.getPosition().x(),
                         rightPlate.getPosition().y(), RenderViews.MechanismKind.SWITCH, rightPlate.isLatched()),
                 new RenderViews.Mechanism(exit.getId(), exit.getPosition().x(),
